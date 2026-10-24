@@ -1,0 +1,16 @@
+[
+ {"type":"num","q":"A point moves on a circle of radius 50 m at 20 m/s, speeding up at 3 m/s². Total acceleration magnitude (m/s²). 3 decimals.","answer":8.544,"tol":0.0005,"py":"math.hypot(400/50,3)","explain":"$\\sqrt{(v^2/R)^2 + \\dot v^2}$."},
+ {"type":"num","q":"A 1200 kg car at 20 m/s hits a stationary 800 kg car and they lock together. Common speed (m/s).","answer":12,"tol":0.001,"py":"1200*20/2000","explain":"Momentum is conserved."},
+ {"type":"num","q":"Kinetic energy lost (kJ) in that collision. 1 decimal.","answer":96,"tol":0.001,"py":"0.5*1200*400/1e3-0.5*2000*144/1e3","explain":"240 kJ before, 144 kJ after."},
+ {"type":"num","q":"A rocket with exhaust speed 3000 m/s burns from 100 t to 25 t in free space. Speed gain (m/s). Nearest whole number.","answer":4159,"tol":0.0004,"py":"3000*math.log(4)","explain":"$v_e\\ln(m_0/m_1)$."},
+ {"type":"num","q":"A solid cylinder rolls without slipping down a 2 m high slope from rest. Speed at the bottom (m/s). 3 decimals.","answer":5.115,"tol":0.0005,"py":"math.sqrt(4*9.81*2/3)","explain":"$v = \\sqrt{4gh/3}$."},
+ {"type":"num","q":"Moment of inertia (kg m²) of a 3 kg, 0.6 m uniform rod about one end. 2 decimals.","answer":0.36,"tol":0.001,"py":"3*0.36/3","explain":"$mL^2/3$."},
+ {"type":"num","q":"A 6 kg disc of radius 0.2 m spins at 3000 rpm. Kinetic energy (kJ). 2 decimals.","answer":5.92,"tol":0.002,"py":"0.5*0.5*6*0.04*(3000*math.pi/30)**2/1e3","explain":"$\\tfrac12\\cdot\\tfrac12 mR^2\\omega^2$."},
+ {"type":"num","q":"A gyroscope with $I_3 = 6\\times10^{-5}$ kg m² spins at 500 rad/s; $m = 0.15$ kg, $l = 0.04$ m. Precession rate (rad/s). 3 decimals.","answer":1.962,"tol":0.0005,"py":"0.15*9.81*0.04/(6e-5*500)","explain":"$mgl/(I_3\\omega)$."},
+ {"type":"num","q":"Burst rim speed (m/s) of a thin carbon-fibre rim, strength 1.5 GPa, density 1600 kg/m³. 1 decimal.","answer":968.2,"tol":0.0005,"py":"math.sqrt(1.5e9/1600)","explain":"$\\sqrt{\\sigma/\\rho}$."},
+ {"type":"num","q":"Small-swing period (s) of a simple pendulum, $l = 2$ m, from Lagrange's equation. 4 decimals.","answer":2.8370,"tol":0.0001,"py":"2*math.pi*math.sqrt(2/9.81)","explain":"$ml^2\\ddot\\theta + mgl\\theta = 0$."},
+ {"type":"num","q":"Balance speed (km/h) on a 2000 m curve with 120 mm cant (S = 1.5 m). 1 decimal.","answer":142.9,"tol":0.002,"py":"math.sqrt(9.81*2000*math.tan(math.asin(0.08)))*3.6","explain":"$\\sqrt{gR\\tan\\phi}$."},
+ {"type":"num","q":"Piston acceleration magnitude (m/s²) at top dead centre: r = 0.04 m, l = 0.16 m, 5000 rpm. Nearest whole number.","answer":13708,"tol":0.0004,"py":"0.04*(5000*math.pi/30)**2*1.25","explain":"$r\\omega^2(1 + r/l)$."},
+ {"type":"mc","q":"A planar system of 4 rigid bodies has 10 independent constraint equations. Degrees of freedom?","options":["0","1","2","4"],"answer":2,"explain":"12 − 10 = 2."},
+ {"type":"mc","q":"Spinning a rotating object faster about its symmetry axis makes gravity-driven precession…","options":["Faster","Slower","Unchanged","Reverse"],"answer":1,"explain":"$\\Omega \\propto 1/\\omega$."}
+]

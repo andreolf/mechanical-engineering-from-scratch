@@ -11,7 +11,7 @@ The homepage has a live 3D cantilever hero and three "Break the machine" labs (t
 
 > Live site: https://andreolf.github.io/mechanical-engineering-from-scratch/
 
-> Status: v2. **128 full lessons are written: Phase 00 (00.01–00.12), Phase 01 (01.01–01.18), Phase 02 (02.01–02.16), Phase 03 (03.01–03.20), Phase 04 (04.01–04.20), Phase 05 (05.01–05.20) and Phase 06 (06.01–06.22).** Each one has its own page with an explanation, KaTeX math, figures or an interactive widget, a worked example with real numbers, from-scratch Python (shown and downloadable), exercises with hidden step-by-step solutions, and a graded quiz. The other 228 lessons (Phases 07–19) show their outline and are marked "Full lesson coming soon". The AI-tutor install command on the site is a **coming-soon placeholder** (no skill package is published yet).
+> Status: v2. **148 full lessons are written: Phase 00 (00.01–00.12), Phase 01 (01.01–01.18), Phase 02 (02.01–02.16), Phase 03 (03.01–03.20), Phase 04 (04.01–04.20), Phase 05 (05.01–05.20), Phase 06 (06.01–06.22) and Phase 07 (07.01–07.20).** Each one has its own page with an explanation, KaTeX math, figures or an interactive widget, a worked example with real numbers, from-scratch Python (shown and downloadable), exercises with hidden step-by-step solutions, and a graded quiz. The other 208 lessons (Phases 08–19) show their outline and are marked "Full lesson coming soon". The AI-tutor install command on the site is a **coming-soon placeholder** (no skill package is published yet).
 
 ### Progress and certificates
 
