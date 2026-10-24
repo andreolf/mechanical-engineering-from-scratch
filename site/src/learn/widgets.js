@@ -4452,6 +4452,43 @@ def('interference', {
   },
 });
 
+// 15.03 tolerance stack-up: worst case against RSS
+def('stackup', {
+  controls: [{ k: 'n', label: 'Number of parts in the stack', min: 2, max: 12, step: 1, v: 4, f: 0 }, { k: 't', label: 'Tolerance of each part ± (mm)', min: 0.01, max: 0.2, step: 0.01, v: 0.08, f: 2 }, { type: 'select', k: 'dist', label: 'Part size distribution', options: ['Normal (tolerance = 3σ)', 'Uniform over the band'], v: 'Normal (tolerance = 3σ)' }],
+  draw(p, v, out) {
+    let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+    const wc = v.n * v.t, rss = Math.sqrt(v.n) * v.t, N = 1500, xs = [], ys = [];
+    let outside = 0, ss = 0;
+    for (let k = 0; k < N; k++) {
+      let g = 0; for (let j = 0; j < v.n; j++) g += v.dist.startsWith('Normal') ? gauss() * v.t / 3 : (2 * rnd() - 1) * v.t;
+      xs.push(k); ys.push(g); ss += g * g; if (Math.abs(g) > rss) outside++;
+    }
+    const R = 1.3 * wc;
+    p.frame({ x: [0, N], y: [-R, R], xlabel: 'assembly number', ylabel: 'gap error (mm)' });
+    p.dots(xs, ys, C.cyan, 1.5);
+    p.line([0, N], [wc, wc], C.amber, 2).line([0, N], [-wc, -wc], C.amber, 2).line([0, N], [rss, rss], C.lime, 2).line([0, N], [-rss, -rss], C.lime, 2);
+    out(`Worst case ±${nf(3).format(wc)} mm, RSS ±${nf(3).format(rss)} mm (ratio ${nf(2).format(rss / wc)} = 1/√${v.n}). Simulated gap σ = ${nf(4).format(Math.sqrt(ss / N))} mm; ${outside} of ${N} assemblies (${nf(1).format(100 * outside / N)}%) fall outside the RSS band, none outside worst case.`);
+  },
+});
+
+// 15.04 shaft moment diagram and DE-Goodman diameter
+def('shaftload', {
+  controls: [{ k: 'a', label: 'Gear position from the left bearing (mm)', min: 20, max: 280, step: 5, v: 100, f: 0 }, { k: 'F', label: 'Gear force (N)', min: 500, max: 5000, step: 100, v: 2000, f: 0 }, { k: 'T', label: 'Steady torque (N·m)', min: 0, max: 400, step: 10, v: 150, f: 0 }, { k: 'n', label: 'Safety factor', min: 1.2, max: 4, step: 0.1, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const L = 300, Sut = 630, Kf = 1.7, Kfs = 1.5, R1 = v.F * (L - v.a) / L, Mmax = R1 * v.a; // N mm
+    const xs = linspace(0, L, 121), M = xs.map((x) => (x <= v.a ? R1 * x : R1 * x - v.F * (x - v.a)) / 1000);
+    let d = 25, Se = 0;
+    for (let k = 0; k < 60; k++) { Se = 4.51 * Sut ** -0.265 * 1.24 * d ** -0.107 * 0.5 * Sut; d = (16 * v.n / Math.PI * (2 * Kf * Mmax / Se + Math.sqrt(3) * Kfs * v.T * 1000 / Sut)) ** (1 / 3); }
+    const top = Math.max(50, Math.max(...M) * 1.25);
+    p.frame({ x: [0, L], y: [-top * 0.25, top], xlabel: 'position along the shaft (mm)', ylabel: 'bending moment (N·m)' });
+    p.rect(0, L, -top * 0.04, top * 0.04, C.grey).line(xs, M, C.lime, 2.5);
+    p.line([v.a, v.a], [top * 0.9, top * 0.05], C.red, 2).text(`${v.F} N`, v.a, top * 0.94, C.red, 'center');
+    p.text('bearing', 0, -top * 0.15, C.paper, 'left').text('bearing', L, -top * 0.15, C.paper, 'right');
+    out(`Peak moment ${nf(1).format(Mmax / 1000)} N·m under the gear. Endurance limit after Marin factors ${nf(1).format(Se)} MPa. DE-Goodman diameter for n = ${nf(1).format(v.n)}: ${nf(2).format(d)} mm (one gear only, 1045 steel, K_f 1.7, K_fs 1.5). Centre the gear to see the worst case.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
