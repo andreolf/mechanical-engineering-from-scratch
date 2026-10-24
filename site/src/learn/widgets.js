@@ -1659,6 +1659,65 @@ def('slittube', {
   },
 });
 
+// 06.16 combined loading at the root of a crank arm
+def('crankarm', {
+  controls: [{ k: 'F', label: 'Pedal force F (N)', min: 0, max: 1500, step: 10, v: 1000, f: 0 }, { k: 'ang', label: 'Crank angle above horizontal (°)', min: -90, max: 90, step: 5, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const L = 170, a = 60, D = 24, d = 16, A = Math.PI * (D * D - d * d) / 4, I = Math.PI * (D ** 4 - d ** 4) / 64, J = 2 * I, th = v.ang * Math.PI / 180;
+    const N = -v.F * Math.sin(th) + 0, M = v.F * Math.cos(th) * L, T = v.F * a, tau = T * 12 / J;
+    const ph = linspace(0, 2 * Math.PI, 181), sig = ph.map((q) => N / A + M * 12 * Math.cos(q) / I), vm = sig.map((s) => Math.sqrt(s * s + 3 * tau * tau));
+    let im = 0; vm.forEach((x, i) => { if (x > vm[im]) im = i; });
+    fitAt(p, 0, 0, 34, 34, 'mm (section at the spindle, top = up)', '');
+    // the section, and von Mises plotted radially outside it (1 mm per 10 MPa)
+    const ring = linspace(0, 2 * Math.PI, 97);
+    p.line(ring.map((q) => 12 * Math.sin(q)), ring.map((q) => 12 * Math.cos(q)), C.paper, 2).line(ring.map((q) => 8 * Math.sin(q)), ring.map((q) => 8 * Math.cos(q)), C.paper, 1.5);
+    p.line(ph.map((q, i) => (12 + vm[i] / 10) * Math.sin(q)), ph.map((q, i) => (12 + vm[i] / 10) * Math.cos(q)), C.lime, 2);
+    p.line(ph.map((q) => (12 + 355 / 10) * Math.sin(q)), ph.map((q) => (12 + 355 / 10) * Math.cos(q)), C.red, 1, [4, 4]);
+    p.dots([12 * Math.sin(ph[im])], [12 * Math.cos(ph[im])], C.red, 6);
+    out(`Axial ${nf(0).format(Math.abs(N) < 0.5 ? 0 : N)} N (${nf(1).format(Math.abs(N) < 0.5 ? 0 : N / A)} MPa), bending ${nf(1).format(M / 1e3)} N m (±${nf(1).format(M * 12 / I)} MPa), torsion ${nf(0).format(T / 1e3)} N m (${nf(1).format(tau)} MPa). Hotspot (red dot) ${nf(1).format(vm[im])} MPa von Mises on the ${Math.cos(ph[im]) > 0 ? 'top' : 'bottom'} of the arm; dashed ring = 355 MPa yield, safety factor ${nf(2).format(355 / vm[im])}.`);
+  },
+});
+
+// 06.17 strain energy per load type
+def('energybars', {
+  controls: [{ k: 'P', label: 'Tie force (kN), 20 mm bar, 2 m', min: 0, max: 60, step: 1, v: 30, f: 0 }, { k: 'F', label: 'Balcony tip load (kN), 1.8 m beam', min: 0, max: 10, step: 0.5, v: 5, f: 1 }, { k: 'T', label: 'Shaft torque (kN m), 50 × 42 tube, 1.4 m', min: 0, max: 2, step: 0.05, v: 1.2, f: 2 }],
+  draw(p, v, out) {
+    const E = 210e3, G = 80e3, A = Math.PI * 100, I = 1.8456e7, J = Math.PI * (50 ** 4 - 42 ** 4) / 32;
+    const P = v.P * 1e3, F = v.F * 1e3, T = v.T * 1e6;
+    const db = P * 2000 / (E * A), dc = F * 1800 ** 3 / (3 * E * I), ph = T * 1400 / (G * J);
+    const U = [P * db / 2e3, F * dc / 2e3, T * ph / 2e3], top = Math.max(60, ...U) * 1.15;
+    p.frame({ x: [0, 3], y: [0, top], xlabel: '', ylabel: 'strain energy, J' });
+    const names = ['bar, P²L/2EA', 'beam, ∫M²/2EI', 'shaft, T²L/2GJ'], cols = [C.cyan, C.lime, C.amber];
+    U.forEach((u, i) => { p.rect(i + 0.2, i + 0.8, 0, u, cols[i]); p.text(nf(1).format(u) + ' J', i + 0.5, u + top * 0.03, C.paper, 'center'); p.text(names[i], i + 0.5, top * 0.93, C.grey, 'center'); });
+    out(`Each bar equals half the load times its deflection: ${nf(1).format(v.P)} kN × ${nf(3).format(db)} mm / 2, ${nf(1).format(v.F)} kN × ${nf(2).format(dc)} mm / 2, ${nf(2).format(v.T)} kN m × ${nf(4).format(ph)} rad / 2. Double a load and its energy goes up four times.`);
+  },
+});
+
+// 06.18 a ceiling bike hook: deflection by integrating curvature (what Castigliano gives in one line)
+def('hook', {
+  controls: [{ k: 'pos', label: 'Load position round the J (°, 90 = bottom)', min: 10, max: 170, step: 5, v: 90, f: 0 }, { k: 'm', label: 'Bike mass (kg)', min: 5, max: 30, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const a = 100, R = 40, EI = 210e3 * Math.PI * 8 ** 4 / 64, P = v.m * 9.81, mag = 15;
+    const pts = [];
+    linspace(0, -a, 101).forEach((y) => pts.push([0, y]));
+    linspace(0, Math.PI, 181).slice(1).forEach((q) => pts.push([R - R * Math.cos(q), -a - R * Math.sin(q)]));
+    const iL = 100 + Math.round(v.pos);
+    const [xL, yL] = pts[iL];
+    const rot = [], mid = [];
+    for (let k = 0; k < pts.length - 1; k++) {
+      const m = [(pts[k][0] + pts[k + 1][0]) / 2, (pts[k][1] + pts[k + 1][1]) / 2], ds = Math.hypot(pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1]);
+      mid.push(m); rot.push(k < iL ? -P * (xL - m[0]) * ds / EI : 0);
+    }
+    const def = pts.map(([x, y], j) => { let ux = 0, uy = 0; for (let k = 0; k < Math.min(j, iL); k++) { ux -= rot[k] * (y - mid[k][1]); uy += rot[k] * (x - mid[k][0]); } return [x + mag * ux, y + mag * uy, ux, uy]; });
+    fitAt(p, 30, -80, 75, 80, 'mm', '');
+    p.rect(-40, 40, 0, 8, 'rgba(154,157,147,0.5)');
+    p.line(pts.map((q) => q[0]), pts.map((q) => q[1]), C.grey, 4).line(def.map((q) => q[0]), def.map((q) => q[1]), C.cyan, 2.5);
+    arrow(p, def[iL][0], def[iL][1] + 4, def[iL][0], def[iL][1] - 30, C.amber);
+    const [, , ux, uy] = def[iL];
+    out(`Load point moves ${nf(3).format(-uy)} mm down and ${nf(3).format(Math.abs(ux))} mm ${ux < 0 ? 'towards' : 'away from'} the shank (cyan shape drawn ${mag}× exaggerated). Bending moment at the ceiling ${nf(1).format(P * xL / 1e3)} N m, so ${nf(0).format(P * xL * 4 / (Math.PI * 8 ** 4 / 64))} MPa in the rod.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
