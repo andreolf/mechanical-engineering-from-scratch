@@ -61,6 +61,18 @@ function codePanel(info, code, ctx) {
   return `<figure class="code" data-lines="${lines}"><figcaption><span class="code-file">${esc(file)}</span><span class="code-actions"><button type="button" class="btn-small" data-copy-code>Copy</button>${url ? `<a class="btn-small" href="${url}" download="${esc(file)}">Download</a>` : ''}</span></figcaption><pre tabindex="0"><code class="language-${lang}">${hl}</code></pre></figure>`;
 }
 
+const PINNED = /\b(all|none|any|either) of (these|the above|them)\b|\babove options\b/i;
+function shuffledOrder(options, key) {
+  let h = 2166136261; // FNV-1a hash of the key seeds a small LCG
+  for (let k = 0; k < key.length; k++) { h ^= key.charCodeAt(k); h = Math.imul(h, 16777619) >>> 0; }
+  const rnd = () => { h = (Math.imul(h, 1664525) + 1013904223) >>> 0; return h / 4294967296; };
+  const order = options.map((_, k) => k), free = order.filter((k) => !PINNED.test(String(options[k])));
+  const perm = free.slice();
+  for (let k = perm.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); [perm[k], perm[j]] = [perm[j], perm[k]]; }
+  free.forEach((slot, k) => { order[slot] = perm[k]; });
+  return order;
+}
+
 function renderQuiz(json, ctx) {
   let items;
   try { items = JSON.parse(json); } catch (e) { throw new Error(`Bad quiz JSON in ${ctx.id}: ${e.message}`); }
@@ -68,8 +80,11 @@ function renderQuiz(json, ctx) {
     const out = { type: q.type, q: md(q.q, `${ctx.id} quiz ${i}`, true), explain: md(q.explain || '', `${ctx.id} quiz ${i}`, true) };
     if (q.type === 'mc') {
       if (!Array.isArray(q.options) || q.answer == null || q.answer >= q.options.length) throw new Error(`MC quiz ${ctx.id}#${i} malformed`);
-      out.options = q.options.map((o) => md(String(o), `${ctx.id} quiz ${i}`, true));
-      out.answer = q.answer;
+      // Deterministic per-question shuffle so correct answers do not cluster on one position.
+      // Options that refer to the others ("none of these", "all of the above") keep their place.
+      const order = shuffledOrder(q.options, `${ctx.id}#${i}:${q.q}`);
+      out.options = order.map((k) => md(String(q.options[k]), `${ctx.id} quiz ${i}`, true));
+      out.answer = order.indexOf(q.answer);
     } else if (q.type === 'num') {
       if (typeof q.answer !== 'number') throw new Error(`Numeric quiz ${ctx.id}#${i} needs numeric answer`);
       Object.assign(out, { answer: q.answer, tol: q.tol ?? 0.02, unit: q.unit || '', py: q.py || null });
