@@ -2676,6 +2676,57 @@ def('merchant', {
   },
 });
 
+// 09.19 Taylor tool life and economic cutting speed
+def('taylorcost', {
+  controls: [{ k: 'n', label: 'Taylor exponent n', min: 0.1, max: 0.5, step: 0.01, v: 0.25, f: 2 }, { k: 'Ct', label: 'Cost per cutting edge (USD)', min: 1, max: 30, step: 0.5, v: 6, f: 1 }],
+  draw(p, v, out) {
+    const n = v.n, CT = 400, Co = 1.5, tch = 2, Vs = linspace(80, 400, 300);
+    const parts = (V) => { const tm = Math.PI * 60 * 200 / (1000 * V * 0.25), T = (CT / V) ** (1 / n); return [Co, Co * tm, (Co * tch + v.Ct) * tm / T]; };
+    const tot = Vs.map((V) => parts(V).reduce((a, b) => a + b, 0));
+    p.frame({ x: [80, 400], y: [0, 8], xlabel: 'cutting speed V, m/min', ylabel: 'cost per part, USD' });
+    p.line(Vs, Vs.map((V) => parts(V)[1]), C.cyan, 1.5, [4, 3]).line(Vs, Vs.map((V) => parts(V)[2]), C.amber, 1.5, [4, 3]).line(Vs, tot, C.lime, 2.5);
+    const To = (1 / n - 1) * (tch + v.Ct / Co), Vo = CT / To ** n, cmin = parts(Vo).reduce((a, b) => a + b, 0);
+    p.dots([Vo], [cmin], C.red, 6);
+    out(`Minimum cost at V = ${nf(0).format(Vo)} m/min, where each edge lasts T = (1/n − 1)(t_change + C_tool/C_machine) = ${nf(1).format(To)} min. Cost ${nf(2).format(cmin)} USD per part. Cyan: machine time (falls with speed). Amber: tool wear (rises steeply). Cheaper edges or a larger n push the optimum faster.`);
+  },
+});
+
+// 09.20 pocket toolpath and coverage
+def('pocketpath', {
+  controls: [{ k: 'so', label: 'Stepover (% of tool diameter)', min: 20, max: 110, step: 1, v: 50, f: 0 }, { k: 'D', label: 'Tool diameter (mm)', min: 3, max: 12, step: 0.5, v: 8, f: 1 }, { k: 'fin', label: 'Finishing contour pass', type: 'check', v: 1 }],
+  draw(p, v, out) {
+    const W = 40, H = 25, r = v.D / 2, so = v.so / 100 * v.D, x0 = r, x1 = W - r, y0 = r, y1 = H - r, pts = [];
+    let y = y0, k = 0;
+    while (y < y1 - 1e-9) { if (k % 2 === 0) pts.push([x0, y], [x1, y]); else pts.push([x1, y], [x0, y]); y = Math.min(y + so, y1); k++; }
+    if (k % 2 === 0) pts.push([x0, y1], [x1, y1]); else pts.push([x1, y1], [x0, y1]);
+    if (v.fin) pts.push([x0, y1], [x0, y0], [x1, y0], [x1, y1], [x0, y1]);
+    p.frame({ x: [-2, 42], y: [-2, 27], xlabel: 'x, mm', ylabel: 'y, mm' });
+    // coverage on a 0.5 mm grid
+    let un = 0, tot = 0;
+    for (let gx = 0.25; gx < W; gx += 0.5) for (let gy = 0.25; gy < H; gy += 0.5) {
+      tot++; let hit = false;
+      for (let i = 0; i < pts.length - 1 && !hit; i++) { const [ax, ay] = pts[i], [bx, by] = pts[i + 1], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((gx - ax) * dx + (gy - ay) * dy) / L2)) : 0; hit = (gx - ax - t * dx) ** 2 + (gy - ay - t * dy) ** 2 <= r * r; }
+      if (!hit) { un++; p.rect(gx - 0.25, gx + 0.25, gy - 0.25, gy + 0.25, 'rgba(255,90,54,0.8)'); }
+    }
+    p.line([0, W, W, 0, 0], [0, 0, H, H, 0], C.paper, 1.5).line(pts.map((q) => q[0]), pts.map((q) => q[1]), C.lime, 1.8);
+    const th = linspace(0, 2 * Math.PI, 40); p.line(th.map((a) => pts[0][0] + r * Math.cos(a)), th.map((a) => pts[0][1] + r * Math.sin(a)), C.cyan, 1.5);
+    let L = 0; for (let i = 0; i < pts.length - 1; i++) L += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    out(`Path ${nf(0).format(L)} mm per layer, ${nf(2).format(L / 600)} min at 600 mm/min. Uncut (red): ${nf(1).format(un / tot * 100)} % of the pocket. ${v.so > 100 ? 'Stepover above the diameter leaves ridges between passes.' : 'Only the corners remain, with radius equal to the tool radius.'} Cyan circle: the tool.`);
+  },
+});
+
+// 09.21 turned surface profile
+def('roughprofile', {
+  controls: [{ k: 'f', label: 'Feed f (mm/rev)', min: 0.02, max: 0.5, step: 0.01, v: 0.2, f: 2 }, { k: 'r', label: 'Tool nose radius r (mm)', min: 0.2, max: 2.4, step: 0.1, v: 0.8, f: 1 }],
+  draw(p, v, out) {
+    const f = v.f, r = v.r, xs = linspace(0, 4 * f, 800), z = xs.map((x) => { const xc = (Math.floor(x / f) + 0.5) * f; return (r - Math.sqrt(Math.max(0, r * r - (x - xc) ** 2))) * 1000; });
+    const m = z.reduce((a, b) => a + b, 0) / z.length, Ra = z.reduce((a, b) => a + Math.abs(b - m), 0) / z.length, Rt = Math.max(...z);
+    p.frame({ x: [0, 4 * f], y: [-0.1 * Math.max(Rt, 1), 1.2 * Math.max(Rt, 1)], xlabel: 'along the axis, mm', ylabel: 'height, µm' });
+    p.line(xs, z, C.lime, 2).line([0, 4 * f], [m, m], C.grey, 1, [4, 4]).line([0, 4 * f], [m + Ra, m + Ra], C.amber, 1, [2, 3]).line([0, 4 * f], [m - Ra, m - Ra], C.amber, 1, [2, 3]);
+    out(`Ra = ${nf(3).format(Ra)} µm (formula f²/(32r) = ${nf(3).format(f * f / (32 * r) * 1000)}); peak to valley ${nf(2).format(Rt)} µm (f²/(8r) = ${nf(2).format(f * f / (8 * r) * 1000)}). Halving the feed quarters the roughness; a bigger nose radius helps linearly but raises chatter risk. Amber: mean ± Ra.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
