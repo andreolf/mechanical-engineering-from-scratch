@@ -3123,6 +3123,77 @@ def('heatpumpcop', {
   },
 });
 
+// 10.16 van der Waals isotherms and the Maxwell construction
+def('vdwiso', {
+  controls: [{ k: 'T', label: 'Temperature (K)', min: 240, max: 400, step: 1, v: 280, f: 0 }],
+  draw(p, v, out) {
+    const R = 8.314462618, A = 0.3640, B = 4.267e-5, T = v.T, pf = (x) => R * T / (x - B) - A / (x * x);
+    const vs = logspace(Math.log10(1.15 * B), Math.log10(60 * B), 400);
+    p.frame({ x: [1.15 * B * 1e6, 60 * B * 1e6], xlog: true, y: [0, 14], xlabel: 'v, cm³/mol (log)', ylabel: 'p, MPa' });
+    p.line(vs.map((x) => x * 1e6), vs.map((x) => Math.min(Math.max(pf(x) / 1e6, -1), 15)), C.cyan, 2);
+    p.line(vs.map((x) => x * 1e6), vs.map((x) => Math.min(R * T / x / 1e6, 15)), C.grey, 1, [4, 4]);
+    let msg = `Above T_c = 304.0 K the isotherm has no loop: a single fluid phase.`;
+    if (T < 304) {
+      const roots = (pp) => { const r = []; let prev = pf(vs[0]) - pp; for (let i = 1; i < vs.length; i++) { const cur = pf(vs[i]) - pp; if (prev * cur <= 0) { let a = vs[i - 1], b = vs[i]; for (let k = 0; k < 60; k++) { const m = (a + b) / 2; ((pf(a) - pp) * (pf(m) - pp) <= 0) ? (b = m) : (a = m); } r.push((a + b) / 2); } prev = cur; } return r; };
+      const ex = []; for (let i = 1; i < vs.length - 1; i++) { const d0 = pf(vs[i]) - pf(vs[i - 1]), d1 = pf(vs[i + 1]) - pf(vs[i]); if (d0 * d1 < 0) ex.push(pf(vs[i])); }
+      let lo = Math.max(ex[0], 1), hi = ex[1], ps = 0, rr = [];
+      for (let k = 0; k < 60; k++) { ps = (lo + hi) / 2; rr = roots(ps); if (rr.length < 3) break; const vl = rr[0], vg = rr[rr.length - 1]; const I = R * T * Math.log((vg - B) / (vl - B)) + A * (1 / vg - 1 / vl) - ps * (vg - vl); I > 0 ? (lo = ps) : (hi = ps); }
+      if (rr.length >= 3) { const vl = rr[0], vg = rr[rr.length - 1]; p.line([vl * 1e6, vg * 1e6], [ps / 1e6, ps / 1e6], C.lime, 2.5).dots([vl * 1e6, vg * 1e6], [ps / 1e6, ps / 1e6], C.amber, 5);
+        msg = `Maxwell construction: saturation at ${nf(3).format(ps / 1e6)} MPa, where the loop's two areas match. Liquid ${nf(1).format(vl * 1e6)}, vapour ${nf(1).format(vg * 1e6)} cm³/mol. The wiggle between them is unstable.`; }
+    }
+    out(`${msg} Dashed: ideal gas. At large volume (low pressure) the two curves merge and Z → 1.`);
+  },
+});
+
+// 10.17 psychrometric chart
+def('psychart', {
+  controls: [{ type: 'select', k: 'k', label: 'Site', options: ['Bali, sea level (101.3 kPa)', 'Zurich, 408 m (96.6 kPa)'], v: 'Bali, sea level (101.3 kPa)' }, { k: 'T', label: 'Air temperature (°C)', min: -10, max: 45, step: 0.5, v: 31, f: 1 }, { k: 'RH', label: 'Relative humidity (%)', min: 5, max: 100, step: 1, v: 75, f: 0 }],
+  draw(p, v, out) {
+    const P = [101.3e3, 96.6e3][['Bali, sea level (101.3 kPa)', 'Zurich, 408 m (96.6 kPa)'].indexOf(v.k)];
+    const ps = (T) => 610.94 * Math.exp(17.625 * T / (T + 243.04)), W = (T, rh) => 622 * rh * ps(T) / (P - rh * ps(T));
+    const Ts = linspace(-10, 45, 111);
+    p.frame({ x: [-10, 45], y: [0, 40], xlabel: 'dry-bulb temperature, °C', ylabel: 'humidity ratio, g/kg' });
+    [0.2, 0.4, 0.6, 0.8].forEach((rh) => p.line(Ts, Ts.map((T) => Math.min(W(T, rh), 40)), C.grey, 1, [3, 3]));
+    p.line(Ts, Ts.map((T) => Math.min(W(T, 1), 40)), C.cyan, 2).text('100 %', 30, 36, C.cyan);
+    const w = W(v.T, v.RH / 100), g = Math.log(v.RH / 100 * ps(v.T) / 610.94), Td = 243.04 * g / (17.625 - g), h = 1.006 * v.T + w / 1000 * (2501 + 1.86 * v.T);
+    p.line([Td, v.T], [w, w], C.amber, 1.5, [4, 3]).dots([v.T], [w], C.lime, 7).dots([Td], [w], C.amber, 5);
+    out(`Humidity ratio ${nf(2).format(w)} g/kg, dew point ${nf(2).format(Td)} °C (cool the air horizontally to the saturation curve), enthalpy ${nf(1).format(h)} kJ/kg. At RH 100 % the dew point equals the air temperature.`);
+  },
+});
+
+// 10.18 adiabatic flame temperature against equivalence ratio
+def('flametemp', {
+  controls: [{ k: 'phi', label: 'Equivalence ratio φ', min: 0.5, max: 1.5, step: 0.01, v: 1, f: 2 }, { k: 'T0', label: 'Reactant temperature (K)', min: 250, max: 800, step: 10, v: 300, f: 0 }],
+  draw(p, v, out) {
+    const RU = 8.314462618;
+    const N = {
+      CH4: [[0.074851495, 0.0133909467, -5.73285809e-06, 1.22292535e-09, -1.0181523e-13, -9468.34459, 18.437318], [5.14987613, -0.0136709788, 4.91800599e-05, -4.84743026e-08, 1.66693956e-11, -10246.6476, -4.64130376]],
+      O2: [[3.28253784, 0.00148308754, -7.57966669e-07, 2.09470555e-10, -2.16717794e-14, -1088.45772, 5.45323129], [3.78245636, -0.00299673416, 9.84730201e-06, -9.68129509e-09, 3.24372837e-12, -1063.94356, 3.65767573]],
+      N2: [[2.92664, 0.0014879768, -5.68476e-07, 1.0097038e-10, -6.753351e-15, -922.7977, 5.980528], [3.298677, 0.0014082404, -3.963222e-06, 5.641515e-09, -2.444854e-12, -1020.8999, 3.950372]],
+      CO2: [[3.85746029, 0.00441437026, -2.21481404e-06, 5.23490188e-10, -4.72084164e-14, -48759.166, 2.27163806], [2.35677352, 0.00898459677, -7.12356269e-06, 2.45919022e-09, -1.43699548e-13, -48371.9697, 9.90105222]],
+      H2O: [[3.03399249, 0.00217691804, -1.64072518e-07, -9.7041987e-11, 1.68200992e-14, -30004.2971, 4.9667701], [4.19864056, -0.0020364341, 6.52040211e-06, -5.48797062e-09, 1.77197817e-12, -30293.7267, -0.849032208]],
+      CO: [[2.71518561, 0.00206252743, -9.98825771e-07, 2.30053008e-10, -2.03647716e-14, -14151.8724, 7.81868772], [3.57953347, -0.00061035368, 1.01681433e-06, 9.07005884e-10, -9.04424499e-13, -14344.086, 3.50840928]],
+      H2: [[3.3372792, -4.94024731e-05, 4.99456778e-07, -1.79566394e-10, 2.00255376e-14, -950.158922, -3.20502331], [2.34433112, 0.00798052075, -1.9478151e-05, 2.01572094e-08, -7.37611761e-12, -917.935173, 0.683010238]],
+    };
+    const co = (sp, T) => (T > 1000 ? N[sp][0] : N[sp][1]);
+    const h = (sp, T) => { const a = co(sp, T); return RU * T * (a[0] + a[1] * T / 2 + a[2] * T * T / 3 + a[3] * T ** 3 / 4 + a[4] * T ** 4 / 5 + a[5] / T); };
+    const s = (sp, T) => { const a = co(sp, T); return RU * (a[0] * Math.log(T) + a[1] * T + a[2] * T * T / 2 + a[3] * T ** 3 / 3 + a[4] * T ** 4 / 4 + a[6]); };
+    // rich mixtures: water-gas shift CO2 + H2 <-> CO + H2O in equilibrium, as in the lesson
+    const prod = (ph, T) => {
+      const o2 = 2 / ph; if (ph <= 1) return { CO2: 1, H2O: 2, O2: o2 - 2, N2: 3.76 * o2 };
+      const g = h('CO', T) + h('H2O', T) - h('CO2', T) - h('H2', T) - T * (s('CO', T) + s('H2O', T) - s('CO2', T) - s('H2', T)), K = Math.exp(-g / (RU * T)), O = 2 * o2;
+      let lo = Math.max(0, 2 - O + 1e-12), hi = Math.min(1, 4 - O), x = 0;
+      for (let k = 0; k < 60; k++) { x = (lo + hi) / 2; (x * (O - 2 + x) - K * (1 - x) * (4 - O - x) > 0) ? (hi = x) : (lo = x); }
+      return { CO2: 1 - x, CO: x, H2O: O - 2 + x, H2: 4 - O - x, N2: 3.76 * o2 };
+    };
+    const Tad = (ph) => { const Hr = h('CH4', v.T0) + 2 / ph * (h('O2', v.T0) + 3.76 * h('N2', v.T0)); let lo = 300, hi = 3800; for (let k = 0; k < 45; k++) { const T = (lo + hi) / 2, pr = prod(ph, T); let Hp = 0; for (const sp in pr) Hp += pr[sp] * h(sp, T); Hp > Hr ? (hi = T) : (lo = T); } return (lo + hi) / 2; };
+    const phis = linspace(0.5, 1.5, 81), Ts = phis.map(Tad);
+    p.frame({ x: [0.5, 1.5], y: [1000, 3000], xlabel: 'equivalence ratio φ', ylabel: 'adiabatic flame temperature, K' });
+    p.line(phis, Ts, C.amber, 2.5).line([1, 1], [1000, 3000], C.grey, 1, [4, 4]).dots([v.phi], [Tad(v.phi)], C.lime, 7);
+    out(`φ = ${nf(2).format(v.phi)}: T_ad ≈ ${nf(0).format(Tad(v.phi))} K (no dissociation). ${v.phi < 1 ? 'Lean: excess air soaks up heat.' : v.phi > 1 ? 'Rich: not enough oxygen to release all the fuel energy; CO and H₂ leave unburnt.' : 'Stoichiometric: the peak.'} Preheating the reactants raises every point.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
