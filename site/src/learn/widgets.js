@@ -3194,6 +3194,42 @@ def('flametemp', {
   },
 });
 
+// 10.19 Gibbs energy against extent of CO2 dissociation
+def('gibbsmin', {
+  controls: [{ k: 'T', label: 'Temperature (K)', min: 1500, max: 3500, step: 50, v: 2500, f: 0 }, { k: 'lp', label: 'Pressure (atm, log scale)', min: -2, max: 2, step: 0.1, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const RU = 8.314462618, T = v.T, P = 10 ** v.lp * 101325;
+    const N = { CO2: [[3.85746029, 0.00441437026, -2.21481404e-06, 5.23490188e-10, -4.72084164e-14, -48759.166, 2.27163806]], CO: [[2.71518561, 0.00206252743, -9.98825771e-07, 2.30053008e-10, -2.03647716e-14, -14151.8724, 7.81868772]], O2: [[3.28253784, 0.00148308754, -7.57966669e-07, 2.09470555e-10, -2.16717794e-14, -1088.45772, 5.45323129]] };
+    const g0 = (sp) => { const a = N[sp][0]; const h = RU * T * (a[0] + a[1] * T / 2 + a[2] * T * T / 3 + a[3] * T ** 3 / 4 + a[4] * T ** 4 / 5 + a[5] / T); const s = RU * (a[0] * Math.log(T) + a[1] * T + a[2] * T * T / 2 + a[3] * T ** 3 / 3 + a[4] * T ** 4 / 4 + a[6]); return h - T * s; };
+    const G = (x) => { const n = { CO2: 1 - x, CO: x, O2: x / 2 }, Nt = 1 + x / 2; let g = 0; for (const sp in n) if (n[sp] > 0) g += n[sp] * (g0(sp) + RU * T * Math.log(n[sp] / Nt * P / 1e5)); return g; };
+    let a = 1e-9, b = 1 - 1e-9; const r = (Math.sqrt(5) - 1) / 2; for (let k = 0; k < 80; k++) { const c = b - r * (b - a), d = a + r * (b - a); G(c) < G(d) ? (b = d) : (a = c); } const xe = (a + b) / 2;
+    const xs = linspace(0.001, 0.999, 200), G0 = G(0.001), gs = xs.map((x) => (G(x) - G0) / 1000);
+    const lo = Math.min(...gs), hi = Math.max(...gs);
+    p.frame({ x: [0, 1], y: [lo - 0.1 * (hi - lo), hi + 0.1 * (hi - lo)], xlabel: 'extent of dissociation ξ', ylabel: 'G − G(ξ≈0), kJ' });
+    p.line(xs, gs, C.cyan, 2.5).dots([xe], [(G(xe) - G0) / 1000], C.lime, 7);
+    out(`Minimum at ξ = ${nf(4).format(xe)}: ${nf(1).format(100 * xe)} % of the CO2 dissociated at ${T} K and ${nf(2).format(10 ** v.lp)} atm (mole fraction CO ${nf(3).format(xe / (1 + xe / 2))}). Hotter shifts the minimum right; higher pressure shifts it left, because dissociation increases the number of moles.`);
+  },
+});
+
+// 10.20 Swiss seasonal balance (assumed data)
+def('swissseason', {
+  controls: [{ k: 'pv', label: 'Solar PV (TWh/year)', min: 0, max: 45, step: 1, v: 24, f: 0 }, { type: 'select', k: 'k', label: 'Nuclear', options: ['Off (phased out)', 'On (18 TWh/year)'], v: 'Off (phased out)' }],
+  draw(p, v, out) {
+    const nuc = ['Off (phased out)', 'On (18 TWh/year)'].indexOf(v.k);
+    const sh = (A, pk) => Array.from({ length: 12 }, (_, m) => 1 + A * Math.cos(2 * Math.PI * (m - pk) / 12));
+    const mon = (tot, A, pk) => sh(A, pk).map((w) => tot / 12 * w);
+    const D = mon(60, 0.15, 0), RR = mon(18, 0.45, 6), LI = mon(20, 0.8, 6), NU = mon(nuc ? 18 : 0, 0.1, 0), OT = mon(4, 0, 0), PV = mon(v.pv, 0.6, 6);
+    const net = D.map((d, m) => RR[m] + LI[m] + NU[m] + OT[m] + PV[m] - d), ann = net.reduce((s, x) => s + x, 0);
+    let L = 0; const lev = net.map((x) => (L += x - ann / 12));
+    const st = Math.max(...lev) - Math.min(...lev), win = [0, 1, 2, 9, 10, 11].reduce((s, m) => s + net[m], 0);
+    p.frame({ x: [0, 12], y: [-14, 14], xlabel: 'month (Jan to Dec)', ylabel: 'TWh' });
+    net.forEach((x, m) => p.rect(m + 0.15, m + 0.85, 0, x, x >= 0 ? C.lime : C.red));
+    p.line(lev.map((_, m) => m + 0.5), lev, C.cyan, 2.5).line([0, 12], [0, 0], C.grey, 1);
+    p.text('monthly surplus / deficit', 0.3, 12.6, C.paper).text('storage level', 0.3, 11, C.cyan);
+    out(`Assumed data, not official statistics. Annual balance ${ann >= 0 ? '+' : ''}${nf(1).format(ann)} TWh; winter half (Oct–Mar) ${nf(1).format(win)} TWh. Shifting surpluses into the deficits takes ${nf(1).format(st)} TWh of seasonal storage, ${st > 8.8 ? `${nf(1).format(st - 8.8)} TWh more than the roughly 8.8 TWh of storage lakes` : 'within the roughly 8.8 TWh of storage lakes'}. More solar improves the year but deepens the summer surplus that must be carried to winter.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
