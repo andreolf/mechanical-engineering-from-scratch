@@ -3646,6 +3646,67 @@ def('blasiusplate', {
   },
 });
 
+// 12.04 Thwaites separation on a cylinder
+def('cylsep', {
+  controls: [{ type: 'select', k: 'k', label: 'Outer velocity', options: ['Ideal flow, 2U sin θ', 'Measured pressures (Hiemenz fit)'], v: 'Ideal flow, 2U sin θ' }, { k: 'a', label: 'Probe angle from the front (°)', min: 5, max: 150, step: 1, v: 60, f: 0 }],
+  draw(p, v, out) {
+    const sel = ['Ideal flow, 2U sin θ', 'Measured pressures (Hiemenz fit)'].indexOf(v.k);
+    const ue = (a) => (sel === 0 ? 2 * Math.sin(a) : 1.814 * a - 0.271 * a ** 3 - 0.0471 * a ** 5);
+    const n = 3000, A = linspace(1e-4, 2.9, n), U = A.map(ue), lam = new Array(n); let I = 0;
+    for (let i = 0; i < n; i++) { if (i > 0) I += 0.5 * (U[i] ** 5 + U[i - 1] ** 5) * (A[i] - A[i - 1]); const d = i === 0 ? (U[1] - U[0]) / (A[1] - A[0]) : (U[Math.min(i + 1, n - 1)] - U[i - 1]) / (A[Math.min(i + 1, n - 1)] - A[i - 1]); lam[i] = i === 0 ? 0.075 : 0.45 * I / U[i] ** 6 * d; }
+    let is = lam.findIndex((l) => l < -0.09); const sep = A[is - 1] + (-0.09 - lam[is - 1]) * (A[is] - A[is - 1]) / (lam[is] - lam[is - 1]);
+    sqframe(p, 2.2, 'x / R', 'y / R');
+    for (const y0 of [-1.6, -1.2, 0.0, 1.2, 1.6]) p.line([-4, -1.3], [y0, y0], C.grey, 1);
+    arrow(p, -3, 0, -1.6, 0, C.cyan, 2);
+    // the front stagnation point is at angle pi in plot coordinates
+    const P = (a, r = 1) => [-r * Math.cos(a), r * Math.sin(a)];
+    const th = linspace(0, 2 * Math.PI, 90);
+    poly(p, th.map((t) => [Math.cos(t), Math.sin(t)]), C.paper, 'rgba(200,200,200,0.25)', 2);
+    const att = linspace(0, sep, 40);
+    [1, -1].forEach((sg) => { p.line(att.map((a) => P(a, 1.08)[0]), att.map((a) => sg * P(a, 1.08)[1]), C.lime, 3); const [sx, sy] = P(sep); p.line([sx, sx + 2.2], [sg * sy, sg * (Math.abs(sy) + 0.35)], C.red, 1.5, [5, 4]); p.dots([sx], [sg * sy], C.red, 6); });
+    const ap = v.a * Math.PI / 180, [px, py] = P(ap), li = Math.min(n - 1, Math.round((ap - 1e-4) / (2.9 - 1e-4) * (n - 1)));
+    p.dots([px], [py], C.amber, 6);
+    out(`Laminar separation (red) at ${nf(1).format(sep * 180 / Math.PI)}° from the front stagnation point; the boundary layer stays attached along the lime arc. At the probe (${v.a}°): Uₑ/U = ${nf(3).format(ue(ap))}, λ = ${nf(3).format(lam[li])}, ${ap < sep ? (lam[li] > 0 ? 'favourable pressure gradient, the flow accelerates.' : 'adverse pressure gradient, the layer is slowing down.') : 'past separation: the wake.'}`);
+  },
+});
+
+// 12.05 cyclist power
+def('cyclistpower', {
+  controls: [{ type: 'select', k: 'k', label: 'Riding position', options: ['Upright (C_D A 0.50)', 'Hoods (0.32)', 'Drops (0.28)', 'Time trial (0.22)'], v: 'Hoods (0.32)' }, { k: 'P', label: 'Rider power (W)', min: 50, max: 500, step: 5, v: 200, f: 0 }, { k: 'w', label: 'Headwind (m/s, negative = tailwind)', min: -5, max: 10, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const CdA = [0.5, 0.32, 0.28, 0.22][['Upright (C_D A 0.50)', 'Hoods (0.32)', 'Drops (0.28)', 'Time trial (0.22)'].indexOf(v.k)], rho = 96600 / (287.05 * 288.15);
+    const pw = (s) => { const va = s + v.w, a = 0.5 * rho * CdA * va * Math.abs(va) * s, r = 0.004 * 80 * 9.81 * s; return [(a + r) / 0.97, a / 0.97, r / 0.97]; };
+    const vs = linspace(0, 60 / 3.6, 120);
+    p.frame({ x: [0, 60], y: [0, 600], xlabel: 'speed, km/h', ylabel: 'power, W' });
+    p.line(vs.map((s) => s * 3.6), vs.map((s) => pw(s)[2]), C.grey, 1.5, [4, 3]).line(vs.map((s) => s * 3.6), vs.map((s) => Math.max(0, pw(s)[1])), C.cyan, 1.5).line(vs.map((s) => s * 3.6), vs.map((s) => pw(s)[0]), C.lime, 2.5);
+    let lo = 0, hi = 30; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; pw(m)[0] < v.P ? (lo = m) : (hi = m); } const s = lo;
+    p.line([0, 60], [v.P, v.P], C.amber, 1, [5, 4]).dots([s * 3.6], [v.P], C.amber, 7).text('total', 52, Math.min(580, pw(52 / 3.6)[0]) - 40, C.lime).text('aero', 50, Math.min(560, pw(50 / 3.6)[1]) - 70, C.cyan).text('rolling', 46, pw(46 / 3.6)[2] + 15, C.grey);
+    const [Pt, Pa] = pw(s);
+    out(`${v.P} W gives ${nf(1).format(s * 3.6)} km/h${v.w ? ` with a ${Math.abs(v.w)} m/s ${v.w > 0 ? 'headwind' : 'tailwind'}` : ''}. Aerodynamic drag takes ${nf(0).format(100 * Math.max(0, Pa) / Pt)}% of the effort. In still air the aero part grows as v³, so 10% more speed costs about 33% more aero power.`);
+  },
+});
+
+// 12.06 thin airfoil at angle of attack
+def('airfoilaoa', {
+  controls: [{ k: 'a', label: 'Angle of attack α (°)', min: -4, max: 18, step: 0.5, v: 4, f: 1 }, { k: 'm', label: 'Maximum camber (% chord)', min: 0, max: 6, step: 0.5, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const m = v.m / 100, pp = 0.4, t = 0.12, n = 400;
+    const zc = (x) => (m === 0 ? 0 : x < pp ? m / pp ** 2 * (2 * pp * x - x * x) : m / (1 - pp) ** 2 * (1 - 2 * pp + 2 * pp * x - x * x));
+    const dz = (x) => (m === 0 ? 0 : x < pp ? 2 * m / pp ** 2 * (pp - x) : 2 * m / (1 - pp) ** 2 * (pp - x));
+    let s0 = 0; for (let i = 0; i < n; i++) { const th = (i + 0.5) * Math.PI / n; s0 += dz((1 - Math.cos(th)) / 2) * (Math.cos(th) - 1) * Math.PI / n; }
+    const aL0 = -s0 / Math.PI, a = v.a * Math.PI / 180, CL = 2 * Math.PI * (a - aL0);
+    const yt = (x) => 5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
+    const xs = linspace(0, 1, 80), up = xs.map((x) => [x, zc(x) + yt(x)]), lo = xs.slice().reverse().map((x) => [x, zc(x) - yt(x)]);
+    const rot = ([x, y]) => [(x - 0.25) * Math.cos(a) + y * Math.sin(a), -(x - 0.25) * Math.sin(a) + y * Math.cos(a)];
+    sqframe(p, 0.7, 'x / c', 'y / c');
+    for (const y0 of [-0.45, -0.25, 0.25, 0.45]) arrow(p, -1.1, y0, -0.75, y0, C.grey, 1.2);
+    poly(p, up.concat(lo).map(rot), C.paper, 'rgba(200,200,200,0.3)', 2);
+    const stall = v.a > 13;
+    arrow(p, 0, 0, 0, Math.max(-0.6, Math.min(0.62, CL * 0.38)), stall ? C.red : C.lime, 3);
+    out(`Thin airfoil theory: C_L = 2π(α − α_L0) = ${nf(3).format(CL)}, with zero-lift angle α_L0 = ${nf(2).format(aL0 * 180 / Math.PI)}° from the camber. ${stall ? 'Above about 13° a real airfoil stalls: the flow separates from the upper surface and lift drops. Thin theory no longer applies (red).' : 'Camber shifts the lift line; the slope stays 2π per radian (0.110 per degree).'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
