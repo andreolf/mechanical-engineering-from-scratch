@@ -2915,6 +2915,59 @@ def('pvpath', {
   },
 });
 
+// 10.04 first-law energy flow
+def('energysankey', {
+  controls: [{ k: 'T2', label: 'Heat at constant pressure up to (K)', min: 300, max: 800, step: 10, v: 500, f: 0 }, { k: 'T3', label: 'Then at constant volume up to (K)', min: 300, max: 1000, step: 10, v: 700, f: 0 }],
+  draw(p, v, out) {
+    const m = 150e3 * 2e-3 / (287 * 300), T2 = v.T2, T3 = Math.max(v.T3, T2), W = m * 287 * (T2 - 300), dU = m * 718 * (T3 - 300), Q = dU + W;
+    const sc = 3 / Math.max(Q, 1);
+    p.frame({ x: [0, 10], y: [-2, 4], xlabel: '', ylabel: '' });
+    const hq = Q * sc, hw = W * sc, hu = dU * sc;
+    poly(p, [[0.5, 1 - hq / 2], [4, 1 - hq / 2], [4, 1 + hq / 2], [0.5, 1 + hq / 2]], null, 'rgba(255,90,54,0.6)');
+    poly(p, [[4, 1 + hq / 2 - hw], [7, 3.4 - hw], [7, 3.4], [4, 1 + hq / 2]], null, 'rgba(90,200,250,0.6)');
+    poly(p, [[4, 1 - hq / 2], [7, -1.2], [7, -1.2 + hu], [4, 1 - hq / 2 + hu]], null, 'rgba(238,255,65,0.55)');
+    p.text(`Q in ${nf(0).format(Q)} J`, 0.6, 1 + hq / 2 + 0.25, C.red).text(`W out ${nf(0).format(W)} J`, 7.1, 3.4 - hw / 2, C.cyan).text(`ΔU ${nf(0).format(dU)} J`, 7.1, -1.2 + hu / 2, C.lime);
+    out(`2 L of air (${nf(2).format(m * 1000)} g) at 150 kPa, 300 K. Heat in = work out + rise in internal energy: ${nf(0).format(Q)} = ${nf(0).format(W)} + ${nf(0).format(dU)} J. Only the constant-pressure step does work (piston rises); the constant-volume step puts all the heat into U. Residual: 0.`);
+  },
+});
+
+// 10.05 steady-flow devices
+def('sfeedevice', {
+  controls: [{ type: 'select', k: 'dev', label: 'Device', options: ['Nozzle', 'Turbine', 'Compressor', 'Throttle valve'], v: 'Nozzle' }, { k: 'T1', label: 'Inlet temperature (K)', min: 250, max: 1500, step: 10, v: 500, f: 0 }, { k: 'r', label: 'Pressure ratio (high/low)', min: 1, max: 20, step: 0.1, v: 3, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Nozzle', 'Turbine', 'Compressor', 'Throttle valve'].indexOf(v.dev), cp = 1005, k = 1.4, e = (k - 1) / k, T1 = v.T1, r = v.r;
+    const T2 = sel === 2 ? T1 * r ** e : sel === 3 ? T1 : T1 * r ** -e;
+    p.frame({ x: [0, 10], y: [0, 6], xlabel: '', ylabel: '' });
+    const shape = [[[1, 2], [5, 2.5], [9, 2.8], [9, 3.2], [5, 3.5], [1, 4]], [[2, 2.5], [8, 1], [8, 5], [2, 3.5]], [[2, 1], [8, 2.5], [8, 3.5], [2, 5]], [[1, 2.6], [4.6, 2.6], [5, 3.2], [5.4, 2.6], [9, 2.6], [9, 3.4], [5.4, 3.4], [5, 2.8], [4.6, 3.4], [1, 3.4]]][sel];
+    poly(p, shape, C.paper, 'rgba(242,243,236,0.12)', 2);
+    arrow(p, 0.1, 3, 1.4, 3, C.amber); arrow(p, 8.6, 3, 9.9, 3, C.amber);
+    p.text(`${nf(0).format(T1)} K`, 0.1, 3.5, C.amber).text(`${nf(0).format(T2)} K`, 8.7, 3.5, C.amber);
+    let msg;
+    if (sel === 0) { const V2 = Math.sqrt(900 + 2 * cp * (T1 - T2)); msg = `No work, no heat: the enthalpy drop becomes kinetic energy. V₂ = √(V₁² + 2c_p ΔT) = ${nf(0).format(V2)} m/s (inlet 30 m/s).`; }
+    else if (sel === 1) msg = `Shaft work out = c_p (T₁ − T₂) = ${nf(1).format(cp * (T1 - T2) / 1000)} kJ per kg of air (isentropic). At 2 kg/s: ${nf(0).format(2 * cp * (T1 - T2) / 1000)} kW.`;
+    else if (sel === 2) msg = `Work in = c_p (T₂ − T₁) = ${nf(1).format(cp * (T2 - T1) / 1000)} kJ per kg (isentropic); the air leaves hotter.`;
+    else msg = 'No work, no heat, little change in velocity: h₂ = h₁. For an ideal gas that means T₂ = T₁, although the pressure falls (real gases and refrigerants do cool, 10.15).';
+    out(msg + ' Steady flow: energy in = energy out, Q − W = ṁ[Δh + ΔV²/2 + gΔz].');
+  },
+});
+
+// 10.06 T-v diagram of water
+def('tvdiagram', {
+  controls: [{ k: 'T', label: 'Temperature (°C)', min: 10, max: 300, step: 1, v: 100, f: 0 }, { k: 'lv', label: 'Specific volume, log₁₀(m³/kg)', min: -3.2, max: 2.2, step: 0.02, v: 0, f: 2 }],
+  draw(p, v, out) {
+    const tab = [[10, 1.2282, 0.001, 106.3032], [20, 2.3393, 0.001002, 57.7567], [30, 4.247, 0.001004, 32.8783], [40, 7.3849, 0.001008, 19.5151], [50, 12.3519, 0.001012, 12.0269], [60, 19.9464, 0.001017, 7.6672], [70, 31.2009, 0.001023, 5.0395], [80, 47.4145, 0.001029, 3.4052], [90, 70.1818, 0.001036, 2.3591], [100, 101.418, 0.001043, 1.6718], [120, 198.6744, 0.00106, 0.8912], [140, 361.5391, 0.00108, 0.5085], [160, 618.2346, 0.001102, 0.3068], [180, 1002.8105, 0.001127, 0.1938], [200, 1554.9279, 0.001157, 0.1272], [250, 3976.1749, 0.001252, 0.0501], [300, 8587.9049, 0.001404, 0.0217]];
+    const sat = (T) => { for (let i = 0; i < tab.length - 1; i++) { const a = tab[i], b = tab[i + 1]; if (T >= a[0] && T <= b[0]) { const x0 = 1 / (a[0] + 273.15), x1 = 1 / (b[0] + 273.15), x = 1 / (T + 273.15), q = (x - x0) / (x1 - x0), t = (T - a[0]) / (b[0] - a[0]); return [Math.exp(Math.log(a[1]) + q * Math.log(b[1] / a[1])), a[2] + t * (b[2] - a[2]), Math.exp(Math.log(a[3]) + q * Math.log(b[3] / a[3]))]; } } return null; };
+    p.frame({ x: [10 ** -3.2, 10 ** 2.2], y: [0, 320], xlog: true, xlabel: 'specific volume v, m³/kg', ylabel: 'T, °C' });
+    p.line(tab.map((r) => r[2]), tab.map((r) => r[0]), C.cyan, 2).line(tab.map((r) => r[3]), tab.map((r) => r[0]), C.amber, 2);
+    const s = sat(v.T), vv = 10 ** v.lv; p.line([s[1], s[2]], [v.T, v.T], C.grey, 1, [4, 3]).dots([vv], [v.T], C.red, 6);
+    let msg;
+    if (vv < s[1]) msg = `Compressed liquid (v below v_f = ${s[1].toFixed(6)}).`;
+    else if (vv > s[2]) msg = `Superheated vapour (v above v_g = ${nf(4).format(s[2])}).`;
+    else { const x = (vv - s[1]) / (s[2] - s[1]); msg = `Wet mixture at p_sat = ${nf(2).format(s[0])} kPa. Quality x = (v − v_f)/(v_g − v_f) = ${nf(4).format(x)}: ${nf(1).format(x * 100)} % of the mass is vapour.`; }
+    out(`${v.T} °C, v = ${vv < 0.01 ? vv.toExponential(3) : nf(4).format(vv)} m³/kg. ${msg} Cyan: saturated liquid line; amber: saturated vapour line.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
