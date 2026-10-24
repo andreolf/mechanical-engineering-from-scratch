@@ -4522,6 +4522,64 @@ def('bearinglife', {
   },
 });
 
+// 15.07 slider bearing wedge and its pressure
+def('wedge', {
+  controls: [{ k: 'K', label: 'Taper ratio h_in/h_out', min: 0.4, max: 5, step: 0.05, v: 2.2, f: 2 }, { k: 'U', label: 'Sliding speed (m/s)', min: 0, max: 20, step: 0.5, v: 10, f: 1 }, { k: 'h', label: 'Minimum film h_out (μm)', min: 5, max: 60, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const L = 0.05, mu = 0.03, ho = v.h * 1e-6, hi = v.K * ho, n = 200, xs = linspace(0, L, n + 1);
+    const hf = (x) => hi + (ho - hi) * x / L;
+    // closed-form pressure: integrate dp/dx = 6 mu U (h - hbar)/h^3 with hbar chosen so p(L) = 0
+    const I = (k) => { let s = 0; for (let i = 0; i < n; i++) { const x = (i + 0.5) * L / n; s += (L / n) / hf(x) ** k; } return s; };
+    const hbar = I(2) / I(3);
+    const ps = [0]; for (let i = 0; i < n; i++) { const x = (i + 0.5) * L / n, h = hf(x); ps.push(ps[i] + 6 * mu * v.U * (h - hbar) / h ** 3 * (L / n)); }
+    const pm = ps.map((q) => q / 1e6), W = ps.reduce((s, q, i) => s + (i ? 0.5 * (q + ps[i - 1]) * L / n : 0), 0);
+    const top = Math.max(1, ...pm.map(Math.abs)) * 1.2, hmax = Math.max(hi, ho);
+    p.frame({ x: [0, 50], y: [-top, top], xlabel: 'position along the pad (mm), surface moves →', ylabel: 'pressure (MPa)' });
+    const band = xs.map((x) => -top + 0.35 * top * hf(x) / hmax);
+    p.line(xs.map((x) => x * 1000), band, C.grey, 2).line([0, 50], [-top, -top], C.grey, 2);
+    p.line(xs.map((x) => x * 1000), pm, pm.some((q) => q < -1e-9) ? C.red : C.lime, 2.5);
+    out(`${v.K > 1.001 ? 'Converging film: oil is dragged into the wedge.' : v.K < 0.999 ? 'Diverging film: the model predicts suction (red), which real oil cannot hold; it cavitates.' : 'Parallel film: no pressure at all.'} Peak ${nf(2).format(Math.max(...pm))} MPa, load ${nf(1).format(W / 1000)} kN per metre of width (50 mm pad, μ = 0.03 Pa·s). Best taper ≈ 2.2.`);
+  },
+});
+
+// 15.08 two involute gears in mesh
+def('gearmesh', {
+  controls: [{ k: 'th', label: 'Driver rotation (°)', min: 0, max: 40, step: 0.5, v: 5, f: 1 }, { k: 'z1', label: 'Driver teeth', min: 12, max: 30, step: 1, v: 14, f: 0 }, { k: 'z2', label: 'Driven teeth', min: 12, max: 40, step: 1, v: 24, f: 0 }],
+  draw(p, v, out) {
+    const m = 1, phi = 20 * Math.PI / 180, inv = (a) => Math.tan(a) - a, d2r = Math.PI / 180;
+    const r1 = m * v.z1 / 2, r2 = m * v.z2 / 2, a = r1 + r2, cx1 = -a / 2 + 0 * r1, cx2 = cx1 + a;
+    const gear = (z, cx, rot, color) => {
+      const r = m * z / 2, rb = r * Math.cos(phi), ra = r + m, rf = r - 1.25 * m, half = Math.PI / (2 * z) + inv(phi);
+      const xs = [], ys = [];
+      for (let k = 0; k < z; k++) {
+        const c = rot + 2 * Math.PI * k / z, prof = [];
+        for (const rr of linspace(Math.max(rb, rf), ra, 10)) prof.push([rr, half - inv(Math.acos(Math.min(1, rb / rr)))]);
+        const pts = [[rf, c - half - 0.02], ...prof.map(([rr, ps]) => [rr, c - ps]), ...prof.reverse().map(([rr, ps]) => [rr, c + ps]), [rf, c + half + 0.02], [rf, c + Math.PI / z]];
+        pts.forEach(([rr, ang]) => { xs.push(cx + rr * Math.cos(ang)); ys.push(rr * Math.sin(ang)); });
+      }
+      xs.push(xs[0]); ys.push(ys[0]); p.line(xs, ys, color, 1.6);
+    };
+    const R = a / 2 + r2 * 0.15 + 2;
+    sqframe(p, Math.max(R, r2 + 3), 'x (mm)', 'y (mm)');
+    const t1 = v.th * d2r, t2 = -t1 * v.z1 / v.z2 + Math.PI + Math.PI / v.z2;
+    gear(v.z1, cx1, t1, C.paper); gear(v.z2, cx2, t2, C.cyan);
+    const rb1 = r1 * Math.cos(phi), rb2 = r2 * Math.cos(phi);
+    const T1 = [cx1 + rb1 * Math.cos(phi), rb1 * Math.sin(phi)], T2 = [cx2 - rb2 * Math.cos(phi), -rb2 * Math.sin(phi)];
+    p.line([T1[0], T2[0]], [T1[1], T2[1]], C.lime, 2);
+    const th = linspace(0, 2 * Math.PI, 80);
+    p.line(th.map((q) => cx1 + rb1 * Math.cos(q)), th.map((q) => rb1 * Math.sin(q)), C.grey, 1, [3, 3]).line(th.map((q) => cx2 + rb2 * Math.cos(q)), th.map((q) => rb2 * Math.sin(q)), C.grey, 1, [3, 3]);
+    // contact point of the flank pair nearest the pitch point: it moves along the line of action by rb1 times the rotation
+    const pb = 2 * Math.PI * rb1 / v.z1, ra1 = r1 + m, ra2 = r2 + m;
+    const sA = -Math.sqrt(ra2 * ra2 - rb2 * rb2) + r2 * Math.sin(phi), sB = Math.sqrt(ra1 * ra1 - rb1 * rb1) - r1 * Math.sin(phi);
+    const dir = [Math.sin(phi), -Math.cos(phi)], P0 = [cx1 + r1, 0];
+    // driving flank of tooth k meets the line of action at signed distance u from the pitch point (involute geometry)
+    const cps = []; for (let k = -4; k <= 4; k++) { const u = pb / 4 - rb1 * t1 + k * pb; if (u >= sA - 1e-9 && u <= sB + 1e-9) cps.push([P0[0] + u * dir[0], P0[1] + u * dir[1]]); }
+    if (cps.length) p.dots(cps.map((c) => c[0]), cps.map((c) => c[1]), C.red, 3.5);
+    const eps = (sB - sA) / pb;
+    out(`Ratio ${v.z1}:${v.z2}, so the driven gear turns ${nf(2).format(v.th * v.z1 / v.z2)}° the other way. Contact ratio ${nf(2).format(eps)}: ${cps.length} tooth pair${cps.length === 1 ? '' : 's'} in contact now. Module 1 mm, 20° pressure angle; dashed circles are the base circles.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
