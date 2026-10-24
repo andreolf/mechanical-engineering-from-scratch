@@ -2819,6 +2819,55 @@ def('slicelayers', {
   },
 });
 
+// small deterministic normal generator for the statistics widgets
+function gaussSeq(seed) { let s = seed >>> 0; const u = () => ((s = (s * 1664525 + 1013904223) >>> 0) + 0.5) / 4294967296; return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u()); }
+
+// 09.28 uncertainty budget for a micrometer reading
+def('ubudget', {
+  controls: [{ k: 'n', label: 'Number of readings', min: 1, max: 30, step: 1, v: 10, f: 0 }, { k: 'dT', label: 'Temperature band ± (°C)', min: 0, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'ab', label: 'Abbe offset (mm) at 50 µrad tilt', min: 0, max: 60, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const rows = [['repeatability', 1.197 / Math.sqrt(v.n)], ['resolution', 1 / Math.sqrt(12)], ['calibration', 1.0], ['temperature', 25 * 11.5e-6 * v.dT / Math.sqrt(3) * 1000], ['Abbe', v.ab * 50e-6 / Math.sqrt(3)]];
+    const uc = Math.sqrt(rows.reduce((a, r) => a + r[1] * r[1], 0));
+    p.frame({ x: [0, 3], y: [0, rows.length + 1], xlabel: 'standard uncertainty, µm', ylabel: '' });
+    rows.forEach(([nm, u], i) => { const y = rows.length - i + 0.5; p.rect(0, Math.min(u, 3), y - 0.3, y + 0.3, u * u / (uc * uc) > 0.4 ? C.amber : C.lime).text(`${nm} ${nf(2).format(u)}`, Math.min(u, 2.2) + 0.05, y - 0.1, C.paper); });
+    p.rect(0, Math.min(uc, 3), 0.2, 0.8, C.cyan).text(`combined ${nf(2).format(uc)}`, Math.min(uc, 2) + 0.05, 0.4, C.paper);
+    out(`Combined u_c = √(Σu²) = ${nf(2).format(uc)} µm; report 25.0049 mm ± ${nf(1).format(2 * uc)} µm (k = 2, about 95 %). Amber marks the dominant term: improve that one first. More readings only shrink repeatability, as 1/√n.`);
+  },
+});
+
+// 09.29 X-bar control chart with a mean shift
+def('spcchart', {
+  controls: [{ k: 'sh', label: 'Mean shift after subgroup 20 (µm)', min: 0, max: 10, step: 0.5, v: 4, f: 1 }, { k: 'sg', label: 'Process σ (µm)', min: 1, max: 8, step: 0.1, v: 4, f: 1 }],
+  draw(p, v, out) {
+    const g = gaussSeq(11), mu = 4, xb = [], R = [];
+    for (let i = 0; i < 40; i++) { const xs = []; for (let k = 0; k < 5; k++) xs.push(mu + (i >= 20 ? v.sh : 0) + v.sg * g()); xb.push(xs.reduce((a, b) => a + b) / 5); R.push(Math.max(...xs) - Math.min(...xs)); }
+    const xbb = xb.slice(0, 20).reduce((a, b) => a + b) / 20, Rb = R.slice(0, 20).reduce((a, b) => a + b) / 20, ucl = xbb + 0.577 * Rb, lcl = xbb - 0.577 * Rb, s = Rb / 2.326;
+    p.frame({ x: [0, 41], y: [-20, 25], xlabel: 'subgroup', ylabel: 'mean − 25.000 mm, µm' });
+    p.line([0, 41], [20, 20], C.red, 1, [2, 2]).line([0, 41], [-20, -20], C.red, 1, [2, 2]).line([0, 41], [ucl, ucl], C.amber, 1.5, [5, 4]).line([0, 41], [lcl, lcl], C.amber, 1.5, [5, 4]).line([0, 41], [xbb, xbb], C.grey, 1);
+    p.line(xb.map((_, i) => i + 1), xb, C.lime, 1.5);
+    xb.forEach((x, i) => p.dots([i + 1], [x], x > ucl || x < lcl ? C.red : C.lime, 3.5));
+    const first = xb.findIndex((x, i) => i >= 20 && (x > ucl || x < lcl)), cpk = Math.min(20 - xbb, xbb + 20) / (3 * s), cp = 40 / (6 * s);
+    out(`Limits from the first 20 subgroups: x̄̄ ± A₂R̄ (amber). Tolerance ±20 µm (red). σ̂ = R̄/d₂ = ${nf(2).format(s)} µm, Cp = ${nf(2).format(cp)}, Cpk = ${nf(2).format(cpk)}. ${v.sh > 0 ? (first >= 0 ? `The shift is flagged at subgroup ${first + 1}.` : 'The shift is not flagged yet: small shifts need run rules or CUSUM.') : 'In control.'}`);
+  },
+});
+
+// 09.30 characteristic value from a sample
+def('charvalue', {
+  controls: [{ k: 'n', label: 'Culms tested', min: 5, max: 100, step: 1, v: 30, f: 0 }, { k: 'cv', label: 'Coefficient of variation (%)', min: 5, max: 30, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const g = gaussSeq(21), cov = v.cv / 100, sl = Math.sqrt(Math.log(1 + cov * cov)), ml = Math.log(55) - sl * sl / 2, x = [];
+    for (let i = 0; i < v.n; i++) x.push(Math.exp(ml + sl * g()));
+    const m = x.reduce((a, b) => a + b) / v.n, s = Math.sqrt(x.reduce((a, b) => a + (b - m) ** 2, 0) / (v.n - 1)), p5 = m - 1.645 * s, fk = p5 * (1 - 2.7 * (s / m) / Math.sqrt(v.n)), tru = Math.exp(ml - 1.6449 * sl);
+    const bins = 16, lo = 20, hi = 100, w = (hi - lo) / bins, hist = new Array(bins).fill(0); x.forEach((xi) => { const b = Math.floor((xi - lo) / w); if (b >= 0 && b < bins) hist[b]++; });
+    const top = Math.max(...hist) / (v.n * w) * 1.3;
+    p.frame({ x: [lo, hi], y: [0, top], xlabel: 'compressive strength, MPa', ylabel: 'density' });
+    hist.forEach((c, i) => p.rect(lo + i * w, lo + (i + 0.92) * w, 0, c / (v.n * w), 'rgba(238,255,65,0.45)'));
+    const xs = linspace(lo, hi, 200); p.line(xs, xs.map((t) => Math.exp(-((t - m) ** 2) / (2 * s * s)) / (s * Math.sqrt(2 * Math.PI))), C.cyan, 1.5);
+    p.line([tru, tru], [0, top], C.grey, 1, [4, 4]).line([p5, p5], [0, top], C.amber, 1.5).line([fk, fk], [0, top], C.red, 2);
+    out(`Sample mean ${nf(1).format(m)} MPa, s ${nf(1).format(s)}. 5th percentile m − 1.645s = ${nf(1).format(p5)} (amber); with the small-sample factor f_k = ${nf(1).format(fk)} MPa (red). True 5th percentile ${nf(1).format(tru)} (grey). Design value 0.8 f_k/1.3 = ${nf(1).format(0.8 * fk / 1.3)} MPa. More tests or less scatter: a higher, more honest design value.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
