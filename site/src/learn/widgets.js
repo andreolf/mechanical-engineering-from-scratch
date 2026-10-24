@@ -971,6 +971,12 @@ function sqAt(p, cx, cy, R, xlabel = 'x', ylabel = 'y') {
   p.size(); const asp = (p.w - p.pad.l - p.pad.r) / (p.h - p.pad.t - p.pad.b);
   return asp >= 1 ? p.frame({ x: [cx - R * asp, cx + R * asp], y: [cy - R, cy + R], xlabel, ylabel }) : p.frame({ x: [cx - R, cx + R], y: [cy - R / asp, cy + R / asp], xlabel, ylabel });
 }
+// equal-scale frame that fits a box of half-sizes hx, hy around (cx, cy)
+function fitAt(p, cx, cy, hx, hy, xlabel = 'x', ylabel = 'y') {
+  p.size(); const asp = (p.w - p.pad.l - p.pad.r) / (p.h - p.pad.t - p.pad.b);
+  if (hx / hy > asp) hy = hx / asp; else hx = hy * asp;
+  return p.frame({ x: [cx - hx, cx + hx], y: [cy - hy, cy + hy], xlabel, ylabel });
+}
 // small support symbols for beams (planar)
 function drawSupport(p, kind, x, y, s, dir = -1) {
   if (kind === 'none') return;
@@ -1062,6 +1068,145 @@ def('supports', {
     drawSupport(p, v.a, 0, 0, 0.3, -1); drawSupport(p, v.b, 4, 0, 0.3, 1);
     const dof = 3 - rank, cls = dof > 0 ? `a mechanism with ${dof} free motion${dof > 1 ? 's' : ''}` : n > 3 ? `statically indeterminate (degree ${n - 3})` : 'statically determinate';
     out(`${n} reaction component${n === 1 ? '' : 's'}, of which ${rank} independent. The beam is ${cls}. ${v.a === 'roller' && v.b === 'roller' ? 'Two rollers cannot stop it sliding sideways.' : ''}`);
+  },
+});
+
+// dense Gaussian elimination with partial pivoting; returns null when singular
+function linSolve(A0, b0) {
+  const n = b0.length, A = A0.map((r, i) => [...r, b0[i]]);
+  for (let c = 0; c < n; c++) {
+    let piv = c; for (let i = c + 1; i < n; i++) if (Math.abs(A[i][c]) > Math.abs(A[piv][c])) piv = i;
+    if (Math.abs(A[piv][c]) < 1e-9) return null;
+    [A[c], A[piv]] = [A[piv], A[c]];
+    for (let i = c + 1; i < n; i++) { const f = A[i][c] / A[c][c]; for (let k = c; k <= n; k++) A[i][k] -= f * A[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) { let s = A[i][n]; for (let k = i + 1; k < n; k++) s -= A[i][k] * x[k]; x[i] = s / A[i][i]; }
+  return x;
+}
+function rankOf(M0) {
+  const M = M0.map((r) => r.slice()); if (!M.length) return 0; const nc = M[0].length; let rank = 0;
+  for (let c = 0; c < nc && rank < M.length; c++) {
+    let piv = -1, best = 1e-9; for (let i = rank; i < M.length; i++) if (Math.abs(M[i][c]) > best) { best = Math.abs(M[i][c]); piv = i; }
+    if (piv < 0) continue; [M[rank], M[piv]] = [M[piv], M[rank]];
+    for (let i = 0; i < M.length; i++) if (i !== rank) { const f = M[i][c] / M[rank][c]; for (let k = c; k < nc; k++) M[i][k] -= f * M[rank][k]; }
+    rank++;
+  }
+  return rank;
+}
+// method of joints for a plane truss; supports [node, dx, dy]; loads {node: [Fx, Fy]}; returns member forces or null
+function trussSolve(nodes, members, supports, loads) {
+  const n = nodes.length, m = members.length, nu = m + supports.length;
+  if (2 * n !== nu) return null;
+  const A = Array.from({ length: 2 * n }, () => new Array(nu).fill(0)), b = new Array(2 * n).fill(0);
+  members.forEach(([i, j], k) => { const dx = nodes[j][0] - nodes[i][0], dy = nodes[j][1] - nodes[i][1], L = Math.hypot(dx, dy); A[2 * i][k] += dx / L; A[2 * i + 1][k] += dy / L; A[2 * j][k] -= dx / L; A[2 * j + 1][k] -= dy / L; });
+  supports.forEach(([nd, dx, dy], k) => { A[2 * nd][m + k] += dx; A[2 * nd + 1][m + k] += dy; });
+  Object.entries(loads).forEach(([nd, F]) => { b[2 * nd] -= F[0]; b[2 * nd + 1] -= F[1]; });
+  return linSolve(A, b);
+}
+function drawTruss(p, nodes, members, F, scale, removed = -1) {
+  members.forEach(([i, j], k) => {
+    if (k === removed) { p.line([nodes[i][0], nodes[j][0]], [nodes[i][1], nodes[j][1]], C.red, 1, [3, 4]); return; }
+    if (!F) { p.line([nodes[i][0], nodes[j][0]], [nodes[i][1], nodes[j][1]], C.grey, 2); return; }
+    const f = F[k], col = Math.abs(f) < 1e-6 * scale ? C.grey : f > 0 ? C.cyan : C.amber;
+    p.line([nodes[i][0], nodes[j][0]], [nodes[i][1], nodes[j][1]], col, 1.5 + 6 * Math.min(1, Math.abs(f) / scale));
+  });
+  p.dots(nodes.map((q) => q[0]), nodes.map((q) => q[1]), C.paper, 3.5);
+}
+
+// 05.06 ladder free-body diagram
+def('ladder', {
+  controls: [{ k: 'th', label: 'Ladder angle to the floor (°)', min: 45, max: 85, step: 1, v: 65, f: 0 }, { k: 's', label: 'Person, distance up the ladder (m)', min: 0, max: 5, step: 0.05, v: 3.75, f: 2 }, { k: 'mu', label: 'Floor friction μ', min: 0.1, max: 0.6, step: 0.01, v: 0.25, f: 2 }],
+  draw(p, v, out) {
+    const L = 5, W = 200, P = 800, th = v.th * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th);
+    const Nf = W + P, Nw = (W * L / 2 * c + P * v.s * c) / (L * sn), Ff = Nw, slips = Ff > v.mu * Nf;
+    const T = [L * c, L * sn], k = 0.0022;
+    sqAt(p, 1.6, 2.4, 2.9, 'x, m', 'y, m');
+    p.line([T[0], T[0]], [-0.2, 5.4], C.grey, 3).line([-1.2, T[0] + 0.3], [0, 0], C.grey, 3);
+    p.line([0, T[0]], [0, T[1]], slips ? C.red : C.paper, 4);
+    const pm = [v.s / L * T[0], v.s / L * T[1]], mid = [T[0] / 2, T[1] / 2];
+    arrow(p, mid[0], mid[1], mid[0], mid[1] - W * k, C.grey, 2); arrow(p, pm[0], pm[1], pm[0], pm[1] - P * k, C.grey, 2.5);
+    arrow(p, T[0], T[1], T[0] - Nw * k, T[1], C.cyan, 2.5);
+    arrow(p, 0, -Nf * k, 0, 0, C.cyan, 2.5); arrow(p, -Ff * k, 0.05, 0, 0.05, slips ? C.red : C.lime, 2.5);
+    p.dots([pm[0]], [pm[1]], C.amber, 6);
+    out(`Wall push ${nf(1).format(Nw)} N, floor normal ${nf(0).format(Nf)} N, friction needed ${nf(1).format(Ff)} N against ${nf(1).format(v.mu * Nf)} N available (μN). ${slips ? 'Not enough friction: the ladder slips.' : 'Friction is sufficient: the ladder holds.'} Higher up and flatter both need more friction.`);
+  },
+});
+
+// 05.07 beam reactions with movable loads
+def('beamload', {
+  controls: [{ k: 'x1', label: 'Load P₁ position (m)', min: 0, max: 8, step: 0.1, v: 2, f: 1 }, { k: 'P1', label: 'P₁ (kN)', min: 0, max: 40, step: 1, v: 20, f: 0 }, { k: 'P2', label: 'Tip load P₂ at 8 m (kN)', min: 0, max: 30, step: 1, v: 10, f: 0 }, { type: 'check', k: 'q', label: 'Uniform load 5 kN/m on the span', v: 1 }],
+  draw(p, v, out) {
+    const q = v.q ? 5 : 0, Rb = (v.P1 * v.x1 + q * 6 * 3 + v.P2 * 8) / 6, Ra = v.P1 + q * 6 + v.P2 - Rb, k = 0.035;
+    p.frame({ x: [-0.8, 8.8], y: [-2.6, 2.6], xlabel: 'x, m', ylabel: '' });
+    if (q) { poly(p, [[0, 0.1], [0, 0.55], [6, 0.55], [6, 0.1]], C.cyan, 'rgba(92,200,255,0.12)'); for (let x = 0; x <= 6; x += 0.75) arrow(p, x, 0.55, x, 0.12, C.cyan, 1); }
+    p.line([0, 8], [0, 0], C.paper, 5); drawSupport(p, 'pin', 0, -0.05, 0.25); drawSupport(p, 'roller', 6, -0.05, 0.25);
+    if (v.P1 > 0) arrow(p, v.x1, 0.15 + v.P1 * k, v.x1, 0.1, C.amber, 3);
+    if (v.P2 > 0) arrow(p, 8, 0.15 + v.P2 * k, 8, 0.1, C.amber, 3);
+    const ra = (x, R) => { if (Math.abs(R) < 1e-9) return; if (R > 0) arrow(p, x, -0.45 - R * k * 0.6, x, -0.45, C.lime, 3); else arrow(p, x, -0.45, x, -0.45 + R * k * 0.6, C.red, 3); };
+    ra(0, Ra); ra(6, Rb);
+    out(`Reactions: Rₐ = ${nf(2).format(Ra)} kN at the pin, R_b = ${nf(2).format(Rb)} kN at the roller (lime up, red down). From ΣM about the pin: 6 R_b = ${v.P1} · ${nf(1).format(v.x1)} + ${q * 6} · 3 + ${v.P2} · 8.${Ra < 0 ? ' The pin must pull down: the overhang load tips the beam, so the support needs a tie-down.' : ''}`);
+  },
+});
+
+// 05.08 determinacy of a two-part beam with an optional hinge
+def('determinacy', {
+  controls: [{ type: 'select', k: 'a', label: 'Left support (x = 0)', options: ['none', 'roller', 'pin', 'clamp'], v: 'clamp' }, { type: 'select', k: 'm', label: 'Middle support (x = 6)', options: ['none', 'roller', 'pin'], v: 'none' }, { type: 'select', k: 'b', label: 'Right support (x = 10)', options: ['none', 'roller', 'pin', 'clamp'], v: 'roller' }, { type: 'check', k: 'h', label: 'Hinge at x = 4 (two bodies)', v: 1 }],
+  draw(p, v, out) {
+    const nb = v.h ? 2 : 1, body = (x) => (v.h && x > 4 ? 1 : 0), cols = [];
+    const add = (kind, x) => { const bd = body(x), col = (fx, fy, mz) => { const c = new Array(3 * nb).fill(0); c[3 * bd] = fx; c[3 * bd + 1] = fy; c[3 * bd + 2] = x * fy + mz; return c; };
+      if (kind === 'roller') cols.push(col(0, 1, 0)); if (kind === 'pin' || kind === 'clamp') { cols.push(col(1, 0, 0)); cols.push(col(0, 1, 0)); } if (kind === 'clamp') cols.push(col(0, 0, 1)); };
+    add(v.a, 0); add(v.m, 6); add(v.b, 10);
+    if (v.h) { const hx = [1, 0, 0, -1, 0, 0], hy = [0, 1, 4, 0, -1, -4]; cols.push(hx, hy); }
+    const rows = Array.from({ length: 3 * nb }, (_, i) => cols.map((c) => c[i])), rank = cols.length ? rankOf(rows) : 0;
+    const mech = 3 * nb - rank, indet = cols.length - rank;
+    p.frame({ x: [-1, 11], y: [-2.2, 2.2], xlabel: 'x, m', ylabel: '' });
+    p.line([0, 4], [0, 0], C.lime, 5).line([4, 10], [0, 0], v.h ? C.cyan : C.lime, 5);
+    if (v.h) p.dots([4], [0], C.paper, 6);
+    drawSupport(p, v.a, 0, 0, 0.35, -1); drawSupport(p, v.m, 6, 0, 0.35); drawSupport(p, v.b, 10, 0, 0.35, 1);
+    const verdict = mech > 0 ? `a mechanism with ${mech} free motion${mech > 1 ? 's' : ''}${indet ? ` (and ${indet} redundant reaction${indet > 1 ? 's' : ''})` : ''}` : indet > 0 ? `${indet}× statically indeterminate` : 'statically determinate';
+    out(`${nb} bod${nb > 1 ? 'ies' : 'y'}: ${3 * nb} equations, ${cols.length} unknowns (hinge forces included), rank ${rank}. The structure is ${verdict}.`);
+  },
+});
+
+// 05.09 Warren truss: member forces, delete a member
+const warrenNodes = (() => { const a = 4, h = a * Math.sqrt(3) / 2, n = []; for (let i = 0; i <= 4; i++) n.push([i * a, 0]); for (let i = 0; i < 4; i++) n.push([(i + 0.5) * a, h]); return n; })();
+const warrenMembers = (() => { const m = []; for (let i = 0; i < 4; i++) m.push([i, i + 1]); for (let i = 0; i < 3; i++) m.push([5 + i, 6 + i]); for (let i = 0; i < 4; i++) { m.push([i, 5 + i]); m.push([5 + i, i + 1]); } return m; })();
+def('truss', {
+  controls: [{ type: 'select', k: 'at', label: 'Load at node', options: ['bottom 1', 'bottom 2', 'bottom 3', 'top 5', 'top 6', 'top 7', 'top 8'], v: 'bottom 2' }, { k: 'P', label: 'Load (kN)', min: 0, max: 40, step: 1, v: 20, f: 0 }, { type: 'select', k: 'del', label: 'Delete member', options: ['none', ...warrenMembers.map(([i, j]) => `${i}-${j}`)], v: 'none' }],
+  draw(p, v, out) {
+    const node = +v.at.split(' ')[1], removed = v.del === 'none' ? -1 : warrenMembers.findIndex(([i, j]) => `${i}-${j}` === v.del);
+    const mem = warrenMembers.filter((_, k) => k !== removed), sup = [[0, 1, 0], [0, 0, 1], [4, 0, 1]];
+    const F = trussSolve(warrenNodes, mem, sup, { [node]: [0, -v.P] });
+    fitAt(p, 8, 1.4, 8.8, 2.6, 'x, m', 'y, m');
+    drawSupport(p, 'pin', 0, 0, 0.45); drawSupport(p, 'roller', 16, 0, 0.45);
+    const full = F ? warrenMembers.map((_, k) => (k === removed ? 0 : F[k < removed || removed < 0 ? k : k - 1])) : null;
+    drawTruss(p, warrenNodes, warrenMembers, full, Math.max(1, v.P), removed);
+    if (v.P > 0) arrow(p, warrenNodes[node][0], warrenNodes[node][1] + 0.4 + v.P * 0.04, warrenNodes[node][0], warrenNodes[node][1] + 0.1, C.lime, 3);
+    warrenNodes.forEach((q, i) => p.text(String(i), q[0] + 0.15, q[1] + (q[1] > 0 ? 0.3 : -0.45), C.grey));
+    if (!full) { out(`Without member ${v.del} the truss has ${mem.length} members and 3 reactions for ${2 * warrenNodes.length} joint equations: a mechanism. The bridge collapses.`); return; }
+    let big = 0; full.forEach((f, k) => { if (Math.abs(f) > Math.abs(full[big])) big = k; });
+    const [bi, bj] = warrenMembers[big];
+    out(`Cyan = tension, amber = compression, width ∝ force, grey = zero force. Largest: member ${bi}-${bj} at ${nf(2).format(full[big])} kN. ${removed >= 0 ? 'This member was carrying zero force for this load, so the truss stands. For other loads it would fail.' : 'Delete a member to break the load path.'}`);
+  },
+});
+
+// 05.10 method of sections on a Pratt truss
+const prattNodes = (() => { const n = []; for (let i = 0; i <= 6; i++) n.push([3 * i, 0]); for (let i = 1; i <= 5; i++) n.push([3 * i, 4]); return n; })();
+const prattMembers = (() => { const T = (i) => 6 + i, m = []; for (let i = 0; i < 6; i++) m.push([i, i + 1]); for (let i = 1; i < 5; i++) m.push([T(i), T(i + 1)]); m.push([0, T(1)], [6, T(5)]); for (let i = 1; i < 6; i++) m.push([i, T(i)]); m.push([T(1), 2], [T(2), 3], [T(4), 3], [T(5), 4]); return m; })();
+def('section', {
+  controls: [{ k: 'c', label: 'Cut through panel', min: 1, max: 6, step: 1, v: 3, f: 0 }, { k: 'P', label: 'Load at each bottom node (kN)', min: 0, max: 30, step: 1, v: 12, f: 0 }],
+  draw(p, v, out) {
+    const loads = {}; for (let i = 1; i < 6; i++) loads[i] = [0, -v.P];
+    const F = trussSolve(prattNodes, prattMembers, [[0, 1, 0], [0, 0, 1], [6, 0, 1]], loads), xc = 3 * v.c - 1.5;
+    fitAt(p, 9, 1.8, 9.8, 3.2, 'x, m', 'y, m');
+    drawSupport(p, 'pin', 0, 0, 0.5); drawSupport(p, 'roller', 18, 0, 0.5);
+    drawTruss(p, prattNodes, prattMembers, F, Math.max(1, 3 * v.P));
+    for (let i = 1; i < 6; i++) if (v.P > 0) arrow(p, 3 * i, -0.1, 3 * i, -0.4 - v.P * 0.05, C.lime, 1.5);
+    p.line([xc + 0.6, xc - 0.6], [5, -1.2], C.red, 2, [6, 4]);
+    const cut = prattMembers.map((mb, k) => [mb, k]).filter(([[i, j]]) => (prattNodes[i][0] - xc) * (prattNodes[j][0] - xc) < 0);
+    const name = (i) => (i <= 6 ? `B${i}` : `T${i - 6}`);
+    out(`The cut crosses ${cut.length} members: ${cut.map(([[i, j], k]) => `${name(i)}-${name(j)} ${nf(2).format(F[k])} kN`).join(', ')}. Each follows from equilibrium of the left part alone, e.g. the bottom chord from moments about the top node where the other two cut members meet.`);
   },
 });
 
