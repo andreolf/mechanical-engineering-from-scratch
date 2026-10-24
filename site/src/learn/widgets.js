@@ -3328,6 +3328,59 @@ def('contraction', {
   },
 });
 
+// 11.07 venturi: speed and pressure along a contraction
+def('venturipipe', {
+  controls: [{ k: 'Q', label: 'Flow rate (L/s)', min: 1, max: 25, step: 0.5, v: 12, f: 1 }, { k: 'd', label: 'Throat diameter (mm)', min: 30, max: 95, step: 1, v: 50, f: 0 }],
+  draw(p, v, out) {
+    const rho = 998, D = 0.1, d = v.d / 1000, Q = v.Q / 1000, p1 = 200;     // kPa at the inlet
+    const Dx = (x) => (x < 1 ? D : x < 2 ? D - (D - d) * 0.5 * (1 - Math.cos(Math.PI * (x - 1))) : x < 2.5 ? d : x < 4.5 ? d + (D - d) * 0.5 * (1 - Math.cos(Math.PI * (x - 2.5) / 2)) : D);
+    const xs = linspace(0, 5.5, 221), u = xs.map((x) => Q / (Math.PI * Dx(x) ** 2 / 4)), pr = u.map((uu) => p1 + 0.5 * rho * (u[0] ** 2 - uu * uu) / 1000);
+    const pmin = Math.min(...pr);
+    p.frame({ x: [0, 5.5], y: [Math.min(0, pmin - 20), 270], xlabel: 'distance, m', ylabel: 'pressure, kPa (pipe outline above)' });
+    p.line(xs, xs.map((x) => 245 + Dx(x) * 120), C.paper, 1.5).line(xs, xs.map((x) => 245 - Dx(x) * 120), C.paper, 1.5);
+    p.line(xs, pr, C.cyan, 2.5);
+    [0.5, 2.25, 5].forEach((x) => { const i = Math.round(x / 5.5 * 220); p.dots([x], [pr[i]], C.amber, 5).text(`${nf(2).format(u[i])} m/s`, x - 0.3, pr[i] - 12, C.amber); });
+    const dp = pr[0] - pmin;
+    out(`Bernoulli: p + ½ρV² is constant along the streamline. The throat speed is ${nf(2).format(Math.max(...u))} m/s and the pressure drops by ${nf(2).format(dp)} kPa, a ${nf(0).format(dp * 1e6 / ((13546 - 998) * 9.81))} mm mercury reading. Ideal flow recovers it fully downstream; a real venturi loses 10–20 % of it.${pmin < 2.3 ? ' Throat pressure below vapour pressure: the water would cavitate.' : ''}`);
+  },
+});
+
+// 11.08 draining tank
+def('draintank', {
+  controls: [{ type: 'select', k: 'k', label: 'Tank shape', options: ['Cylinder', 'Inverted cone'], v: 'Cylinder' }, { k: 'dh', label: 'Outlet diameter (mm)', min: 10, max: 60, step: 1, v: 25, f: 0 }, { k: 't', label: 'Time (min)', min: 0, max: 40, step: 0.5, v: 10, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Cylinder', 'Inverted cone'].indexOf(v.k), R = 0.6, H = 1.5, a = Math.PI * (v.dh / 1000) ** 2 / 4, k = 0.61 * a * Math.sqrt(2 * 9.81);
+    const Tcyl = Math.PI * R * R / k * 2 * Math.sqrt(H), Tcone = 0.4 * Math.PI * R * R / k * Math.sqrt(H) / (H * H) * H * H;
+    // closed forms for h(t): cylinder sqrt(h) = sqrt(H) - k t / (2 A); cone h^2.5 = H^2.5 - 2.5 k H^2 t / (pi R^2)
+    const hc = (t) => Math.max(0, Math.sqrt(H) - k * t / (2 * Math.PI * R * R)) ** 2, hk = (t) => Math.max(0, H ** 2.5 - 2.5 * k * H * H * t / (Math.PI * R * R)) ** 0.4;
+    const hf = sel === 0 ? hc : hk, T = sel === 0 ? Tcyl : Tcone, t = v.t * 60, h = hf(t);
+    p.frame({ x: [0, 45], y: [0, 1.7], xlabel: 'time, min', ylabel: 'water depth, m' });
+    const ts = linspace(0, 45, 181);
+    p.line(ts, ts.map((m) => hf(m * 60)), C.cyan, 2.5).dots([v.t], [h], C.lime, 7);
+    const x0 = 36, w = 7; if (sel === 0) { poly(p, [[x0, 0], [x0 + w, 0], [x0 + w, H], [x0, H]], C.paper, null, 1.5); p.rect(x0, x0 + w, 0, h, 'rgba(90,200,250,0.6)'); }
+    else { poly(p, [[x0 + w / 2, 0], [x0 + w, H], [x0, H]], C.paper, null, 1.5); poly(p, [[x0 + w / 2, 0], [x0 + w / 2 + w / 2 * h / H, h], [x0 + w / 2 - w / 2 * h / H, h]], 'rgba(90,200,250,0.9)', 'rgba(90,200,250,0.6)', 1); }
+    out(`Depth ${nf(3).format(h)} m, outflow speed √(2gh) = ${nf(2).format(Math.sqrt(2 * 9.81 * h))} m/s. Empty after ${nf(1).format(T / 60)} min. The level falls slower and slower in the cylinder because the driving head shrinks; the cone speeds up at the end because its area shrinks too.`);
+  },
+});
+
+// 11.09 jet on a vane
+def('jetvane', {
+  controls: [{ k: 'th', label: 'Turning angle (°)', min: 0, max: 180, step: 5, v: 90, f: 0 }, { k: 'V', label: 'Jet speed (m/s)', min: 2, max: 40, step: 1, v: 20, f: 0 }, { k: 'u', label: 'Vane speed (m/s)', min: 0, max: 20, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const rho = 998, A = Math.PI * 0.03 ** 2 / 4, Vr = Math.max(v.V - v.u, 0), m = rho * A * Vr, th = v.th * Math.PI / 180;
+    const Fx = m * Vr * (1 - Math.cos(th)), Fy = -m * Vr * Math.sin(th);
+    p.frame({ x: [-5, 5], y: [-4, 4], xlabel: '', ylabel: '' });
+    arrow(p, -4.5, 0, 0, 0, C.cyan, 4);
+    const R = 1.2, arc = linspace(0, th, 30);
+    p.line(arc.map((a) => R * Math.sin(a)), arc.map((a) => R - R * Math.cos(a)), C.paper, 3);
+    arrow(p, R * Math.sin(th), R - R * Math.cos(th), R * Math.sin(th) + 2.5 * Math.cos(th), R - R * Math.cos(th) + 2.5 * Math.sin(th), C.cyan, 4);
+    const s = 3 / Math.max(1, 2 * rho * A * 40 * 40) * 1;
+    arrow(p, 0.5, -0.5, 0.5 + Fx * s * 3, -0.5 + Fy * s * 3, C.red, 3);
+    p.text('force on vane', 0.6 + Fx * s * 3, -0.9 + Fy * s * 3, C.red);
+    out(`Mass flow meeting the vane ${nf(2).format(m)} kg/s at relative speed ${nf(1).format(Vr)} m/s. Force on the vane F_x = ṁV_r(1 − cos θ) = ${nf(1).format(Fx)} N, F_y = ${nf(1).format(Fy)} N. A flat plate (90°) feels ṁV; turning the jet right back (180°) doubles it, the idea behind the Pelton bucket.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
