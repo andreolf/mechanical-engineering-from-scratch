@@ -1883,6 +1883,93 @@ def('rocket', {
   },
 });
 
+// 07.06 system of particles with the centre of mass tracked
+def('comtracker', {
+  controls: [{ k: 't', label: 'Time', min: 0, max: 6, step: 0.05, v: 3, f: 2 }, { type: 'select', k: 'set', label: 'Starting set', options: ['five bodies', 'binary pair', 'three bodies'], v: 'five bodies' }, { type: 'check', k: 'g', label: 'Add uniform gravity (external force)', v: 0 }],
+  draw(p, v, out) {
+    const sets = { 'five bodies': [[1.5, -0.6, 0.3, 0.2, 0.1], [0.8, 0.5, -0.4, -0.3, 0.2], [1.0, 0.1, 0.7, 0.1, -0.35], [0.6, -0.8, -0.5, 0.35, 0.3], [1.2, 0.7, 0.4, -0.1, 0.25]], 'binary pair': [[2, -0.3, 0, 0, -0.6], [1, 0.6, 0, 0.1, 1.2]], 'three bodies': [[1, -0.7, 0, 0.1, -0.5], [1, 0.7, 0, 0.1, 0.5], [1, 0, 0.6, -0.2, 0]] };
+    const B = sets[v.set].map((q) => ({ m: q[0], x: q[1], y: q[2], vx: q[3], vy: q[4] })), M = B.reduce((s, b) => s + b.m, 0), g = v.g ? -0.4 : 0, dt = 0.002;
+    const acc = () => B.map((b, i) => { let ax = 0, ay = g; B.forEach((c, j) => { if (i === j) return; const dx = c.x - b.x, dy = c.y - b.y, r2 = dx * dx + dy * dy + 0.0025, f = c.m / (r2 * Math.sqrt(r2)); ax += f * dx; ay += f * dy; }); return [ax, ay]; });
+    const trails = B.map(() => [[], []]), com = [[], []];
+    let a = acc();
+    const n = Math.round(v.t / dt);
+    for (let s = 0; s <= n; s++) {
+      if (s % 10 === 0) { B.forEach((b, i) => { trails[i][0].push(b.x); trails[i][1].push(b.y); }); com[0].push(B.reduce((q, b) => q + b.m * b.x, 0) / M); com[1].push(B.reduce((q, b) => q + b.m * b.y, 0) / M); }
+      if (s === n) break;
+      B.forEach((b, i) => { b.vx += 0.5 * dt * a[i][0]; b.vy += 0.5 * dt * a[i][1]; b.x += dt * b.vx; b.y += dt * b.vy; });
+      a = acc(); B.forEach((b, i) => { b.vx += 0.5 * dt * a[i][0]; b.vy += 0.5 * dt * a[i][1]; });
+    }
+    fitAt(p, 0, -0.3, 2, 1.6, 'x', 'y');
+    const cols = [C.cyan, C.amber, C.paper, C.red, C.grey];
+    trails.forEach((tr, i) => p.line(tr[0], tr[1], cols[i], 1.2).dots([B[i].x], [B[i].y], cols[i], 3 + 2 * B[i].m));
+    p.line(com[0], com[1], C.lime, 2.5, [5, 3]).dots([com[0][com[0].length - 1]], [com[1][com[1].length - 1]], C.lime, 6);
+    const P = [B.reduce((q, b) => q + b.m * b.vx, 0), B.reduce((q, b) => q + b.m * b.vy, 0)];
+    out(`Total momentum (${nf(4).format(P[0])}, ${nf(4).format(P[1])}). The centre of mass (lime) ${v.g ? 'falls along a parabola, exactly like a single particle under the external force' : 'moves in a straight line at constant speed, however wildly the bodies swing round each other'}: internal forces cancel in pairs.`);
+  },
+});
+
+// 07.07 mass on a shrinking string
+def('spinstring', {
+  controls: [{ k: 'r', label: 'String length r (m)', min: 0.2, max: 0.8, step: 0.01, v: 0.4, f: 2 }],
+  draw(p, v, out) {
+    const m = 0.2, r0 = 0.8, w0 = 2 * Math.PI, w = w0 * (r0 / v.r) ** 2, L = m * r0 * r0 * w0;
+    const rs = linspace(0.2, 0.8, 121);
+    p.frame({ x: [0.15, 0.85], y: [0, 110], xlabel: 'radius r, m', ylabel: 'ω, rad/s' });
+    p.line(rs, rs.map((r) => w0 * (r0 / r) ** 2), C.lime, 2.5).dots([v.r], [w], C.cyan, 6);
+    const T0 = 0.5 * m * (r0 * w0) ** 2, T = 0.5 * m * (v.r * w) ** 2;
+    out(`L = m r² ω = ${nf(4).format(L)} kg m²/s stays fixed, so ω = ω₀ (r₀/r)² = ${nf(2).format(w)} rad/s (${nf(2).format(w / (2 * Math.PI))} rev/s). Speed ${nf(2).format(v.r * w)} m/s, string tension ${nf(1).format(m * v.r * w * w)} N. Kinetic energy ${nf(2).format(T)} J, up from ${nf(2).format(T0)} J: the work done pulling the string.`);
+  },
+});
+
+// 07.08 four-bar linkage with velocities and Grashof check
+def('fourbar', {
+  controls: [{ k: 'th', label: 'Crank angle (°)', min: 0, max: 360, step: 2, v: 60, f: 0 }, { k: 'b', label: 'Coupler b (mm)', min: 20, max: 110, step: 1, v: 70, f: 0 }, { k: 'c', label: 'Rocker c (mm)', min: 20, max: 110, step: 1, v: 45, f: 0 }, { k: 'd', label: 'Ground d (mm)', min: 20, max: 110, step: 1, v: 70, f: 0 }],
+  draw(p, v, out) {
+    const a = 20, b = v.b, c = v.c, d = v.d, th = v.th * Math.PI / 180, w2 = 2 * Math.PI;
+    const L = [a, b, c, d].sort((x, y) => x - y), gr = L[0] + L[3] <= L[1] + L[2];
+    fitAt(p, d / 2, 20, Math.max(d, 60) / 2 + 60, 70, 'x, mm', 'y, mm');
+    const A = [a * Math.cos(th), a * Math.sin(th)], e = [d - A[0], -A[1]], LL = Math.hypot(...e);
+    p.dots([0, d], [0, 0], C.grey, 6).line([0, A[0]], [0, A[1]], C.lime, 4);
+    if (LL > b + c || LL < Math.abs(b - c)) { out(`At ${v.th}° the coupler and rocker can't reach each other: the crank can't get here. Links sorted ${L.join(', ')}: s + l = ${L[0] + L[3]} ${gr ? '≤' : '>'} p + q = ${L[1] + L[2]}, ${gr ? 'Grashof' : 'non-Grashof, so no link turns fully'}.`); return; }
+    const x = (b * b - c * c + LL * LL) / (2 * LL), h = Math.sqrt(Math.max(b * b - x * x, 0)), u = [e[0] / LL, e[1] / LL], B = [A[0] + x * u[0] - h * u[1], A[1] + x * u[1] + h * u[0]];
+    const rAB = [B[0] - A[0], B[1] - A[1]], rO4B = [B[0] - d, B[1]], vA = [-w2 * A[1], w2 * A[0]];
+    const det = -rAB[1] * -rO4B[0] - rO4B[1] * rAB[0], w3 = ((-vA[0]) * -rO4B[0] - rO4B[1] * (-vA[1])) / det, w4 = (-rAB[1] * (-vA[1]) - rAB[0] * (-vA[0])) / det;
+    const vB = [-w4 * rO4B[1], w4 * rO4B[0]], k = 0.15;
+    p.line([A[0], B[0]], [A[1], B[1]], C.paper, 3).line([d, B[0]], [0, B[1]], C.cyan, 4).dots([A[0], B[0]], [A[1], B[1]], C.paper, 4);
+    arrow(p, A[0], A[1], A[0] + k * vA[0], A[1] + k * vA[1], C.amber); arrow(p, B[0], B[1], B[0] + k * vB[0], B[1] + k * vB[1], C.amber);
+    out(`Crank 20 mm at 60 rpm. ω₃ = ${nf(3).format(w3)}, ω₄ = ${nf(3).format(w4)} rad/s; |v_A| = ${nf(1).format(Math.hypot(...vA))}, |v_B| = ${nf(1).format(Math.hypot(...vB))} mm/s (amber). s + l = ${L[0] + L[3]} ${gr ? '≤' : '>'} p + q = ${L[1] + L[2]}: ${gr ? (L[0] === a ? 'Grashof with the crank shortest, so it turns fully' : 'Grashof, but the crank is not the shortest link') : 'non-Grashof: no link can turn fully'}.`);
+  },
+});
+
+// 07.09 rolling race down a ramp
+def('rollrace', {
+  controls: [{ k: 'th', label: 'Ramp angle (°)', min: 2, max: 30, step: 1, v: 10, f: 0 }, { k: 'mu', label: 'Friction coefficient μ', min: 0, max: 0.5, step: 0.01, v: 0.3, f: 2 }],
+  draw(p, v, out) {
+    const g = 9.81, th = v.th * Math.PI / 180, L = 2, shapes = [['sphere', 0.4, C.cyan], ['disc', 0.5, C.lime], ['ring', 1, C.amber]];
+    const res = shapes.map(([n, k, col]) => { const aRoll = g * Math.sin(th) / (1 + k), F = aRoll * k, slip = F > v.mu * g * Math.cos(th); const a = slip ? g * (Math.sin(th) - v.mu * Math.cos(th)) : aRoll; return { n, a, col, slip, t: Math.sqrt(2 * L / a) }; });
+    const tmax = Math.max(...res.map((r) => r.t)) * 1.05;
+    p.frame({ x: [0, tmax], y: [0, 2.1], xlabel: 'time, s', ylabel: 'distance down the ramp, m' });
+    res.forEach((r) => { const ts = linspace(0, r.t, 60); p.line(ts, ts.map((t) => 0.5 * r.a * t * t), r.col, 2.5); });
+    const blk = Math.sqrt(2 * L / (g * Math.sin(th))); const tb = linspace(0, blk, 60); p.line(tb, tb.map((t) => 0.5 * g * Math.sin(th) * t * t), C.grey, 1.5, [5, 4]);
+    out(res.map((r) => `${r.n} ${nf(3).format(r.t)} s${r.slip ? ' (slips)' : ''}`).join(', ') + `; frictionless block (dashed) ${nf(3).format(blk)} s. Rolling: a = g sinθ/(1 + I/mr²), so 5/7, 2/3 and 1/2 of g sinθ. Steepen the ramp or cut μ and they start to slip.`);
+  },
+});
+
+// 07.10 flywheel profile editor
+def('flywheelprof', {
+  controls: [{ k: 'ri', label: 'Rim inner radius (mm)', min: 80, max: 190, step: 5, v: 160, f: 0 }, { k: 'tr', label: 'Rim width (mm)', min: 20, max: 100, step: 5, v: 60, f: 0 }, { k: 'tw', label: 'Web thickness (mm)', min: 5, max: 60, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const rho = 7850, R = 200, ri = v.ri, rows = [[15, 30, 60], [30, ri, v.tw], [ri, R, v.tr]];
+    let m = 0, I = 0, mr = 0, Ir = 0;
+    rows.forEach(([a, b, t], k) => { const dm = rho * (t / 1e3) * Math.PI * ((b / 1e3) ** 2 - (a / 1e3) ** 2), dI = rho * (t / 1e3) * Math.PI / 2 * ((b / 1e3) ** 4 - (a / 1e3) ** 4); m += dm; I += dI; if (k === 2) { mr = dm; Ir = dI; } });
+    fitAt(p, 100, 0, 115, 60, 'radius, mm', 'axial, mm');
+    rows.forEach(([a, b, t]) => p.rect(a, b, -t / 2, t / 2, 'rgba(238,255,65,0.55)'));
+    p.line([0, 0], [-60, 60], C.grey, 1, [4, 4]);
+    const w = 3000 * Math.PI / 30;
+    out(`Mass ${nf(2).format(m)} kg, I = ${nf(4).format(I)} kg m², radius of gyration ${nf(0).format(Math.sqrt(I / m) * 1000)} mm. The rim holds ${nf(0).format(100 * mr / m)} % of the mass and ${nf(0).format(100 * Ir / I)} % of the inertia. Energy at 3000 rpm: ${nf(2).format(0.5 * I * w * w / 1e3)} kJ. Mass far from the axis counts with r².`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
