@@ -226,6 +226,126 @@ def('projectile', {
   },
 });
 
+// ---------- Phase 02 ----------
+// arrows in plot coordinates
+function arrow(p, x0, y0, x1, y1, color, w = 2.5) {
+  const g = p.g, a = p.X(x0), b = p.Y(y0), c = p.X(x1), d = p.Y(y1), ang = Math.atan2(d - b, c - a), L = Math.hypot(c - a, d - b);
+  g.save(); g.strokeStyle = color; g.fillStyle = color; g.lineWidth = w; g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
+  if (L > 6) { g.beginPath(); g.moveTo(c, d); g.lineTo(c - 10 * Math.cos(ang - 0.4), d - 10 * Math.sin(ang - 0.4)); g.lineTo(c - 10 * Math.cos(ang + 0.4), d - 10 * Math.sin(ang + 0.4)); g.closePath(); g.fill(); }
+  g.restore();
+}
+function poly(p, pts, stroke, fill, w = 1.5) {
+  const g = p.g; g.save(); g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(p.X(x), p.Y(y)) : g.moveTo(p.X(x), p.Y(y)))); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = w; g.stroke(); } g.restore();
+}
+// square frame: equal scaling on both axes
+function sqframe(p, R, xlabel = 'x', ylabel = 'y') {
+  p.size(); const asp = (p.w - p.pad.l - p.pad.r) / (p.h - p.pad.t - p.pad.b);
+  return asp >= 1 ? p.frame({ x: [-R * asp, R * asp], y: [-R, R], xlabel, ylabel }) : p.frame({ x: [-R, R], y: [-R / asp, R / asp], xlabel, ylabel });
+}
+
+// 02.01 dot, projection and cross product of two plane vectors
+def('vectors', {
+  controls: [{ k: 'ta', label: 'Angle of a (°)', min: 0, max: 180, step: 1, v: 20, f: 0 }, { k: 'tb', label: 'Angle of b (°)', min: 0, max: 360, step: 1, v: 75, f: 0 }, { k: 'lb', label: 'Length of b', min: 0.5, max: 3, step: 0.1, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const r = Math.PI / 180, a = [2.5 * Math.cos(v.ta * r), 2.5 * Math.sin(v.ta * r)], b = [v.lb * Math.cos(v.tb * r), v.lb * Math.sin(v.tb * r)];
+    const dot = a[0] * b[0] + a[1] * b[1], cr = a[0] * b[1] - a[1] * b[0], na = Math.hypot(...a), pr = [(dot / na ** 2) * a[0], (dot / na ** 2) * a[1]];
+    sqframe(p, 3.3);
+    poly(p, [[0, 0], a, [a[0] + b[0], a[1] + b[1]], b], null, cr >= 0 ? 'rgba(238,255,65,0.12)' : 'rgba(255,90,54,0.14)');
+    p.line([b[0], pr[0]], [b[1], pr[1]], C.grey, 1, [4, 4]);
+    arrow(p, 0, 0, pr[0], pr[1], C.cyan, 5); arrow(p, 0, 0, ...a, C.lime); arrow(p, 0, 0, ...b, C.paper);
+    p.text('a', a[0] * 1.08, a[1] * 1.08, C.lime); p.text('b', b[0] * 1.1, b[1] * 1.1);
+    const ang = Math.acos(Math.max(-1, Math.min(1, dot / (na * v.lb)))) / r;
+    out(`a·b = ${nf(2).format(dot)}, angle ${nf(1).format(ang)}°. Projection of b on a: ${nf(2).format(dot / na)} (cyan). Cross product z = ${nf(2).format(cr)}, the shaded area${cr < 0 ? ', negative because b is clockwise from a' : ''}.`);
+  },
+});
+
+// 02.02 two lines: the row picture and conditioning
+def('lines2x2', {
+  controls: [{ k: 's', label: 'Slope of line 2', min: -2, max: 2, step: 0.01, v: -0.5, f: 2 }, { k: 'db', label: 'Measurement error in b₂', min: -0.2, max: 0.2, step: 0.01, v: 0.05, f: 2 }],
+  draw(p, v, out) {
+    // line 1: y = 0.5 x + 0.5 ; line 2: y = s x + c2, both pass through (1, 1) when db = 0
+    const s1 = 0.5, c1 = 0.5, c2 = 1 - v.s, xs = [-4, 4];
+    sqframe(p, 3);
+    p.line(xs, xs.map((x) => s1 * x + c1), C.lime).line(xs, xs.map((x) => v.s * x + c2), C.grey, 1.5, [5, 4]).line(xs, xs.map((x) => v.s * x + c2 + v.db), C.cyan);
+    // A = [[-s1,1],[-s,1]]
+    const det = -s1 + v.s;
+    if (Math.abs(det) < 1e-9) { out('The lines are parallel: det A = 0, no unique solution.'); return; }
+    const x = (c1 - c2 - v.db) / (v.s - s1), y = s1 * x + c1;
+    p.dots([1], [1], C.grey, 4).dots([x], [y], C.cyan, 5);
+    const A = [[-s1, 1], [-v.s, 1]], n = Math.hypot(...A.flat()), inv = [[1, -1], [v.s, -s1]].map((r) => r.map((e) => e / det)), ni = Math.hypot(...inv.flat());
+    out(`det A = ${nf(3).format(det)}. A shift of ${v.db} in b₂ moves the solution by ${nf(2).format(Math.hypot(x - 1, y - 1))}. Condition number (Frobenius) ≈ ${nf(1).format(n * ni)}.`);
+  },
+});
+
+// 02.05 / 02.09 / 02.12 / 02.13 a 2x2 matrix acting on the plane
+def('matrix2d', {
+  controls: [{ k: 'a', label: 'a₁₁', min: -3, max: 3, step: 0.1, v: 2, f: 1 }, { k: 'b', label: 'a₁₂', min: -3, max: 3, step: 0.1, v: 1, f: 1 }, { k: 'c', label: 'a₂₁', min: -3, max: 3, step: 0.1, v: 1, f: 1 }, { k: 'd', label: 'a₂₂', min: -3, max: 3, step: 0.1, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const { a, b, c, d } = v, M = (x, y) => [a * x + b * y, c * x + d * y];
+    sqframe(p, 4);
+    const circ = linspace(0, 2 * Math.PI, 121);
+    p.line(circ.map(Math.cos), circ.map(Math.sin), C.grey, 1, [3, 3]);
+    poly(p, [[0, 0], [1, 0], [1, 1], [0, 1]], C.grey, null, 1);
+    const E = circ.map((t) => M(Math.cos(t), Math.sin(t)));
+    p.line(E.map((e) => e[0]), E.map((e) => e[1]), C.paper, 1.5);
+    const det = a * d - b * c;
+    poly(p, [[0, 0], M(1, 0), M(1, 1), M(0, 1)], C.lime, det >= 0 ? 'rgba(238,255,65,0.18)' : 'rgba(255,90,54,0.2)');
+    // singular values from A^T A
+    const p11 = a * a + c * c, p12 = a * b + c * d, p22 = b * b + d * d, tr = p11 + p22, dis = Math.sqrt(Math.max(0, (p11 - p22) ** 2 + 4 * p12 ** 2));
+    const s1 = Math.sqrt((tr + dis) / 2), s2 = Math.sqrt(Math.max(0, (tr - dis) / 2));
+    // eigenvalues
+    const T = a + d, D = (a - d) ** 2 + 4 * b * c; let eig;
+    if (D >= 0) {
+      const l1 = (T + Math.sqrt(D)) / 2, l2 = (T - Math.sqrt(D)) / 2;
+      for (const l of [l1, l2]) { let vx = b, vy = l - a; if (Math.hypot(vx, vy) < 1e-9) { vx = l - d; vy = c; } if (Math.hypot(vx, vy) < 1e-9) { vx = 1; vy = 0; } const n = Math.hypot(vx, vy); arrow(p, 0, 0, (l * vx) / n, (l * vy) / n, C.cyan, 2); p.line([-4 * vx / n, 4 * vx / n], [-4 * vy / n, 4 * vy / n], 'rgba(92,200,255,0.35)', 1); }
+      eig = `eigenvalues ${nf(2).format(l1)} and ${nf(2).format(l2)} (cyan lines are eigenvector directions)`;
+    } else eig = `complex eigenvalues ${nf(2).format(T / 2)} ± ${nf(2).format(Math.sqrt(-D) / 2)}i, so no real direction is left unrotated`;
+    out(`det = ${nf(2).format(det)} (area scale${det < 0 ? ', orientation flipped' : ''}). Singular values ${nf(2).format(s1)}, ${nf(2).format(s2)} (ellipse semi-axes). ${eig[0].toUpperCase() + eig.slice(1)}.`);
+  },
+});
+
+// 02.07 least-squares polynomial fit to noisy spring data
+def('lsq', {
+  controls: [{ k: 'deg', label: 'Polynomial degree', min: 1, max: 9, step: 1, v: 1, f: 0 }, { k: 'noise', label: 'Noise (N)', min: 0, max: 3, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    let seed = 3; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) - 0.5;
+    const xs = linspace(0, 10, 12), k = 2.4, ys = xs.map((x) => k * x + 2 * v.noise * rnd() * 1.7);
+    // fit with normal equations on scaled x (fine for degree <= 9 on 12 points with scaling)
+    const n = v.deg + 1, t = xs.map((x) => x / 5 - 1), A = t.map((ti) => Array.from({ length: n }, (_, j) => ti ** j));
+    const N = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => A.reduce((s, r) => s + r[i] * r[j], 0)));
+    const rhs = Array.from({ length: n }, (_, i) => A.reduce((s, r, m) => s + r[i] * ys[m], 0));
+    for (let i = 0; i < n; i++) { let piv = i; for (let r = i + 1; r < n; r++) if (Math.abs(N[r][i]) > Math.abs(N[piv][i])) piv = r; [N[i], N[piv]] = [N[piv], N[i]]; [rhs[i], rhs[piv]] = [rhs[piv], rhs[i]]; for (let r = i + 1; r < n; r++) { const f = N[r][i] / N[i][i]; for (let cI = i; cI < n; cI++) N[r][cI] -= f * N[i][cI]; rhs[r] -= f * rhs[i]; } }
+    const cf = new Array(n); for (let i = n - 1; i >= 0; i--) { let sum = rhs[i]; for (let j = i + 1; j < n; j++) sum -= N[i][j] * cf[j]; cf[i] = sum / N[i][i]; }
+    const f = (x) => cf.reduce((s, c, j) => s + c * (x / 5 - 1) ** j, 0), fx = linspace(0, 10, 300);
+    const res = Math.sqrt(xs.reduce((s, x, i) => s + (ys[i] - f(x)) ** 2, 0));
+    p.frame({ x: [0, 10], y: [-5, 30], xlabel: 'extension, mm', ylabel: 'force, N' }).line([0, 10], [0, 10 * k], C.grey, 1, [4, 4]).line(fx, fx.map(f)).dots(xs, ys, C.paper, 3.5);
+    const slope = v.deg === 1 ? ` Fitted stiffness ${nf(2).format(cf[1] / 5)} N/mm (true 2.40).` : '';
+    out(`Residual norm ${nf(2).format(res)} N.${slope} ${v.deg > 4 ? 'A high degree chases the noise: smaller residual, worse model.' : ''}`);
+  },
+});
+
+// 02.15 Jacobi, Gauss-Seidel and CG on the 1D Poisson matrix
+def('iterative', {
+  controls: [{ k: 'n', label: 'Unknowns n', min: 10, max: 100, step: 10, v: 40, f: 0 }, { k: 'w', label: 'SOR factor ω (1 = Gauss-Seidel)', min: 1, max: 1.98, step: 0.01, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const n = v.n, b = new Array(n).fill(1 / (n + 1) ** 2), its = 3000;
+    const resid = (x) => { let s = 0; for (let i = 0; i < n; i++) { const r = b[i] - (2 * x[i] - (x[i - 1] || 0) - (x[i + 1] || 0)); s += r * r; } return Math.sqrt(s); };
+    const r0 = resid(new Array(n).fill(0)), hj = [], hg = [], hc = [];
+    let x = new Array(n).fill(0);
+    for (let k = 0; k < its; k++) { const y = x.map((_, i) => (b[i] + (x[i - 1] || 0) + (x[i + 1] || 0)) / 2); x = y; if (k % 10 === 0) hj.push([k, resid(x) / r0]); }
+    x = new Array(n).fill(0);
+    for (let k = 0; k < its; k++) { for (let i = 0; i < n; i++) { const gs = (b[i] + (x[i - 1] || 0) + (x[i + 1] || 0)) / 2; x[i] += v.w * (gs - x[i]); } if (k % 10 === 0) hg.push([k, resid(x) / r0]); }
+    // CG
+    x = new Array(n).fill(0); let r = b.slice(), d = r.slice(), rr = r.reduce((s, e) => s + e * e, 0); hc.push([0, 1]);
+    for (let k = 1; k <= n + 2 && Math.sqrt(rr) / r0 > 1e-13; k++) { const Ad = d.map((_, i) => 2 * d[i] - (d[i - 1] || 0) - (d[i + 1] || 0)); const al = rr / d.reduce((s, e, i) => s + e * Ad[i], 0); x = x.map((e, i) => e + al * d[i]); r = r.map((e, i) => e - al * Ad[i]); const rn = r.reduce((s, e) => s + e * e, 0); d = r.map((e, i) => e + (rn / rr) * d[i]); rr = rn; hc.push([k, Math.sqrt(rr) / r0]); }
+    p.frame({ x: [0, its], y: [1e-12, 2], ylog: true, xlabel: 'iteration', ylabel: 'relative residual' });
+    p.line(hj.map((h) => h[0]), hj.map((h) => h[1]), C.grey).line(hg.map((h) => h[0]), hg.map((h) => h[1]), C.cyan).line(hc.map((h) => h[0]), hc.map((h) => Math.max(h[1], 1e-12)), C.lime, 2.5);
+    const at = (h) => h[h.length - 1][1];
+    out(`After ${its} sweeps: Jacobi (grey) ${at(hj).toExponential(1)}, ${v.w === 1 ? 'Gauss-Seidel' : 'SOR'} (cyan) ${at(hg).toExponential(1)}. CG (lime) reaches 1e-12 in ${hc.length - 1} steps, at most n.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
