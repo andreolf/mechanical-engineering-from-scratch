@@ -4060,6 +4060,37 @@ def('heatsquare', {
   },
 });
 
+// 13.07 local h along a flat plate
+def('platebl', {
+  controls: [{ k: 'U', label: 'Air speed (m/s)', min: 0.5, max: 30, step: 0.5, v: 3, f: 1 }],
+  draw(p, v, out) {
+    const nu = 1.608e-5, k = 0.02588, Pr = 0.7282, L = 1, xt = Math.min(5e5 * nu / v.U, L), xs = linspace(0.005, L, 300);
+    const hl = (x) => 0.332 * Math.sqrt(v.U * x / nu) * Pr ** (1 / 3) * k / x, ht = (x) => 0.0296 * (v.U * x / nu) ** 0.8 * Pr ** (1 / 3) * k / x;
+    p.frame({ x: [0, 100], y: [0, 120], xlabel: 'distance from the leading edge, cm', ylabel: 'local h, W/(m² K)' });
+    p.line(xs.map((x) => x * 100), xs.map((x) => (x <= xt ? hl(x) : NaN)), C.lime, 2.5);
+    if (xt < L) { p.line(xs.map((x) => x * 100), xs.map((x) => (x >= xt ? ht(x) : NaN)), C.amber, 2.5).line([xt * 100, xt * 100], [0, 120], C.grey, 1, [4, 3]).text('Re = 5 × 10⁵', xt * 100 + 1.5, 112, C.grey); }
+    const ReL = v.U * L / nu, h05 = 0.664 * Math.sqrt(v.U * 0.5 / nu) * Pr ** (1 / 3) * k / 0.5;
+    out(`Air at 30 °C. Over a 0.5 m plate Re_L = ${nf(0).format(v.U * 0.5 / nu)}${v.U * 0.5 / nu < 5e5 ? `, laminar: average h = ${nf(2).format(h05)} W/(m² K)` : ', past transition: the laminar formula no longer applies to the whole plate'}. On this 1 m plate ${xt < L ? `the boundary layer turns turbulent at ${nf(0).format(xt * 100)} cm (amber, 0.0296 Re^0.8 Pr^⅓), and h jumps.` : `Re_L = ${nf(0).format(ReL)} stays laminar (lime) all the way.`}`);
+  },
+});
+
+// 13.08 pipe convection calculator
+def('pipecalc', {
+  controls: [{ k: 'U', label: 'Mean velocity (m/s)', min: 0.05, max: 3, step: 0.05, v: 1, f: 2 }, { k: 'D', label: 'Tube diameter (mm)', min: 4, max: 50, step: 1, v: 10, f: 0 }, { type: 'select', k: 'fl', label: 'Fluid at 40 °C', options: ['Water (Pr 4.32)', 'Air (Pr 0.71)', 'Engine oil (Pr 2870)'], v: 'Water (Pr 4.32)' }],
+  draw(p, v, out) {
+    const i = ['Water (Pr 4.32)', 'Air (Pr 0.71)', 'Engine oil (Pr 2870)'].indexOf(v.fl), nu = [0.658e-6, 1.70e-5, 2.42e-4][i], k = [0.631, 0.0271, 0.144][i], Pr = [4.32, 0.71, 2870][i], D = v.D / 1000;
+    const db = (Re) => 0.023 * Re ** 0.8 * Pr ** 0.4, gn = (Re) => { const f = (0.790 * Math.log(Re) - 1.64) ** -2; return (f / 8) * (Re - 1000) * Pr / (1 + 12.7 * Math.sqrt(f / 8) * (Pr ** (2 / 3) - 1)); };
+    const Res = logspace(1, 6, 300);
+    p.frame({ x: [10, 1e6], y: [1, 1e4], xlog: true, ylog: true, xlabel: 'Reynolds number', ylabel: 'Nusselt number' });
+    p.rect(2300, 3000, 1, 1e4, 'rgba(255,181,71,0.12)');
+    p.line(Res, Res.map((R) => (R < 2300 ? 3.66 : NaN)), C.cyan, 2.5).line(Res, Res.map((R) => (R >= 3000 ? gn(R) : NaN)), C.lime, 2.5).line(Res, Res.map((R) => (R >= 1e4 ? db(R) : NaN)), C.red, 1.5, [5, 4]);
+    const Re = v.U * D / nu, mode = Re < 2300 ? 'laminar' : Re < 3000 ? 'transitional' : 'turbulent';
+    const Nu = Re < 2300 ? 3.66 : Re < 3000 ? NaN : gn(Re); p.dots([Re], [isFinite(Nu) ? Nu : 3.66], C.paper, 6);
+    const warn = Re < 2300 ? ` Thermal entry length about 0.05 Re Pr D = ${nf(1).format(0.05 * Re * Pr * D)} m: in a shorter tube the flow is not yet fully developed and Nu is higher.` : Pr > 2000 ? ' Warning: Pr is outside Gnielinski (0.5 to 2000) and Dittus-Boelter (0.6 to 160) ranges.' : Re >= 3000 && Re < 1e4 ? ' Dittus-Boelter is outside its range here (needs Re > 10⁴); use Gnielinski.' : '';
+    out(`Re = ${nf(0).format(Re)}, ${mode}. ${Re < 2300 ? `Fully developed laminar flow, constant wall temperature: Nu = 3.66, h = ${nf(0).format(3.66 * k / D)} W/(m² K).` : Re < 3000 ? 'Between 2300 and 3000 no correlation is reliable.' : `Gnielinski Nu = ${nf(1).format(gn(Re))}, h = ${nf(0).format(gn(Re) * k / D)} W/(m² K)${Re >= 1e4 ? `; Dittus-Boelter ${nf(1).format(db(Re))}` : ''}.`}${warn}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
