@@ -861,6 +861,111 @@ def('cfl', {
   },
 });
 
+// 04.16 pollutant pulse: upwind vs Lax-Wendroff vs central
+def('advect', {
+  controls: [{ type: 'select', k: 's', label: 'Scheme', options: ['upwind', 'Lax-Wendroff', 'central (FTCS)'], v: 'upwind' }, { k: 'c', label: 'CFL number U Δt / Δx', min: 0.1, max: 1.1, step: 0.05, v: 0.8, f: 2 }, { k: 't', label: 'Time (min)', min: 0, max: 50, step: 1, v: 33, f: 0 }],
+  draw(p, v, out) {
+    const U = 0.5, LEN = 2000, n = 400, dx = LEN / n, c = v.c, dt = c * dx / U, steps = Math.round(v.t * 60 / dt);
+    const xs = Array.from({ length: n }, (_, i) => (i + 0.5) * dx);
+    let q = xs.map((x) => (Math.abs(x - 300) <= 50 ? 1 : 0));
+    for (let s = 0; s < steps; s++) {
+      const qn = new Array(n);
+      for (let i = 0; i < n; i++) { const l = q[(i - 1 + n) % n], r = q[(i + 1) % n], m = q[i];
+        qn[i] = v.s === 'upwind' ? m - c * (m - l) : v.s === 'Lax-Wendroff' ? m - 0.5 * c * (r - l) + 0.5 * c * c * (r - 2 * m + l) : m - 0.5 * c * (r - l); }
+      q = qn; if (Math.abs(q[0]) > 1e6) break;
+    }
+    const tt = steps * dt, ex = xs.map((x) => { const x0 = ((300 + U * tt) % LEN); return Math.min(Math.abs(x - x0), LEN - Math.abs(x - x0)) <= 50 ? 1 : 0; });
+    p.frame({ x: [0, LEN], y: [-0.4, 1.4], xlabel: 'distance downstream, m', ylabel: 'concentration' });
+    p.line(xs, ex, C.grey, 1.5, [4, 4]).line(xs, q.map((y) => Math.max(-5, Math.min(5, y))));
+    const mx = Math.max(...q), mn = Math.min(...q);
+    out(`${steps} steps. Peak ${Math.abs(mx) > 100 ? 'blown up' : nf(3).format(mx)}, minimum ${Math.abs(mn) > 100 ? '—' : nf(3).format(mn)}. ${c > 1 ? 'CFL > 1: unstable for every scheme here.' : v.s === 'upwind' ? 'Upwind never creates new peaks or negative values, but smears the slug: numerical diffusion U Δx (1 − c)/2.' : v.s === 'Lax-Wendroff' ? 'Second order and sharper, but it over- and undershoots near the edges: negative concentrations.' : 'Central differences with forward Euler are unstable at any CFL: the wiggles grow.'}`);
+  },
+});
+
+// 04.17 convergence race: Jacobi vs Gauss-Seidel vs SOR
+def('sorrace', {
+  controls: [{ k: 'w', label: 'SOR relaxation factor ω', min: 1, max: 1.98, step: 0.01, v: 1.77, f: 2 }],
+  draw(p, v, out) {
+    const n = 24, h = 1 / n, maxit = 2500, f = [];
+    for (let i = 0; i <= n; i++) { f.push([]); for (let j = 0; j <= n; j++) f[i].push(2 * Math.PI ** 2 * Math.sin(Math.PI * i * h) * Math.sin(Math.PI * j * h)); }
+    const resid = (u) => { let s = 0; for (let i = 1; i < n; i++) for (let j = 1; j < n; j++) { const r = f[i][j] + (u[i + 1][j] + u[i - 1][j] + u[i][j + 1] + u[i][j - 1] - 4 * u[i][j]) / (h * h); s += r * r; } return Math.sqrt(s); };
+    const r0 = resid(Array.from({ length: n + 1 }, () => new Array(n + 1).fill(0)));
+    const run = (kind, w) => { let u = Array.from({ length: n + 1 }, () => new Array(n + 1).fill(0)); const hist = [1]; let hit = -1;
+      for (let it = 1; it <= maxit; it++) {
+        if (kind === 'J') { const un = u.map((r) => r.slice()); for (let i = 1; i < n; i++) for (let j = 1; j < n; j++) un[i][j] = 0.25 * (u[i + 1][j] + u[i - 1][j] + u[i][j + 1] + u[i][j - 1] + h * h * f[i][j]); u = un; }
+        else for (let i = 1; i < n; i++) for (let j = 1; j < n; j++) { const gs = 0.25 * (u[i + 1][j] + u[i - 1][j] + u[i][j + 1] + u[i][j - 1] + h * h * f[i][j]); u[i][j] += w * (gs - u[i][j]); }
+        const r = resid(u) / r0; hist.push(r); if (r < 1e-8) { hit = it; break; }
+      } return [hist, hit]; };
+    const J = run('J', 1), G = run('G', 1), S = run('G', v.w), wopt = 2 / (1 + Math.sin(Math.PI * h));
+    p.frame({ x: [0, maxit], y: [1e-9, 2], ylog: true, xlabel: 'iteration', ylabel: 'relative residual' });
+    [[J, C.grey], [G, C.cyan], [S, C.lime]].forEach(([[hst], col]) => p.line(hst.map((_, i) => i), hst, col, 2));
+    const s = (x) => (x[1] < 0 ? `> ${maxit}` : String(x[1]));
+    out(`Iterations to 1e-8 on a 24 × 24 grid: Jacobi ${s(J)}, Gauss-Seidel ${s(G)}, SOR (ω = ${nf(2).format(v.w)}) ${s(S)}. The optimum is ω = 2/(1 + sin πh) = ${nf(3).format(wopt)}.`);
+  },
+});
+
+// 04.18 smoothing and coarse-grid correction
+def('multigrid', {
+  controls: [{ k: 'sw', label: 'Weighted Jacobi sweeps', min: 0, max: 30, step: 1, v: 6, f: 0 }, { k: 'cg', label: 'Then apply the coarse-grid correction', type: 'check', v: 0 }],
+  draw(p, v, out) {
+    const n = 64, h = 1 / n, rnd = gaussRng(3), xs = linspace(0, 1, n + 1);
+    // error equation A e = 0 starting from a mix of smooth and rough modes
+    let e = xs.map((x, i) => (i === 0 || i === n ? 0 : Math.sin(Math.PI * x) + 0.5 * Math.sin(3 * Math.PI * x) + 0.4 * rnd()));
+    const e0 = Math.sqrt(e.reduce((s, y) => s + y * y, 0));
+    for (let s = 0; s < v.sw; s++) { const en = e.slice(); for (let i = 1; i < n; i++) en[i] = e[i] / 3 + (2 / 3) * 0.5 * (e[i - 1] + e[i + 1]); e = en; }
+    const eSmooth = e.slice();
+    if (v.cg) {
+      // residual r = -A e, restrict, solve exactly on the coarse grid, interpolate and subtract
+      const r = e.map((y, i) => (i === 0 || i === n ? 0 : -(2 * y - e[i - 1] - e[i + 1]) / (h * h)));
+      const m = n / 2, H = 2 * h, rc = Array.from({ length: m + 1 }, (_, I) => (I === 0 || I === m ? 0 : 0.25 * r[2 * I - 1] + 0.5 * r[2 * I] + 0.25 * r[2 * I + 1]));
+      const a = Array(m - 1).fill(-1), b = Array(m - 1).fill(2), c = Array(m - 1).fill(-1), d = rc.slice(1, m).map((y) => y * H * H);
+      for (let i = 1; i < m - 1; i++) { const w = a[i] / b[i - 1]; b[i] -= w * c[i - 1]; d[i] -= w * d[i - 1]; }
+      const z = Array(m - 1).fill(0); z[m - 2] = d[m - 2] / b[m - 2]; for (let i = m - 3; i >= 0; i--) z[i] = (d[i] - c[i] * z[i + 1]) / b[i];
+      const ec = [0, ...z, 0], fine = xs.map((_, i) => (i % 2 === 0 ? ec[i / 2] : 0.5 * (ec[(i - 1) / 2] + ec[(i + 1) / 2])));
+      e = e.map((y, i) => y + fine[i]);
+    }
+    const norm = Math.sqrt(e.reduce((s, y) => s + y * y, 0));
+    p.frame({ x: [0, 1], y: [-1.6, 1.6], xlabel: 'x', ylabel: 'error' });
+    if (v.cg) p.line(xs, eSmooth, C.grey, 1.5, [4, 4]);
+    p.line(xs, e).dots(xs, e, C.lime, 2);
+    out(`Error norm ${nf(3).format(norm / e0)} of the initial. ${v.cg ? 'The coarse grid removed the smooth error the sweeps could not touch (dashed: before the correction).' : v.sw === 0 ? 'Rough plus smooth error.' : 'Smoothing kills the jagged part in a few sweeps, then stalls on the smooth hump. Tick the box for the coarse-grid correction.'}`);
+  },
+});
+
+// 04.19 gradient descent vs BFGS on Rosenbrock
+def('rosen', {
+  controls: [{ type: 'select', k: 'm', label: 'Method', options: ['BFGS', 'gradient descent'], v: 'BFGS' }, { k: 'it', label: 'Iterations', min: 1, max: 300, step: 1, v: 40, f: 0 }],
+  draw(p, v, out) {
+    const f = (x, y) => (1 - x) ** 2 + 100 * (y - x * x) ** 2, g = (x, y) => [-2 * (1 - x) - 400 * x * (y - x * x), 200 * (y - x * x)];
+    p.frame({ x: [-2, 2], y: [-1, 3], xlabel: 'x₁', ylabel: 'x₂' });
+    bands(p, (x, y) => Math.log10(1 + f(x, y)), 0, 3.5, 14, 140);
+    let x = [-1.2, 1], H = [[1, 0], [0, 1]], gr = g(...x); const P = [x.slice()]; let k = 0;
+    for (; k < v.it && Math.hypot(...gr) > 1e-10; k++) {
+      const d = v.m === 'BFGS' ? [-(H[0][0] * gr[0] + H[0][1] * gr[1]), -(H[1][0] * gr[0] + H[1][1] * gr[1])] : [-gr[0], -gr[1]];
+      let a = 1; const fx = f(...x), slope = gr[0] * d[0] + gr[1] * d[1]; while (f(x[0] + a * d[0], x[1] + a * d[1]) > fx + 1e-4 * a * slope && a > 1e-12) a *= 0.5;
+      const s = [a * d[0], a * d[1]], xn = [x[0] + s[0], x[1] + s[1]], gn = g(...xn), y = [gn[0] - gr[0], gn[1] - gr[1]], ys = y[0] * s[0] + y[1] * s[1];
+      if (v.m === 'BFGS' && ys > 1e-12) { const r = 1 / ys, A = [[1 - r * s[0] * y[0], -r * s[0] * y[1]], [-r * s[1] * y[0], 1 - r * s[1] * y[1]]], mul = (X, Y) => [[X[0][0] * Y[0][0] + X[0][1] * Y[1][0], X[0][0] * Y[0][1] + X[0][1] * Y[1][1]], [X[1][0] * Y[0][0] + X[1][1] * Y[1][0], X[1][0] * Y[0][1] + X[1][1] * Y[1][1]]]; const At = [[A[0][0], A[1][0]], [A[0][1], A[1][1]]]; H = mul(mul(A, H), At); H[0][0] += r * s[0] * s[0]; H[0][1] += r * s[0] * s[1]; H[1][0] += r * s[1] * s[0]; H[1][1] += r * s[1] * s[1]; }
+      x = xn; gr = gn; P.push(x.slice());
+    }
+    p.line(P.map((q) => q[0]), P.map((q) => q[1]), C.paper, 1.5).dots(P.map((q) => q[0]), P.map((q) => q[1]), C.cyan, 2.5).dots([1], [1], C.red, 5);
+    out(`${k} iterations: x = (${nf(5).format(x[0])}, ${nf(5).format(x[1])}), f = ${f(...x).toExponential(2)}. ${v.m === 'BFGS' ? 'BFGS learns the curvature and runs along the curved valley; it reaches (1, 1) to 1e-10 in about 36 iterations.' : 'Steepest descent zig-zags across the narrow valley; it needs about 25 000 iterations.'}`);
+  },
+});
+
+// 04.20 observed order of accuracy: correct solver vs a planted bug (errors from mms.py)
+def('mmsorder', {
+  controls: [{ k: 'bug', label: 'Plant the off-by-one spacing bug', type: 'check', v: 0 }],
+  draw(p, v, out) {
+    const ns = [8, 16, 32, 64, 128], hs = ns.map((n) => 1 / n);
+    const good = [1.32e-2, 3.34e-3, 8.36e-4, 2.09e-4, 5.23e-5], bad = [1.65e-1, 9.41e-2, 5.02e-2, 2.59e-2, 1.32e-2], e = v.bug ? bad : good;
+    p.frame({ x: [0.005, 0.2], y: [1e-5, 1], xlog: true, ylog: true, xlabel: 'grid spacing h', ylabel: 'max error' });
+    p.line([0.005, 0.2], [0.005 ** 2 * 0.85, 0.2 ** 2 * 0.85], C.grey, 1, [4, 4]).line([0.005, 0.2], [0.005 * 1.3, 0.2 * 1.3], C.grey, 1, [2, 4]);
+    p.line(hs, e, v.bug ? C.red : C.lime, 2).dots(hs, e, v.bug ? C.red : C.lime, 4);
+    const pobs = Math.log2(e[3] / e[4]);
+    out(`Observed order on the finest pair: ${nf(2).format(pobs)}. Grey guides: slope 2 (dashed) and slope 1 (dotted). ${v.bug ? 'The buggy solver still converges and its pictures look right, but at first order: the test fails.' : 'The 5-point solver converges at second order, as designed: verified.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
