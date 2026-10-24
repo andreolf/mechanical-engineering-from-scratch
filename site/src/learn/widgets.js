@@ -3282,6 +3282,52 @@ def('tilthull', {
   },
 });
 
+// 11.04 streamlines, pathlines, streaklines
+def('flowlines', {
+  controls: [{ type: 'select', k: 'k', label: 'Show', options: ['All three', 'Streamline', 'Pathline', 'Streakline'], v: 'All three' }, { k: 'w', label: 'Oscillation frequency ω (rad/s), 0 = steady', min: 0, max: 2, step: 0.05, v: 1, f: 2 }, { k: 't', label: 'Time now (s)', min: 0.5, max: 9, step: 0.1, v: 6.3, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['All three', 'Streamline', 'Pathline', 'Streakline'].indexOf(v.k), U0 = 1, V0 = 0.5, w = v.w, t = v.t;
+    const vy = (tt) => (w === 0 ? V0 * 0.6 : V0 * Math.sin(w * tt));
+    const Y = (t0, tt) => (w === 0 ? V0 * 0.6 * (tt - t0) : V0 * (Math.cos(w * t0) - Math.cos(w * tt)) / w);       // exact particle y
+    p.frame({ x: [0, 9], y: [-3, 3], xlabel: 'x, m', ylabel: 'y, m' });
+    const ts = linspace(0, t, 120);
+    if (sel === 0 || sel === 2) p.line(ts.map((tt) => U0 * tt), ts.map((tt) => Y(0, tt)), C.lime, 2.5);
+    if (sel === 0 || sel === 3) p.line(ts.map((t0) => U0 * (t - t0)), ts.map((t0) => Y(t0, t)), C.amber, 2.5);
+    if (sel === 0 || sel === 1) { const xe = U0 * t; p.line([xe - 3, xe + 3], [Y(0, t) - 3 * vy(t) / U0, Y(0, t) + 3 * vy(t) / U0], C.cyan, 2, [6, 4]); }
+    p.dots([0], [0], C.paper, 5).dots([U0 * t], [Y(0, t)], C.lime, 6);
+    p.text('pathline', 0.3, 2.6, C.lime).text('streakline', 3.2, 2.6, C.amber).text('streamline now', 6.0, 2.6, C.cyan);
+    out(`${w === 0 ? 'Steady field: all three lines lie on top of each other.' : `Unsteady field u = 1, v = 0.5 sin(${nf(2).format(w)} t). The pathline is one particle's history, the streakline joins every particle released from the origin (dye from a nozzle), and the streamline is tangent to the velocity at this instant only.`}`);
+  },
+});
+
+// 11.05 material acceleration arrows
+def('materialacc', {
+  controls: [{ type: 'select', k: 'k', label: 'Field', options: ['Stagnation point u = ax, v = −ay', 'Solid-body rotation u = −Ωy, v = Ωx', 'Uniform flow'], v: 'Stagnation point u = ax, v = −ay' }, { k: 'a', label: 'Strength a or Ω (1/s)', min: 0.1, max: 1.5, step: 0.05, v: 0.5, f: 2 }],
+  draw(p, v, out) {
+    const sel = ['Stagnation point u = ax, v = −ay', 'Solid-body rotation u = −Ωy, v = Ωx', 'Uniform flow'].indexOf(v.k), a = v.a;
+    const U = (x, y) => [[a * x, -a * y], [-a * y, a * x], [0.8, 0]][sel];
+    const Acc = (x, y) => [[a * a * x, a * a * y], [-a * a * x, -a * a * y], [0, 0]][sel];
+    p.frame({ x: [-2.2, 2.2], y: [-2.2, 2.2], xlabel: 'x, m', ylabel: 'y, m' });
+    const g = linspace(-1.6, 1.6, 5);
+    for (const x of g) for (const y of g) { const [u, w] = U(x, y), [ax, ay] = Acc(x, y); arrow(p, x, y, x + 0.25 * u, y + 0.25 * w, C.cyan, 1.2); if (sel !== 2) arrow(p, x, y, x + 0.25 * ax, y + 0.25 * ay, C.red, 1.6); }
+    out(`${['The flow is steady, yet parcels speed up along x and slow down along y: Du/Dt = (u·∇)u = (a²x, a²y), pointing away from the origin.', 'Steady again, but every parcel turns: the convective acceleration (−Ω²x, −Ω²y) is the centripetal acceleration of circular motion.', 'Uniform, steady flow: zero material acceleration everywhere.'][sel]} Blue: velocity, red: acceleration (both scaled by 0.25).`);
+  },
+});
+
+// 11.06 pipe contraction with flow-rate counter
+def('contraction', {
+  controls: [{ k: 'Q', label: 'Flow rate (L/s)', min: 5, max: 150, step: 1, v: 70, f: 0 }, { k: 'D2', label: 'Throat diameter (mm)', min: 60, max: 300, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const D1 = 300, D3 = 200, Q = v.Q / 1000;
+    const prof = (x) => (x < 3 ? D1 : x < 4 ? D1 + (v.D2 - D1) * (x - 3) : x < 6 ? v.D2 : x < 7 ? v.D2 + (D3 - v.D2) * (x - 6) : D3);
+    const xs = linspace(0, 10, 101);
+    p.frame({ x: [0, 10], y: [-200, 200], xlabel: 'distance along pipe, m', ylabel: 'radius, mm' });
+    p.line(xs, xs.map((x) => prof(x) / 2), C.paper, 2).line(xs, xs.map((x) => -prof(x) / 2), C.paper, 2);
+    [1.5, 5, 8.5].forEach((x) => { const D = prof(x) / 1000, A = Math.PI * D * D / 4, V = Q / A; p.line([x, x], [-prof(x) / 2, prof(x) / 2], C.grey, 1, [3, 3]); arrow(p, x - 0.15 * Math.min(V, 12), 0, x + 0.15 * Math.min(V, 12), 0, C.cyan, 2.5); p.text(`${nf(2).format(V)} m/s`, x - 0.7, prof(x) / 2 + 22, C.cyan).text(`${nf(1).format(A * V * 1000)} L/s`, x - 0.6, -prof(x) / 2 - 30, C.lime); });
+    out(`Incompressible: Q = AV is the same at every section (${v.Q} L/s). The speed in the throat is (D₁/D₂)² = ${nf(2).format((D1 / v.D2) ** 2)} times the inlet speed.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
