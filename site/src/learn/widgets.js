@@ -1400,6 +1400,86 @@ def('energy', {
   },
 });
 
+// 06.01 traction on a rotating plane
+def('traction', {
+  controls: [{ k: 'sx', label: 'σx (MPa)', min: -100, max: 100, step: 1, v: 60, f: 0 }, { k: 'sy', label: 'σy (MPa)', min: -100, max: 100, step: 1, v: 0, f: 0 }, { k: 't', label: 'τxy (MPa)', min: -60, max: 60, step: 1, v: 25, f: 0 }, { k: 'ph', label: 'Plane normal angle φ (°)', min: 0, max: 180, step: 1, v: 30, f: 0 }],
+  draw(p, v, out) {
+    const ph = v.ph * Math.PI / 180, n = [Math.cos(ph), Math.sin(ph)], m = [-n[1], n[0]];
+    const t = [v.sx * n[0] + v.t * n[1], v.t * n[0] + v.sy * n[1]], sn = t[0] * n[0] + t[1] * n[1], ts = t[0] * m[0] + t[1] * m[1];
+    sqAt(p, 0, 0, 1.6, '', '');
+    poly(p, [[-0.6, -0.6], [0.6, -0.6], [0.6, 0.6], [-0.6, 0.6]], C.rule, 'rgba(154,157,147,0.1)', 1);
+    p.line([-1.3 * m[0], 1.3 * m[0]], [-1.3 * m[1], 1.3 * m[1]], C.paper, 2);
+    arrow(p, 0, 0, 0.5 * n[0], 0.5 * n[1], C.grey, 1.5); p.text('n', 0.58 * n[0], 0.58 * n[1], C.grey);
+    const s = 0.016; arrow(p, 0, 0, t[0] * s, t[1] * s, C.lime, 3);
+    arrow(p, 0, 0, sn * n[0] * s, sn * n[1] * s, C.cyan, 1.5); arrow(p, sn * n[0] * s, sn * n[1] * s, t[0] * s, t[1] * s, C.amber, 1.5);
+    out(`Traction t = σn = (${nf(1).format(t[0])}, ${nf(1).format(t[1])}) MPa (lime). Normal part σn = ${nf(2).format(sn)} MPa (cyan), shear part τ = ${nf(2).format(ts)} MPa (amber). Rotate the plane: the normal stress peaks at the largest principal stress.`);
+  },
+});
+
+// 06.02 deforming grid and small strain
+def('straingrid', {
+  controls: [{ k: 'ex', label: 'Stretch εxx (%)', min: -20, max: 20, step: 0.5, v: 10, f: 1 }, { k: 'ey', label: 'Stretch εyy (%)', min: -20, max: 20, step: 0.5, v: -3, f: 1 }, { k: 'g', label: 'Shear γxy (%)', min: -40, max: 40, step: 1, v: 10, f: 0 }, { k: 'th', label: 'Rigid rotation (°)', min: -45, max: 45, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const exx = v.ex / 100, eyy = v.ey / 100, exy = v.g / 200, th = v.th * Math.PI / 180, c = Math.cos(th), s = Math.sin(th);
+    const F = (x, y) => { const X = x + exx * x + exy * y, Y = y + exy * x + eyy * y; return [c * X - s * Y, s * X + c * Y]; };
+    sqAt(p, 0, 0, 1.5, 'x', 'y');
+    for (let i = -4; i <= 4; i++) { const k = i / 4; p.line([-1, 1], [k, k], C.rule, 1).line([k, k], [-1, 1], C.rule, 1); }
+    for (let i = -4; i <= 4; i++) { const k = i / 4, a = linspace(-1, 1, 9); const r = a.map((x) => F(x, k)), q = a.map((y) => F(k, y)); p.line(r.map((z) => z[0]), r.map((z) => z[1]), C.cyan, 1.5).line(q.map((z) => z[0]), q.map((z) => z[1]), C.cyan, 1.5); }
+    // small strain of the total displacement u = F(x) - x
+    const H = [[(1 + exx) * c - exy * s - 1, exy * c - (1 + eyy) * s], [(1 + exx) * s + exy * c, exy * s + (1 + eyy) * c - 1]];
+    const sxx = H[0][0], syy = H[1][1], sxy = 0.5 * (H[0][1] + H[1][0]);
+    out(`Small strain of the displacement: εxx = ${nf(4).format(sxx)}, εyy = ${nf(4).format(syy)}, εxy = ${nf(4).format(sxy)}. ${Math.abs(v.th) > 0 ? `The rotation of ${v.th}° adds a false strain of about θ²/2 = ${nf(4).format(th * th / 2)} on the diagonal: small strain is only valid for small rotations.` : 'With no rotation, these are exactly the strains you set.'}`);
+  },
+});
+
+// 06.03 stress-strain lines and Poisson contraction
+def('hooke', {
+  controls: [{ type: 'select', k: 'm', label: 'Material', options: ['steel', 'aluminium', 'bamboo'], v: 'steel' }, { k: 's', label: 'Applied stress σ (MPa)', min: 0, max: 400, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const M = { steel: [210e3, 0.3, 355, C.lime], aluminium: [70e3, 0.33, 275, C.cyan], bamboo: [18e3, 0.3, 150, C.amber] };
+    p.frame({ x: [0, 1], y: [0, 400], xlabel: 'strain ε, %', ylabel: 'stress σ, MPa' });
+    Object.entries(M).forEach(([k, [E, , fy, col]]) => { const ey = fy / E * 100; p.line([0, Math.min(1, ey)], [0, Math.min(1, ey) / 100 * E], col, k === v.m ? 3 : 1.5).line([Math.min(1, ey), 1], [fy, fy], col, 1, [4, 4]); });
+    const [E, nu, fy] = M[v.m], s = Math.min(v.s, fy), e = s / E;
+    p.dots([e * 100], [s], C.paper, 5);
+    out(`${v.m}: E = ${nf(0).format(E / 1e3)} GPa, ν = ${nu}. At ${nf(0).format(s)} MPa the strain is ${nf(3).format(e * 100)} % and the bar narrows by ${nf(4).format(nu * e * 100)} %. ${v.s > fy ? `Above about ${fy} MPa it yields (dashed, idealised): Hooke's law no longer holds.` : 'Linear and reversible.'}${v.m === 'bamboo' ? ' Bamboo values are along the fibres; across them it is far softer.' : ''}`);
+  },
+});
+
+// 06.04 stepped bar stretch
+def('axialbar', {
+  controls: [{ k: 'P', label: 'End load P (kN)', min: -60, max: 60, step: 1, v: 30, f: 0 }, { k: 'd2', label: 'Aluminium part diameter (mm)', min: 15, max: 45, step: 1, v: 30, f: 0 }, { k: 'x', label: 'Exaggeration of the stretch (×)', min: 100, max: 2000, step: 50, v: 500, f: 0 }],
+  draw(p, v, out) {
+    const As = Math.PI * 100, Aa = Math.PI * v.d2 * v.d2 / 4, P = v.P * 1e3;
+    const d1 = P * 400 / (210e3 * As), d2 = P * 300 / (70e3 * Aa), k = v.x;
+    p.frame({ x: [-50, 1060], y: [-60, 60], xlabel: 'x, mm', ylabel: '', noy: true });
+    p.rect(-40, 0, -50, 50, 'rgba(154,157,147,0.4)');
+    const e1 = 400 + d1 * k, e2 = e1 + 300 + d2 * k;
+    p.rect(0, e1, -10, 10, 'rgba(184,255,92,0.5)').rect(e1, e2, -v.d2 / 2, v.d2 / 2, 'rgba(92,200,255,0.5)');
+    p.line([400, 400], [-45, 45], C.grey, 1, [3, 3]).line([700, 700], [-45, 45], C.grey, 1, [3, 3]);
+    if (v.P !== 0) arrow(p, e2 + (v.P > 0 ? 5 : 120), 0, e2 + (v.P > 0 ? 120 : 5), 0, C.amber, 3);
+    out(`Steel 400 mm × Ø20 stretches ${nf(4).format(d1)} mm (σ = ${nf(1).format(P / As)} MPa); aluminium 300 mm × Ø${v.d2} stretches ${nf(4).format(d2)} mm (σ = ${nf(1).format(P / Aa)} MPa). Total δ = ΣNL/(EA) = ${nf(4).format(d1 + d2)} mm, drawn ${k}× larger. Dashed lines: unloaded joint and end.`);
+  },
+});
+
+// 06.05 bar between two walls
+def('fixedbar', {
+  controls: [{ k: 'a', label: 'Load position from wall A (mm)', min: 50, max: 950, step: 10, v: 300, f: 0 }, { k: 'P', label: 'Load P (kN)', min: 0, max: 100, step: 1, v: 60, f: 0 }, { type: 'select', k: 'm', label: 'Part to the right of the load', options: ['same as the left', 'aluminium, 1.5× the area', 'half the area'], v: 'same as the left' }],
+  draw(p, v, out) {
+    const L = 1000, EA1 = 210e3 * 400, EA2 = v.m === 'same as the left' ? EA1 : v.m === 'half the area' ? EA1 / 2 : 70e3 * 600;
+    const f1 = v.a / EA1, f2 = (L - v.a) / EA2, RA = v.P * f2 / (f1 + f2), RB = v.P - RA;
+    p.frame({ x: [-80, 1080], y: [-1.6, 1.3], xlabel: 'x, mm', ylabel: '', noy: true });
+    p.rect(-60, 0, -0.5, 1.2, 'rgba(154,157,147,0.4)').rect(L, L + 60, -0.5, 1.2, 'rgba(154,157,147,0.4)');
+    p.rect(0, v.a, 0.25, 0.45, 'rgba(184,255,92,0.5)').rect(v.a, L, EA2 === EA1 ? 0.25 : EA2 > EA1 * 0.6 && v.m.startsWith('al') ? 0.2 : 0.3, EA2 === EA1 ? 0.45 : v.m.startsWith('al') ? 0.5 : 0.4, v.m.startsWith('al') ? 'rgba(92,200,255,0.5)' : 'rgba(184,255,92,0.5)');
+    if (v.P > 0) arrow(p, v.a - 120, 0.85, v.a, 0.85, C.amber, 3);
+    // axial force diagram: +RA tension left of the load, -RB compression right of it
+    const sc = 0.9 / Math.max(1, v.P);
+    p.line([0, L], [-0.6, -0.6], C.rule, 1);
+    p.rect(0, v.a, -0.6, -0.6 + RA * sc, 'rgba(92,200,255,0.35)').rect(v.a, L, -0.6, -0.6 - RB * sc, 'rgba(255,170,60,0.35)');
+    p.text(`N = +${nf(1).format(RA)} kN`, 10, -0.5 + RA * sc * 0.5, C.cyan).text(`−${nf(1).format(RB)} kN`, v.a + 10, -0.75 - RB * sc * 0.5, C.amber);
+    out(`Equilibrium RA + RB = P, compatibility (total stretch zero) RA·a/EA₁ = RB·b/EA₂. RA = ${nf(2).format(RA)} kN, RB = ${nf(2).format(RB)} kN, sum ${nf(2).format(RA + RB)} kN. The stiffer, shorter side takes more of the load.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
