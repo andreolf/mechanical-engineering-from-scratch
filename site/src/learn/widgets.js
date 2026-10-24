@@ -3707,6 +3707,93 @@ def('airfoilaoa', {
   },
 });
 
+// 12.07 Hess-Smith panel method: pressure distribution
+function hessSmith12(m, t, alpha, nh) {
+  const pp = 0.4, X = [], Y = [], xs = [], yu = [], yl = [];
+  for (let i = 0; i <= nh; i++) {
+    const x = (1 - Math.cos(Math.PI * i / nh)) / 2, yt = 5 * t * (0.2969 * Math.sqrt(x) - 0.126 * x - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4);
+    const yc = m === 0 ? 0 : x < pp ? m / pp ** 2 * (2 * pp * x - x * x) : m / (1 - pp) ** 2 * (1 - 2 * pp + 2 * pp * x - x * x);
+    xs.push(x); yu.push(yc + yt); yl.push(yc - yt);
+  }
+  for (let i = nh; i >= 0; i--) { X.push(xs[i]); Y.push(yl[i]); }
+  for (let i = 1; i <= nh; i++) { X.push(xs[i]); Y.push(yu[i]); }
+  Y[0] = Y[Y.length - 1] = (Y[0] + Y[Y.length - 1]) / 2;
+  const N = X.length - 1, xc = [], yc = [], L = [], th = [];
+  for (let j = 0; j < N; j++) { xc.push((X[j] + X[j + 1]) / 2); yc.push((Y[j] + Y[j + 1]) / 2); L.push(Math.hypot(X[j + 1] - X[j], Y[j + 1] - Y[j])); th.push(Math.atan2(Y[j + 1] - Y[j], X[j + 1] - X[j])); }
+  const An = [], At = [], Bn = new Array(N).fill(0), Bt = new Array(N).fill(0);
+  for (let i = 0; i < N; i++) {
+    An.push(new Array(N)); At.push(new Array(N));
+    const nx = -Math.sin(th[i]), ny = Math.cos(th[i]), tx = Math.cos(th[i]), ty = Math.sin(th[i]);
+    for (let j = 0; j < N; j++) {
+      let us, vs;
+      if (i === j) { us = 0; vs = 0.5; } else {
+        const dx = xc[i] - X[j], dy = yc[i] - Y[j], c = Math.cos(th[j]), s = Math.sin(th[j]), xp = dx * c + dy * s, yp = -dx * s + dy * c;
+        us = Math.log(Math.hypot(xp, yp) / Math.hypot(xp - L[j], yp)) / (2 * Math.PI); vs = (Math.atan2(yp, xp - L[j]) - Math.atan2(yp, xp)) / (2 * Math.PI);
+      }
+      const c = Math.cos(th[j]), s = Math.sin(th[j]), ug = us * c - vs * s, vg = us * s + vs * c, ugv = vs * c + us * s, vgv = vs * s - us * c;
+      An[i][j] = ug * nx + vg * ny; At[i][j] = ug * tx + vg * ty; Bn[i] += ugv * nx + vgv * ny; Bt[i] += ugv * tx + vgv * ty;
+    }
+  }
+  const U = Math.cos(alpha), V = Math.sin(alpha), M = [];
+  for (let i = 0; i < N; i++) M.push(An[i].concat([Bn[i], -(U * -Math.sin(th[i]) + V * Math.cos(th[i]))]));
+  M.push(At[0].map((a, j) => a + At[N - 1][j]).concat([Bt[0] + Bt[N - 1], -(U * (Math.cos(th[0]) + Math.cos(th[N - 1])) + V * (Math.sin(th[0]) + Math.sin(th[N - 1])))]));
+  const n = N + 1;
+  for (let k = 0; k < n; k++) { let piv = k; for (let r = k + 1; r < n; r++) if (Math.abs(M[r][k]) > Math.abs(M[piv][k])) piv = r; [M[k], M[piv]] = [M[piv], M[k]]; for (let r = k + 1; r < n; r++) { const f = M[r][k] / M[k][k]; for (let c2 = k; c2 <= n; c2++) M[r][c2] -= f * M[k][c2]; } }
+  const sol = new Array(n); for (let k = n - 1; k >= 0; k--) { let s = M[k][n]; for (let c2 = k + 1; c2 < n; c2++) s -= M[k][c2] * sol[c2]; sol[k] = s / M[k][k]; }
+  const gam = sol[N], Cp = [];
+  for (let i = 0; i < N; i++) { let vt = gam * Bt[i] + U * Math.cos(th[i]) + V * Math.sin(th[i]); for (let j = 0; j < N; j++) vt += At[i][j] * sol[j]; Cp.push(1 - vt * vt); }
+  return { xc, Cp, N, CL: 2 * gam * L.reduce((a, b) => a + b, 0) };
+}
+def('panelcp', {
+  controls: [{ k: 'a', label: 'Angle of attack α (°)', min: -4, max: 12, step: 0.5, v: 4, f: 1 }, { k: 't', label: 'Thickness (% chord)', min: 2, max: 20, step: 1, v: 12, f: 0 }, { k: 'm', label: 'Maximum camber (% chord)', min: 0, max: 6, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const r = hessSmith12(v.m / 100, v.t / 100, v.a * Math.PI / 180, 40), h = r.N / 2;
+    const lower = r.Cp.slice(0, h), upper = r.Cp.slice(h), xl = r.xc.slice(0, h), xu = r.xc.slice(h);
+    const top = Math.max(1.2, ...r.Cp.map((c) => -c)) * 1.1;
+    p.frame({ x: [0, 1], y: [-1.1, top], xlabel: 'x / c', ylabel: '−C_p (suction up)' });
+    p.line([0, 1], [0, 0], C.grey, 1).line(xu, upper.map((c) => -c), C.lime, 2.5).line(xl, lower.map((c) => -c), C.cyan, 2.5);
+    p.text('upper surface', 0.55, top * 0.85, C.lime).text('lower surface', 0.55, -0.85, C.cyan);
+    const thin = 2 * Math.PI * v.a * Math.PI / 180;
+    out(`Hess-Smith with ${r.N} panels: C_L = ${nf(3).format(r.CL)}. ${v.m === 0 ? `Thin airfoil theory gives 2πα = ${nf(3).format(thin)}; thickness adds about ${nf(0).format(77 * v.t / 100)}% (1 + 0.77 t/c).` : 'Camber adds lift at every angle, spread along the chord.'} The area between the two curves is the lift; the suction peak near the leading edge does most of the work.`);
+  },
+});
+
+// 12.08 model turbulence energy spectrum
+def('kspectrum', {
+  controls: [{ k: 'le', label: 'Dissipation rate, log₁₀ ε (W/kg)', min: -6, max: 0, step: 0.1, v: -2.9, f: 1 }, { k: 'L', label: 'Large-eddy size L (m)', min: 0.1, max: 10, step: 0.1, v: 6, f: 1 }],
+  draw(p, v, out) {
+    const nu = 1e-6, eps = 10 ** v.le, L = v.L, eta = (nu ** 3 / eps) ** 0.25;
+    const E = (k) => { const kL = k * L, ke = k * eta; return 1.5 * eps ** (2 / 3) * k ** (-5 / 3) * (kL / Math.sqrt(kL * kL + 6.78)) ** (11 / 3) * Math.exp(-5.2 * ((ke ** 4 + 0.4 ** 4) ** 0.25 - 0.4)); };
+    const ks = logspace(-2, 5, 300), Es = ks.map(E), ymax = Math.max(...Es) * 30;
+    p.frame({ x: [1e-2, 1e5], y: [ymax * 1e-12, ymax], xlog: true, ylog: true, xlabel: 'wavenumber k, 1/m', ylabel: 'E(k), m³/s²' });
+    p.line(ks, Es, C.lime, 2.5);
+    const k1 = 8 / L, k2 = 0.1 / eta; if (k2 > k1) p.line([k1, k2], [E(k1) * 4, E(k1) * 4 * (k2 / k1) ** (-5 / 3)], C.amber, 1.5, [5, 4]);
+    p.line([1 / L, 1 / L], [ymax * 1e-12, ymax], C.grey, 1, [3, 3]).line([1 / eta, 1 / eta], [ymax * 1e-12, ymax], C.red, 1, [3, 3]).text('1/L', 1.15 / L, ymax * 0.05, C.grey).text('1/η', 1.15 / eta, ymax * 0.05, C.red).text('−5/3', Math.sqrt(k1 * k2), E(Math.sqrt(k1 * k2)) * 12, C.amber);
+    const u = (eps * L) ** (1 / 3);
+    out(`Kolmogorov length η = (ν³/ε)¹ᐟ⁴ = ${nf(3).format(eta * 1000)} mm, time ${nf(1).format(Math.sqrt(nu / eps) * 1000)} ms. Large eddies of ${nf(1).format(L)} m carry u' ≈ (εL)¹ᐟ³ = ${nf(3).format(u)} m/s, so L/η = ${nf(0).format(L / eta)}. Energy enters at the left, cascades along the −5/3 line, and is dissipated near 1/η.`);
+  },
+});
+
+// 12.09 Reynolds decomposition of a velocity record
+def('reynoldsdecomp', {
+  controls: [{ k: 'I', label: 'Turbulence intensity (%)', min: 0, max: 30, step: 1, v: 10, f: 0 }, { k: 'r', label: "Correlation of u' and v'", min: -0.8, max: 0.8, step: 0.05, v: -0.4, f: 2 }, { k: 'T', label: 'Averaging window (s)', min: 0.2, max: 20, step: 0.2, v: 20, f: 1 }],
+  draw(p, v, out) {
+    let seed = 12345; const rnd = () => { seed = (seed + 0x6d2b79f5) | 0; let z = Math.imul(seed ^ (seed >>> 15), 1 | seed); z = (z + Math.imul(z ^ (z >>> 7), 61 | z)) ^ z; return ((z ^ (z >>> 14)) >>> 0) / 4294967296; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+    const n = 2000, dt = 0.01, U0 = 1.5, su = v.I / 100 * U0, sv = 0.55 * su, a = [], b = [];
+    let fa = 0, fb = 0; const ph = 0.9;                              // a little memory, so the trace looks like turbulence
+    for (let i = 0; i < n; i++) { fa = ph * fa + Math.sqrt(1 - ph * ph) * gauss(); fb = ph * fb + Math.sqrt(1 - ph * ph) * gauss(); a.push(fa); b.push(fb); }
+    const ts = a.map((_, i) => i * dt), u = a.map((x) => U0 + su * x), w = a.map((x, i) => sv * (v.r * x + Math.sqrt(1 - v.r * v.r) * b[i]));
+    const m = Math.min(n, Math.max(2, Math.round(v.T / dt))), Um = u.slice(0, m).reduce((s, x) => s + x, 0) / m;
+    const up = u.slice(0, m).map((x) => x - Um), wm = w.slice(0, m).reduce((s, x) => s + x, 0) / m, vp = w.slice(0, m).map((x) => x - wm);
+    const mean = (q) => q.reduce((s, x) => s + x, 0) / q.length, uu = mean(up.map((x) => x * x)), uv = mean(up.map((x, i) => x * vp[i]));
+    p.frame({ x: [0, 20], y: [U0 * 0.4, U0 * 1.6], xlabel: 'time, s', ylabel: 'streamwise velocity u, m/s' });
+    p.rect(0, m * dt, U0 * 0.4, U0 * 1.6, 'rgba(238,255,65,0.06)');
+    p.line(ts, u, C.cyan, 1).line([0, m * dt], [Um, Um], C.lime, 2.5).text(`U = ${nf(3).format(Um)} m/s`, 0.3, U0 * 1.5, C.lime);
+    out(`Over the ${nf(1).format(m * dt)} s window: mean U = ${nf(4).format(Um)} m/s, mean of u' = ${Math.abs(mean(up)) < 1e-12 ? '0' : mean(up).toExponential(1)} (always zero by construction), ⟨u'u'⟩ = ${nf(5).format(uu)} m²/s², Reynolds shear stress −ρ⟨u'v'⟩ = ${nf(2).format(-1000 * uv)} Pa. ${v.T < 3 ? 'A short window gives a noisy mean: averages need many eddy lifetimes.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
