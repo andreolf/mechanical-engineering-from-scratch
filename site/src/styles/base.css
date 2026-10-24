@@ -106,3 +106,14 @@ input[type=checkbox], input[type=radio] { accent-color: var(--lime); width: 20px
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; scroll-behavior: auto !important; } }
+
+/* Small phones: keep brand, Course link and a 4-5 digit XP chip on one line at 360px */
+@media (max-width: 399px) {
+  .nav .brand { gap: 8px; font-size: 0.95rem; }
+  .nav .brand-mark { width: 22px; height: 22px; }
+  .nav-links a { padding: 0 8px; }
+  .nav-links a.xp-link { padding-left: 2px; }
+  .xp-chip { padding: 0 8px; gap: 5px; }
+}
+
+.footer .brand { white-space: normal; }

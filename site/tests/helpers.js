@@ -9,7 +9,9 @@ export function watchConsole(page) {
   return errors;
 }
 export async function noOverflow(page) {
-  const m = await page.evaluate(() => ({ iw: window.innerWidth, sw: document.documentElement.scrollWidth, bw: document.body.scrollWidth }));
+  // innerWidth grows with the content on emulated mobile, so compare against the configured viewport
+  const vw = page.viewportSize()?.width;
+  const m = await page.evaluate((vw) => ({ iw: Math.min(vw || 1e9, document.documentElement.clientWidth), sw: document.documentElement.scrollWidth, bw: document.body.scrollWidth }), vw);
   return m.sw <= m.iw + 1 && m.bw <= m.iw + 1 ? true : m;
 }
 export async function canvasHasContent(page, testid) {

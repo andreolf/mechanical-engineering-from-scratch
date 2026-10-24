@@ -134,6 +134,9 @@ test.describe('Lessons, quizzes, progress and certificates', () => {
     expect(pdfBytes.subarray(-6).toString()).toContain('%%EOF');
     await page.locator('#cert-canvas').scrollIntoViewIfNeeded();
     expect(await noOverflow(page)).toBe(true);
+    // nav chip with 3-digit XP must stay inside the viewport
+    const chip = await page.locator('.xp-chip').first().boundingBox();
+    expect(chip.x + chip.width).toBeLessThanOrEqual(page.viewportSize().width - 4);
     await page.screenshot({ path: shot(info, 'certificate') });
     if (info.project.name === 'desktop') fs.writeFileSync(shot(info, 'certificate-image'), pngBytes);
     // verify page recomputes the same code from the printed details
