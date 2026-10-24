@@ -535,6 +535,122 @@ def('beamgreen', {
   },
 });
 
+// 04.01 observed convergence order on a log-log plot
+def('convorder', {
+  controls: [{ type: 'select', k: 'm', label: 'Difference formula for (sin x)′ at x = 1', options: ['forward', 'central', 'five-point'], v: 'central' }, { k: 'hmin', label: 'Smallest step h = 10^', min: -12, max: -2, step: 1, v: -10, f: 0 }],
+  draw(p, v, out) {
+    const f = Math.sin, x = 1, ex = Math.cos(1);
+    const D = { forward: (h) => (f(x + h) - f(x)) / h, central: (h) => (f(x + h) - f(x - h)) / (2 * h), 'five-point': (h) => (-f(x + 2 * h) + 8 * f(x + h) - 8 * f(x - h) + f(x - 2 * h)) / (12 * h) }[v.m];
+    const hs = logspace(v.hmin, -0.5, 40), es = hs.map((h) => Math.max(Math.abs(D(h) - ex), 1e-17));
+    p.frame({ x: [10 ** v.hmin, 10 ** -0.5], y: [1e-16, 1], xlog: true, ylog: true, xlabel: 'step h', ylabel: 'error' });
+    p.line(hs, es).dots(hs, es, C.lime, 2.5);
+    // fit the slope on the three largest steps, where truncation error dominates
+    const n = hs.length, a = [n - 6, n - 1].map((i) => [Math.log10(hs[i]), Math.log10(es[i])]);
+    const slope = (a[1][1] - a[0][1]) / (a[1][0] - a[0][0]);
+    let imin = 0; es.forEach((e, i) => { if (e < es[imin]) imin = i; });
+    out(`Slope at large h: ${nf(2).format(slope)} (the order). Best error ${es[imin].toExponential(1)} at h ≈ ${hs[imin].toExponential(0)}; below that, round-off grows like ε/h and the curve turns back up.`);
+  },
+});
+
+// 04.02 race of root finders
+function rootRace(f, a, b, x0, df) {
+  const res = { bisection: [], secant: [], Newton: [], Brent: [] };
+  let lo = a, hi = b, flo = f(a);
+  for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2, fm = f(m); res.bisection.push(m); if (flo * fm <= 0) hi = m; else { lo = m; flo = fm; } }
+  let s0 = a, s1 = b;
+  for (let i = 0; i < 60; i++) { const f0 = f(s0), f1 = f(s1); if (f1 === f0 || !isFinite(s1)) break; const s2 = s1 - f1 * (s1 - s0) / (f1 - f0); s0 = s1; s1 = s2; res.secant.push(s1); }
+  let xn = x0;
+  for (let i = 0; i < 60; i++) { const d = df(xn); if (!d || !isFinite(xn)) break; xn = xn - f(xn) / d; res.Newton.push(xn); }
+  // simplified Brent: inverse quadratic / secant inside the bracket, else bisection
+  let A = a, B = b, fa = f(A), fb = f(B); if (Math.abs(fa) < Math.abs(fb)) [A, B, fa, fb] = [B, A, fb, fa];
+  let Cc = A, fc = fa;
+  for (let i = 0; i < 60 && Math.abs(B - A) > 1e-15 && fb !== 0; i++) {
+    let s = fa !== fc && fb !== fc ? A * fb * fc / ((fa - fb) * (fa - fc)) + B * fa * fc / ((fb - fa) * (fb - fc)) + Cc * fa * fb / ((fc - fa) * (fc - fb)) : B - fb * (B - A) / (fb - fa);
+    const lo2 = Math.min((3 * A + B) / 4, B), hi2 = Math.max((3 * A + B) / 4, B);
+    if (!(s > lo2 && s < hi2) || Math.abs(s - B) >= Math.abs(B - Cc) / 2) s = (A + B) / 2;
+    const fs = f(s); Cc = B; fc = fb;
+    if (fa * fs < 0) { B = s; fb = fs; } else { A = s; fa = fs; }
+    if (Math.abs(fa) < Math.abs(fb)) [A, B, fa, fb] = [B, A, fb, fa];
+    res.Brent.push(B);
+  }
+  return res;
+}
+def('rootrace', {
+  controls: [{ type: 'select', k: 'fn', label: 'Equation', options: ['Colebrook friction factor', 'x³ − 2x − 5 = 0', 'atan(x − 1) = 0'], v: 'Colebrook friction factor' }],
+  draw(p, v, out) {
+    const P = {
+      'Colebrook friction factor': { f: (x) => x + 2 * Math.log10(1e-4 / 3.7 + 2.51 * x / 1e5), df: (x) => 1 + 2 / Math.LN10 * (2.51 / 1e5) / (1e-4 / 3.7 + 2.51 * x / 1e5), a: 1, b: 20, x0: 1 },
+      'x³ − 2x − 5 = 0': { f: (x) => x ** 3 - 2 * x - 5, df: (x) => 3 * x * x - 2, a: 2, b: 3, x0: 3 },
+      'atan(x − 1) = 0': { f: (x) => Math.atan(x - 1), df: (x) => 1 / (1 + (x - 1) ** 2), a: -5, b: 30, x0: 3 },
+    }[v.fn];
+    const r = rootRace(P.f, P.a, P.b, P.x0, P.df), root = r.Brent[r.Brent.length - 1];
+    p.frame({ x: [0, 50], y: [1e-16, 1e2], ylog: true, xlabel: 'iteration', ylabel: '|x − root|' });
+    const col = { bisection: C.grey, secant: C.cyan, Newton: C.amber, Brent: C.lime }, msg = [];
+    for (const k of Object.keys(r)) {
+      const e = r[k].map((x) => Math.max(Math.abs(x - root), 1e-16)), it = e.map((_, i) => i + 1);
+      p.line(it, e.map((y) => (isFinite(y) ? y : NaN)), col[k], k === 'Brent' ? 2.5 : 1.5);
+      const n = e.findIndex((y) => y < 1e-12);
+      msg.push(`${k} ${n < 0 ? 'fails' : n + 1}`);
+    }
+    out(`Iterations to 1e-12: ${msg.join(', ')}. Grey bisection, cyan secant, amber Newton, lime Brent.`);
+  },
+});
+
+// 04.03 node hanging from two elastic cables, solved with Newton
+def('cables', {
+  controls: [{ k: 'W', label: 'Hanging load W (N)', min: 200, max: 6000, step: 100, v: 2000, f: 0 }, { k: 'it', label: 'Newton iterations shown', min: 0, max: 6, step: 1, v: 6, f: 0 }],
+  draw(p, v, out) {
+    const A = [[0, 0], [4, 0]], L0 = [2.5, 2.0], EA = 50e3;
+    const res = (x, y) => { let rx = 0, ry = -v.W; for (let i = 0; i < 2; i++) { const dx = A[i][0] - x, dy = A[i][1] - y, L = Math.hypot(dx, dy), T = L > L0[i] ? EA * (L - L0[i]) / L0[i] : 0; rx += T * dx / L; ry += T * dy / L; } return [rx, ry]; };
+    const jac = (x, y) => { const J = [[0, 0], [0, 0]]; for (let i = 0; i < 2; i++) { const dx = A[i][0] - x, dy = A[i][1] - y, L = Math.hypot(dx, dy); if (L <= L0[i]) continue; const u = [dx / L, dy / L], k = EA / L0[i], T = k * (L - L0[i]); for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) J[r][c] -= k * u[r] * u[c] + (T / L) * ((r === c ? 1 : 0) - u[r] * u[c]); } return J; };
+    let x = 2, y = -2; const P = [[x, y]], R = [Math.hypot(...res(x, y))];
+    for (let k = 0; k < v.it; k++) { const [rx, ry] = res(x, y), J = jac(x, y), det = J[0][0] * J[1][1] - J[0][1] * J[1][0]; x -= (J[1][1] * rx - J[0][1] * ry) / det; y -= (-J[1][0] * rx + J[0][0] * ry) / det; P.push([x, y]); R.push(Math.hypot(...res(x, y))); }
+    p.frame({ x: [-0.5, 4.5], y: [-3, 0.6], xlabel: 'x, m', ylabel: 'y, m' });
+    p.line([-0.3, 4.3], [0, 0], C.grey, 3);
+    P.slice(0, -1).forEach(([px, py]) => p.line([0, px, 4], [0, py, 0], 'rgba(242,243,236,0.25)', 1));
+    p.line([0, x, 4], [0, y, 0], C.lime, 2).dots(P.map((q) => q[0]), P.map((q) => q[1]), C.cyan, 3).dots([x], [y], C.lime, 5).dots([0, 4], [0, 0], C.paper, 4);
+    const T = A.map((a, i) => EA * (Math.hypot(a[0] - x, a[1] - y) - L0[i]) / L0[i]);
+    out(`Node at (${nf(3).format(x)}, ${nf(3).format(y)}) m, residual ${R[R.length - 1].toExponential(1)} N. Tensions: left ${nf(0).format(T[0])} N, right ${nf(0).format(T[1])} N. Residual per step: ${R.map((r) => r.toExponential(0)).join(' → ')}.`);
+  },
+});
+
+// 04.04 Runge phenomenon: equispaced vs Chebyshev nodes
+def('runge', {
+  controls: [{ k: 'n', label: 'Polynomial degree n', min: 2, max: 24, step: 1, v: 12, f: 0 }, { type: 'select', k: 'nodes', label: 'Nodes', options: ['equispaced', 'Chebyshev'], v: 'equispaced' }],
+  draw(p, v, out) {
+    const f = (x) => 1 / (1 + 25 * x * x), n = v.n;
+    const xn = v.nodes === 'equispaced' ? linspace(-1, 1, n + 1) : Array.from({ length: n + 1 }, (_, k) => Math.cos((2 * k + 1) * Math.PI / (2 * (n + 1))));
+    const w = xn.map((xj, j) => 1 / xn.reduce((acc, xk, k) => (k === j ? acc : acc * (xj - xk)), 1)), yn = xn.map(f);
+    const P = (x) => { let num = 0, den = 0; for (let j = 0; j <= n; j++) { const d = x - xn[j]; if (Math.abs(d) < 1e-14) return yn[j]; num += w[j] * yn[j] / d; den += w[j] / d; } return num / den; };
+    const xs = linspace(-1, 1, 801), ps = xs.map(P), err = Math.max(...xs.map((x, i) => Math.abs(ps[i] - f(x))));
+    p.frame({ x: [-1, 1], y: [-0.6, 1.6], xlabel: 'x', ylabel: 'y' });
+    p.line(xs, xs.map(f), C.grey, 1.5, [4, 4]).line(xs, ps).dots(xn, yn, C.cyan, 3.5);
+    out(`Max error ${nf(4).format(err)} with ${n + 1} ${v.nodes} nodes. Dashed: 1/(1 + 25x²). ${v.nodes === 'equispaced' && n > 10 ? 'The wiggles near the ends grow with n: the Runge phenomenon.' : 'Clustering nodes towards the ends tames the wiggles.'}`);
+  },
+});
+
+// 04.05 natural cubic spline vs a single interpolating polynomial
+def('spline', {
+  controls: [{ k: 'y3', label: 'Height of the middle station (mm)', min: 0, max: 90, step: 1, v: 80, f: 0 }],
+  draw(p, v, out) {
+    const x = [0, 60, 150, 260, 400, 520, 600], y = [0, 18, 40, v.y3, 47, 30, 22], n = x.length - 1, h = x.slice(1).map((xi, i) => xi - x[i]);
+    // tridiagonal system for interior second derivatives (Thomas algorithm)
+    const m = n - 1, a = [], b = [], c = [], d = [];
+    for (let i = 1; i < n; i++) { a.push(h[i - 1]); b.push(2 * (h[i - 1] + h[i])); c.push(h[i]); d.push(6 * ((y[i + 1] - y[i]) / h[i] - (y[i] - y[i - 1]) / h[i - 1])); }
+    for (let i = 1; i < m; i++) { const w = a[i] / b[i - 1]; b[i] -= w * c[i - 1]; d[i] -= w * d[i - 1]; }
+    const Mi = Array(m).fill(0); Mi[m - 1] = d[m - 1] / b[m - 1]; for (let i = m - 2; i >= 0; i--) Mi[i] = (d[i] - c[i] * Mi[i + 1]) / b[i];
+    const M = [0, ...Mi, 0];
+    const S = (t, der = 0) => { let i = 0; while (i < n - 1 && t > x[i + 1]) i++; const hh = h[i], A = (x[i + 1] - t) / hh, B = (t - x[i]) / hh; return der === 2 ? A * M[i] + B * M[i + 1] : A * y[i] + B * y[i + 1] + ((A ** 3 - A) * M[i] + (B ** 3 - B) * M[i + 1]) * hh * hh / 6; };
+    const w = x.map((xj, j) => 1 / x.reduce((acc, xk, k) => (k === j ? acc : acc * (xj - xk)), 1));
+    const Poly = (t) => { let num = 0, den = 0; for (let j = 0; j <= n; j++) { const dd = t - x[j]; if (Math.abs(dd) < 1e-12) return y[j]; num += w[j] * y[j] / dd; den += w[j] / dd; } return num / den; };
+    const ts = linspace(0, 600, 601);
+    p.frame({ x: [0, 600], y: [-20, 110], xlabel: 'x, mm', ylabel: 'y, mm' });
+    p.line(ts, ts.map(Poly), C.grey, 1.5, [4, 4]).line(ts, ts.map((t) => S(t))).dots(x, y, C.cyan, 4);
+    const kmax = Math.max(...ts.map((t) => Math.abs(S(t, 2))));
+    out(`Lime: natural cubic spline, smooth to the second derivative at every station; largest |y″| = ${kmax.toExponential(2)} per mm. Dashed: the single degree-6 polynomial through the same points.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];

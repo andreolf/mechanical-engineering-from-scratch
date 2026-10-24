@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { watchConsole, noOverflow } from './helpers.js';
 
 // Every written lesson must render cleanly: no console errors, no KaTeX errors, widgets drawn, no sideways overflow.
-const index = JSON.parse(fs.readFileSync(new URL('../public/lessons/index.json', import.meta.url)));
+const index = JSON.parse(fs.readFileSync(process.env.LESSON_INDEX || new URL('../public/lessons/index.json', import.meta.url)));
 const ids = index.written;
 
 test.describe('All written lessons', () => {
