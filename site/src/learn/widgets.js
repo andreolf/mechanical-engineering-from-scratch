@@ -2227,6 +2227,55 @@ def('coupled', {
   },
 });
 
+// 08.07 tuned mass damper on a footbridge
+def('tmdbridge', {
+  controls: [{ k: 'mu', label: 'TMD mass / bridge modal mass (%)', min: 0.5, max: 8, step: 0.5, v: 2, f: 1 }, { k: 'f', label: 'TMD tuning (frequency ratio)', min: 0.8, max: 1.2, step: 0.005, v: 0.98, f: 3 }, { k: 'z', label: 'TMD damping ratio', min: 0.01, max: 0.3, step: 0.005, v: 0.085, f: 3 }],
+  draw(p, v, out) {
+    const mu = v.mu / 100, zs = 0.005, rs = linspace(0.75, 1.25, 700);
+    const X = (r, on) => { if (!on) return 1 / Math.hypot(1 - r * r, 2 * zs * r); const k2 = mu * v.f * v.f, c2 = 2 * v.z * mu * v.f;
+      // complex 2x2 solve, first unknown: X1 = a22 / (a11 a22 - a12^2)
+      const a11 = [1 + k2 - r * r, r * (2 * zs + c2)], a12 = [-k2, -r * c2], a22 = [k2 - mu * r * r, r * c2];
+      const mul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]], d1 = mul(a11, a22), d2 = mul(a12, a12), det = [d1[0] - d2[0], d1[1] - d2[1]];
+      return Math.hypot(...a22) / Math.hypot(...det); };
+    const on = rs.map((r) => X(r, 1)), pk = Math.max(...on), fdh = 1 / (1 + mu), zdh = Math.sqrt(3 * mu / (8 * (1 + mu) ** 3));
+    p.frame({ x: [0.75, 1.25], y: [0, 40], xlabel: 'forcing frequency / bridge frequency', ylabel: 'amplitude / static deflection' });
+    p.line(rs, rs.map((r) => Math.min(40, X(r, 0))), C.red, 1.5).line(rs, on, C.lime, 2.5);
+    p.text('no TMD (peak 100)', 1.03, 37, C.red);
+    out(`With the TMD the worst-case amplification is ${nf(1).format(pk)}, down from 100 without it. Den Hartog's recipe for ${nf(1).format(v.mu)} %: tuning ${nf(3).format(fdh)}, damping ${nf(3).format(zdh)}. Too little TMD damping splits the peak into two tall ones; too much locks the TMD to the bridge.`);
+  },
+});
+
+// 08.08 five-storey shear building modes
+def('building5', {
+  controls: [{ k: 'mode', label: 'Mode', min: 1, max: 5, step: 1, v: 1, f: 0 }, { k: 'ph', label: 'Phase of the swing (°)', min: 0, max: 360, step: 5, v: 90, f: 0 }],
+  draw(p, v, out) {
+    const n = 5, m = 20e3, k = 40e6, i = v.mode, w = 2 * Math.sqrt(k / m) * Math.sin((2 * i - 1) * Math.PI / (2 * (2 * n + 1)));
+    // shear building with fixed base and free top: mode shapes sin((2i-1) j pi / (2n+1))
+    const sh = range(0, n).map((j) => Math.sin((2 * i - 1) * j * Math.PI / (2 * n + 1))), top = sh[n], s = Math.sin(v.ph * Math.PI / 180) * 0.9 / Math.abs(top) * Math.sign(top);
+    fitAt(p, 0, 2.6, 2.3, 2.9, 'sway (exaggerated)', 'floor');
+    p.line([-2, 2], [0, 0], C.grey, 2);
+    for (let j = 1; j <= n; j++) { const x0 = sh[j - 1] * s, x1 = sh[j] * s; p.line([x0 - 1, x1 - 1], [j - 1, j], C.paper, 2).line([x0 + 1, x1 + 1], [j - 1, j], C.paper, 2).line([x1 - 1.1, x1 + 1.1], [j, j], C.lime, 4); }
+    p.line(sh.map((y) => y * 0.9 / Math.abs(top) * Math.sign(top)), range(0, n), C.amber, 1, [3, 4]);
+    const L = sh.slice(1).reduce((a, b) => a + b, 0) * m, Mn = sh.slice(1).reduce((a, b) => a + b * b, 0) * m;
+    out(`Mode ${i}: ${nf(3).format(w / 2 / Math.PI)} Hz, ${i === 1 ? 'all floors sway the same way' : `with ${i - 1} point${i === 2 ? '' : 's'} up the height where the sway changes sign`}. It carries ${nf(1).format(L * L / Mn / (n * m) * 100)} % of the building's mass in an earthquake, so mode 1 dominates. Amber: the mode shape.`);
+  },
+});
+
+// 08.09 plucked string: shape and harmonics
+def('pluck', {
+  controls: [{ k: 'xp', label: 'Pluck position (fraction of length)', min: 0.05, max: 0.5, step: 0.01, v: 0.2, f: 2 }, { k: 't', label: 'Time (fraction of a period)', min: 0, max: 1, step: 0.01, v: 0.15, f: 2 }],
+  draw(p, v, out) {
+    const N = 60, xp = v.xp, b = range(1, N).map((n) => 2 / (n * n * Math.PI * Math.PI * xp * (1 - xp)) * Math.sin(n * Math.PI * xp)), xs = linspace(0, 1, 300);
+    const y = xs.map((x) => b.reduce((s, bn, i) => s + bn * Math.sin((i + 1) * Math.PI * x) * Math.cos((i + 1) * 2 * Math.PI * v.t), 0));
+    p.frame({ x: [0, 1], y: [-1.6, 1.15], xlabel: 'position along the string; bars: harmonic amplitude', ylabel: '' });
+    p.line(xs, y, C.lime, 2.5).dots([xp], [1], C.amber, 5);
+    const bmax = Math.abs(b[0]);
+    for (let n = 1; n <= 12; n++) { const h = Math.abs(b[n - 1]) / bmax * 0.4, x0 = (n - 0.8) / 12.5, x1 = (n - 0.2) / 12.5; p.rect(x0, x1, -1.55, -1.55 + h, Math.abs(b[n - 1]) / bmax < 1e-6 ? C.red : 'rgba(92,200,255,0.8)'); }
+    const miss = range(1, 12).filter((n) => Math.abs(b[n - 1]) / bmax < 1e-6);
+    out(`Plucked at ${nf(2).format(xp)} of the length. Bars: amplitudes of harmonics 1 to 12 (frequencies f, 2f, 3f, …). ${miss.length ? `Harmonic${miss.length > 1 ? 's' : ''} ${miss.join(', ')} ${miss.length > 1 ? 'are' : 'is'} missing: their nodes sit at the pluck point.` : 'No harmonic up to 12 has a node exactly at the pluck point.'} Plucking near the middle sounds round; near the bridge, bright.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
