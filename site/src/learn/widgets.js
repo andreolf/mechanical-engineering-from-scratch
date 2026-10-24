@@ -396,13 +396,13 @@ def('gradient', {
 
 // 03.10 uniform flow past a cylinder: uniform stream + doublet
 def('cylinder', {
-  controls: [{ k: 'G', label: 'Circulation Γ / (U R)', min: 0, max: 12, step: 0.5, v: 0, f: 1 }],
+  controls: [{ k: 'G', label: 'Clockwise circulation Γ / (U R)', min: 0, max: 12, step: 0.5, v: 0, f: 1 }],
   draw(p, v, out) {
     const U = 1, R = 1, G = v.G;
     const psi = (x, y) => { const r2 = x * x + y * y; if (r2 < R * R) return NaN; return U * y * (1 - (R * R) / r2) + (G / (2 * Math.PI)) * Math.log(Math.sqrt(r2) / R); };
     sqframe(p, 2.6);
     // streamlines: integrate the velocity field from seeds on the left
-    const vel = (x, y) => { const r2 = x * x + y * y, th = Math.atan2(y, x), r = Math.sqrt(r2); const ur = U * (1 - R * R / r2) * Math.cos(th), ut = -U * (1 + R * R / r2) * Math.sin(th) + G / (2 * Math.PI * r); return [ur * Math.cos(th) - ut * Math.sin(th), ur * Math.sin(th) + ut * Math.cos(th)]; };
+    const vel = (x, y) => { const r2 = x * x + y * y, th = Math.atan2(y, x), r = Math.sqrt(r2); const ur = U * (1 - R * R / r2) * Math.cos(th), ut = -U * (1 + R * R / r2) * Math.sin(th) - G / (2 * Math.PI * r); return [ur * Math.cos(th) - ut * Math.sin(th), ur * Math.sin(th) + ut * Math.cos(th)]; };
     for (let y0 = -2.6; y0 <= 2.61; y0 += 0.26) {
       let x = p.xr[0], y = y0 + 0.0001; const X = [x], Y = [y];
       for (let i = 0; i < 1600 && x < p.xr[1]; i++) { const [u1, v1] = vel(x, y), n = Math.hypot(u1, v1) || 1; const ds = 0.02; const [u2, v2] = vel(x + 0.5 * ds * u1 / n, y + 0.5 * ds * v1 / n), n2 = Math.hypot(u2, v2) || 1; x += ds * u2 / n2; y += ds * v2 / n2; if (x * x + y * y < R * R * 0.98) break; X.push(x); Y.push(y); }
@@ -413,9 +413,9 @@ def('cylinder', {
     // stagnation points on the surface: sin th = G / (4 pi U R)
     const sth = G / (4 * Math.PI * U * R);
     let msg;
-    if (sth <= 1) { const th = Math.asin(sth); p.dots([Math.cos(th), -Math.cos(th)], [Math.sin(th), Math.sin(th)], C.red, 5); msg = `Stagnation points at ${nf(1).format((th * 180) / Math.PI)}° and ${nf(1).format(180 - (th * 180) / Math.PI)}° (red).`; }
-    else msg = 'Γ > 4πUR: the stagnation point lifts off the cylinder into the flow.';
-    out(`Top surface speed ${nf(2).format(2 * U + G / (2 * Math.PI * R))} U, bottom ${nf(2).format(Math.abs(-2 * U + G / (2 * Math.PI * R)))} U. Lift per unit span ρUΓ (Kutta-Joukowski). ${msg}`);
+    if (sth <= 1) { const th = Math.asin(sth); p.dots([-Math.cos(th), Math.cos(th)], [-Math.sin(th), -Math.sin(th)], C.red, 5); msg = `Stagnation points (red) move ${nf(1).format((th * 180) / Math.PI)}° below the axis.`; }
+    else msg = 'Γ > 4πUR: the stagnation point leaves the surface and sits in the flow below the cylinder.';
+    out(`Surface speed ${nf(2).format(2 * U + G / (2 * Math.PI * R))} U on top, ${nf(2).format(Math.abs(2 * U - G / (2 * Math.PI * R)))} U underneath. Upward lift per unit span ρUΓ (Kutta-Joukowski). ${msg}`);
     void psi;
   },
 });
