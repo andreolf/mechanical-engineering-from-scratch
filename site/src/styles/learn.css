@@ -235,3 +235,4 @@ html:has(body.in-lesson) { scroll-padding-top: 64px; }
 .sv-fill-red { fill: var(--red); }
 .sv-fill-cyan { fill: var(--cyan); }
 main#app:focus { outline: none; }
+.note-title { font-family: var(--sans); font-weight: 650; color: var(--paper); margin-bottom: 0.4em; }

@@ -4,3 +4,4 @@ site/test-results/
 site/playwright-report/
 __pycache__/
 *.pyc
+*.tmp.mjs

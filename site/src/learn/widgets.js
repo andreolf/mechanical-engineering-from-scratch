@@ -110,16 +110,16 @@ def('sequence', {
   },
 });
 
-// 01.02 bisection
+// 01.02 bisection on the cantilever frequency equation cos(x)cosh(x) + 1 = 0
 def('bisection', {
-  controls: [{ k: 'n', label: 'Iterations', min: 0, max: 12, step: 1, v: 3, f: 0 }],
+  controls: [{ k: 'n', label: 'Iterations', min: 0, max: 20, step: 1, v: 3, f: 0 }],
   draw(p, v, out) {
-    const f = (x) => x * x * x - 2 * x - 5; let a = 2, b = 3;
-    const xs = linspace(1.5, 3.2, 200);
-    p.frame({ x: [1.5, 3.2], y: [-8, 20], xlabel: 'x', ylabel: 'f(x)' }).line([1.5, 3.2], [0, 0], C.grey, 1).line(xs, xs.map(f));
+    const f = (x) => Math.cos(x) * Math.cosh(x) + 1; let a = 1, b = 3;
+    const xs = linspace(0.8, 3.1, 240);
+    p.frame({ x: [0.8, 3.1], y: [-10, 4], xlabel: 'x = βL', ylabel: 'cos x cosh x + 1' }).line([0.8, 3.1], [0, 0], C.grey, 1).line(xs, xs.map(f));
     for (let i = 0; i < v.n; i++) { const m = (a + b) / 2; if (f(a) * f(m) <= 0) b = m; else a = m; }
-    p.rect(a, b, -8, 20, 'rgba(238,255,65,0.14)').dots([a, b], [f(a), f(b)], C.cyan);
-    out(`Bracket [${a.toFixed(6)}, ${b.toFixed(6)}], width ${(b - a).toExponential(2)} = 1/2^${v.n}. Root 2.0945515.`);
+    p.rect(a, b, -10, 4, 'rgba(238,255,65,0.14)').dots([a, b], [f(a), f(b)], C.cyan);
+    out(`Bracket [${a.toFixed(6)}, ${b.toFixed(6)}], width ${(b - a).toExponential(2)} = 2/2^${v.n}. Root 1.8751041.`);
   },
 });
 
