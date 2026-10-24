@@ -3542,6 +3542,51 @@ def('subakcascade', {
   },
 });
 
+// 11.19 hydraulic jump profile
+def('hydjump', {
+  controls: [{ k: 'F', label: 'Upstream Froude number Fr₁', min: 1, max: 9, step: 0.1, v: 5.1, f: 1 }, { k: 'y1', label: 'Upstream depth y₁ (m)', min: 0.05, max: 0.6, step: 0.01, v: 0.25, f: 2 }],
+  draw(p, v, out) {
+    const g = 9.81, F = v.F, y1 = v.y1, r = (Math.sqrt(1 + 8 * F * F) - 1) / 2, y2 = r * y1, V1 = F * Math.sqrt(g * y1), q = V1 * y1, V2 = q / y2;
+    const E = (y) => y + q * q / (2 * g * y * y), dE = E(y1) - E(y2), Ltop = Math.max(6, y2 * 1.4);
+    const Lj = 6 * y2, x0 = 2;
+    p.frame({ x: [0, x0 + Lj + 3], y: [0, Ltop], xlabel: 'distance, m', ylabel: 'height, m' });
+    const xs = linspace(0, x0 + Lj + 3, 200), surf = xs.map((x) => (x < x0 ? y1 : x > x0 + Lj ? y2 : y1 + (y2 - y1) * (1 - Math.exp(-4 * (x - x0) / Lj)) / (1 - Math.exp(-4))));
+    poly(p, xs.map((x, i) => [x, surf[i]]).concat([[xs[xs.length - 1], 0], [0, 0]]), C.cyan, 'rgba(41,182,246,0.35)', 1);
+    p.line(xs, surf, C.cyan, 2.5);
+    p.line([0, x0 + Lj + 3], [E(y1), E(y1)], C.amber, 1.5, [5, 4]).line([0, x0 + Lj + 3], [E(y2), E(y2)], C.lime, 1.5, [5, 4]);
+    if (E(y1) < Ltop) p.text('energy line before', 0.1, Math.min(E(y1), Ltop) - 0.25 * Ltop / 6, C.amber);
+    p.text('energy line after', 0.1, E(y2) + 0.12 * Ltop / 6, C.lime);
+    if (F > 1.05) for (let i = 0; i < 3; i++) { const cx = x0 + Lj * (0.15 + 0.2 * i), cy = y1 + (y2 - y1) * (0.55 + 0.1 * i), rr = (y2 - y1) * 0.18; p.line(linspace(0, 5.5, 30).map((t) => cx + rr * Math.cos(t)), linspace(0, 5.5, 30).map((t) => cy + rr * Math.sin(t)), C.paper, 1.2); }
+    const kind = F < 1.7 ? 'undular jump, a train of standing waves' : F < 2.5 ? 'weak jump' : F < 4.5 ? 'oscillating jump, which shakes stilling basins' : F < 9 ? 'steady jump, the design range for stilling basins' : 'strong, rough jump';
+    out(`V₁ = ${nf(2).format(V1)} m/s into a ${kind}. Conjugate depth y₂ = ${nf(3).format(y2)} m (×${nf(2).format(r)}), V₂ = ${nf(2).format(V2)} m/s, Fr₂ = ${nf(3).format(V2 / Math.sqrt(g * y2))}. Head lost ${nf(3).format(dE)} m, ${nf(0).format(100 * dE / E(y1))}% of the incoming energy, ${nf(1).format(9.81 * q * dE)} kW per metre width.`);
+  },
+});
+
+// 11.20 water hammer at a penstock valve (method of characteristics)
+def('hammerpen', {
+  controls: [{ k: 'tc', label: 'Valve closing time (s)', min: 0, max: 12, step: 0.1, v: 3, f: 1 }, { k: 'V0', label: 'Initial flow speed (m/s)', min: 0.5, max: 4, step: 0.1, v: 2, f: 1 }, { k: 'a', label: 'Wave speed a (m/s)', min: 300, max: 1400, step: 50, v: 1000, f: 0 }],
+  draw(p, v, out) {
+    const g = 9.81, L = 600, H0 = 100, a = v.a, V0 = v.V0, N = 30, dt = L / N / a, B = a / g, T = 14;
+    let H = new Array(N + 1).fill(H0), V = new Array(N + 1).fill(V0); const ts = [0], hv = [H0];
+    for (let t = dt; t <= T; t += dt) {
+      const Hn = H.slice(), Vn = V.slice();
+      for (let i = 1; i < N; i++) { const cp = H[i - 1] + B * V[i - 1], cm = H[i + 1] - B * V[i + 1]; Hn[i] = (cp + cm) / 2; Vn[i] = (cp - cm) / (2 * B); }
+      Hn[0] = H0; Vn[0] = (H0 - (H[1] - B * V[1])) / B;
+      const tau = v.tc > 0 ? Math.max(0, 1 - t / v.tc) : 0, cpv = H[N - 1] + B * V[N - 1];
+      if (tau === 0) Vn[N] = 0; else { const Cv = (tau * V0) ** 2 / H0; Vn[N] = (-B * Cv + Math.sqrt((B * Cv) ** 2 + 4 * Cv * Math.max(cpv, 0))) / 2; }
+      Hn[N] = cpv - B * Vn[N]; H = Hn; V = Vn; ts.push(t); hv.push(H[N]);
+    }
+    const dJ = a * V0 / g, top = H0 + dJ * 1.15;
+    p.frame({ x: [0, T], y: [H0 - dJ * 1.15, top], xlabel: 'time, s', ylabel: 'head at the valve, m' });
+    if (H0 - dJ * 1.15 < -10) p.rect(0, T, H0 - dJ * 1.15, -10, 'rgba(255,90,54,0.15)');
+    p.line([0, T], [H0 + dJ, H0 + dJ], C.amber, 1.5, [5, 4]).text('Joukowsky H₀ + aV₀/g', 0.2, H0 + dJ + dJ * 0.05, C.amber).line([0, T], [H0, H0], C.grey, 1);
+    if (v.tc > 0) p.line([v.tc, v.tc], [H0 - dJ * 1.15, top], C.grey, 1, [3, 3]);
+    p.line(ts, hv, C.cyan, 2);
+    const mx = Math.max(...hv), mn = Math.min(...hv), tr = 2 * L / a;
+    out(`Round trip 2L/a = ${nf(2).format(tr)} s. Peak head rise ${nf(1).format(mx - H0)} m (${nf(1).format((mx - H0) * 9.81 / 100)} bar)${v.tc <= tr ? ', the full Joukowsky value: the valve shut before the relief wave came back.' : `, below Joukowsky's ${nf(1).format(dJ)} m because reflected waves arrive while the valve is still closing.`} ${mn < -10 ? `The head falls to ${nf(0).format(mn)} m, below vapour pressure (red band): in reality the column would separate and cavitate.` : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
