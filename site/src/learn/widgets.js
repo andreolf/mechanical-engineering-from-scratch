@@ -2186,6 +2186,47 @@ def('shaker', {
   },
 });
 
+// 08.04 bike on cobbles: transmissibility
+def('bikebump', {
+  controls: [{ k: 'v', label: 'Riding speed (m/s)', min: 0.5, max: 8, step: 0.1, v: 2, f: 1 }, { k: 'z', label: 'Damping ratio ζ', min: 0.05, max: 0.8, step: 0.01, v: 0.3, f: 2 }, { k: 'fn', label: 'Suspension natural frequency (Hz)', min: 1.5, max: 6, step: 0.1, v: 2.8, f: 1 }],
+  draw(p, v, out) {
+    const T = (r, z) => Math.sqrt((1 + (2 * z * r) ** 2) / ((1 - r * r) ** 2 + (2 * z * r) ** 2)), fs = linspace(0.05, 25, 500), f = v.v / 0.25, r = f / v.fn;
+    p.frame({ x: [0, 25], y: [0, 4], xlabel: 'cobble frequency, Hz (cobbles 0.25 m apart)', ylabel: 'transmissibility X / Y' });
+    p.rect(Math.SQRT2 * v.fn, 25, 0, 4, 'rgba(238,255,65,0.07)').line([0, 25], [1, 1], C.grey, 1, [4, 4]).line([Math.SQRT2 * v.fn, Math.SQRT2 * v.fn], [0, 4], C.grey, 1, [2, 4]);
+    p.line(fs, fs.map((x) => Math.min(4, T(x / v.fn, 0.05))), C.grey, 1).line(fs, fs.map((x) => Math.min(4, T(x / v.fn, v.z))), C.lime, 2.5);
+    const Tv = T(r, v.z); p.dots([Math.min(25, f)], [Math.min(4, Tv)], Tv > 1 ? C.red : C.cyan, 6);
+    out(`${nf(1).format(v.v)} m/s over cobbles 0.25 m apart shakes the wheel at ${nf(1).format(f)} Hz, r = ${nf(2).format(r)}. The rider moves ${nf(2).format(Tv)} times the cobble height: ${Tv > 1 ? 'amplified, below √2 f_n' : 'isolated, above √2 f_n (shaded)'}. Grey curve: ζ = 0.05 for comparison.`);
+  },
+});
+
+// 08.05 washing machine spin-up
+def('washer', {
+  controls: [{ k: 'rpm', label: 'Drum speed (rpm)', min: 0, max: 1600, step: 10, v: 1400, f: 0 }, { k: 'z', label: 'Damping ratio ζ', min: 0.02, max: 0.5, step: 0.01, v: 0.1, f: 2 }, { k: 'm', label: 'Unbalanced laundry (kg)', min: 0.1, max: 2, step: 0.1, v: 0.5, f: 1 }],
+  draw(p, v, out) {
+    const M = 40, e = 0.25, k = 40e3, wn = Math.sqrt(k / M), X = (n) => { const r = n * Math.PI / 30 / wn; return v.m * e / M * r * r / Math.sqrt((1 - r * r) ** 2 + (2 * v.z * r) ** 2) * 1000; };
+    const ns = linspace(0, 1600, 800);
+    p.frame({ x: [0, 1600], y: [0, Math.max(10, Math.min(60, 1.15 * X(wn * 30 / Math.PI)))], xlabel: 'drum speed, rpm', ylabel: 'drum amplitude, mm' });
+    p.line([0, 1600], [v.m * e / M * 1000, v.m * e / M * 1000], C.amber, 1, [4, 4]).line(ns, ns.map(X), C.lime, 2.5).dots([v.rpm], [X(v.rpm)], C.red, 6);
+    const r = v.rpm * Math.PI / 30 / wn, FT = k * X(v.rpm) / 1000 * Math.sqrt(1 + (2 * v.z * r) ** 2);
+    out(`At ${v.rpm} rpm the drum moves ±${nf(2).format(X(v.rpm))} mm and pushes ${nf(0).format(FT)} N into the floor. Resonance is at ${nf(0).format(wn * 30 / Math.PI)} rpm (±${nf(1).format(X(wn * 30 / Math.PI))} mm); the machine passes through it quickly. At high speed the amplitude settles at m e / M = ${nf(2).format(v.m * e / M * 1000)} mm (amber).`);
+  },
+});
+
+// 08.06 coupled pendulums: beats
+def('coupled', {
+  controls: [{ k: 'ks', label: 'Coupling spring (N/m)', min: 0.05, max: 3, step: 0.05, v: 0.5, f: 2 }, { k: 'mode', label: 'Start', type: 'select', options: ['one pendulum pulled aside', 'in phase (mode 1)', 'opposite (mode 2)'], v: 'one pendulum pulled aside' }],
+  draw(p, v, out) {
+    const g = 9.81, w1 = Math.sqrt(g), w2 = Math.sqrt(g + 2 * v.ks), ts = linspace(0, 60, 2400);
+    const [a, b] = v.mode.startsWith('one') ? [0.05, 0.05] : v.mode.startsWith('in') ? [0.1, 0] : [0, 0.1];
+    const t1 = ts.map((t) => a * Math.cos(w1 * t) + b * Math.cos(w2 * t)), t2 = ts.map((t) => a * Math.cos(w1 * t) - b * Math.cos(w2 * t));
+    p.frame({ x: [0, 60], y: [-0.25, 0.25], xlabel: 'time, s', ylabel: 'angle, rad (pendulum 2 offset down)' });
+    p.line(ts, t1.map((x) => x + 0.11), C.lime, 1.5).line(ts, t2.map((x) => x - 0.11), C.cyan, 1.5);
+    p.text('pendulum 1', 1, 0.235, C.lime).text('pendulum 2', 1, -0.235, C.cyan);
+    const Tb = 2 * Math.PI / (w2 - w1);
+    out(`Modes: in phase at ${nf(4).format(w1)} rad/s (the spring never stretches), opposite at ${nf(4).format(w2)} rad/s. ${v.mode.startsWith('one') ? `Starting one pendulum excites both modes equally, so the motion beats: all the energy passes to pendulum 2 and back every ${nf(1).format(Tb)} s.` : 'Started in a mode shape, the motion stays in that mode for ever.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
