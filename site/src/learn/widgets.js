@@ -2868,6 +2868,53 @@ def('charvalue', {
   },
 });
 
+// 10.01 system boundaries
+def('sysboundary', {
+  controls: [{ type: 'select', k: 'ex', label: 'What are you analysing?', options: ['Gas in a piston-cylinder', 'Steam turbine', 'Sealed vacuum flask', 'Kettle boiling with the lid open'], v: 'Gas in a piston-cylinder' }],
+  draw(p, v, out) {
+    const sel = ['Gas in a piston-cylinder', 'Steam turbine', 'Sealed vacuum flask', 'Kettle boiling with the lid open'].indexOf(v.ex);
+    p.frame({ x: [0, 10], y: [0, 7], xlabel: '', ylabel: '' });
+    const box = (x0, x1, y0, y1, c, d) => p.line([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0], c, 2, d);
+    let msg;
+    if (sel === 0) { box(3, 7, 1, 5, C.paper); p.rect(3.1, 6.9, 3.6, 4.0, C.grey); p.line([5, 5], [4, 6.5], C.grey, 3); box(3.05, 6.95, 1.05, 3.6, C.lime, [5, 4]); p.text('gas', 4.6, 2.2, C.lime); arrow(p, 1, 2.3, 2.9, 2.3, C.red); p.text('Q', 1.2, 2.7, C.red); arrow(p, 5.3, 4.2, 5.3, 6.3, C.cyan); p.text('W (boundary moves)', 5.5, 5.5, C.cyan); msg = 'Closed system: no mass crosses the dashed boundary, but heat and work can. The boundary moves with the piston.'; }
+    else if (sel === 1) { poly(p, [[3, 3], [7, 1.5], [7, 5.5], [3, 4]], C.paper, null, 2); box(2.8, 7.2, 1.3, 5.7, C.lime, [5, 4]); arrow(p, 0.8, 3.5, 2.9, 3.5, C.amber); p.text('steam in', 0.5, 4, C.amber); arrow(p, 7.1, 2.5, 9.3, 2.5, C.amber); p.text('steam out', 7.6, 1.9, C.amber); arrow(p, 5, 5.6, 5, 6.8, C.cyan); p.text('shaft work', 5.2, 6.4, C.cyan); msg = 'Open system (control volume): mass flows in and out across a fixed boundary. Steady flow, so the energy stored inside does not change.'; }
+    else if (sel === 2) { box(3.5, 6.5, 1, 5.5, C.paper); box(3.8, 6.2, 1.3, 5.2, C.grey); box(3.4, 6.6, 0.9, 5.6, C.lime, [5, 4]); p.text('coffee', 4.4, 3, C.amber); msg = 'Isolated (approximately): no mass, no heat, no work cross the boundary. Its energy is constant; its entropy can only grow (10.09).'; }
+    else { box(3, 7, 1, 4, C.paper); box(3, 7, 1, 5.2, C.lime, [5, 4]); arrow(p, 5, 0, 5, 0.95, C.red); p.text('Q from the element', 5.2, 0.4, C.red); arrow(p, 4.5, 4.3, 4.5, 6.7, C.amber); p.text('vapour leaves', 4.7, 6.2, C.amber); msg = 'Open and unsteady: heat enters, vapour leaves, and the mass inside falls with time.'; }
+    out(msg);
+  },
+});
+
+// 10.02 molecules in a box
+def('gasbox', {
+  controls: [{ k: 'T', label: 'Temperature (K)', min: 50, max: 1000, step: 10, v: 300, f: 0 }, { k: 'N', label: 'Molecules in the box (thousands)', min: 1, max: 4, step: 0.5, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const g = gaussSeq(5), kB = 1.380649e-23, m = 4.6518e-26, s = Math.sqrt(kB * v.T / m), N = 300;
+    p.frame({ x: [0, 2.2], y: [0, 1], xlabel: 'left: snapshot (300 shown); right: speed distribution', ylabel: '' });
+    p.line([0, 1, 1, 0, 0], [0, 0, 1, 1, 0], C.paper, 1.5);
+    const speeds = [];
+    for (let i = 0; i < N; i++) { const vx = s * g(), vy = s * g(), vz = s * g(), sp = Math.hypot(vx, vy, vz); speeds.push(sp); const x = 0.03 + 0.94 * ((i * 0.618034) % 1), y = 0.03 + 0.94 * ((i * 0.414214 + 0.37 * ((i * 7) % 11) / 11) % 1); p.dots([x], [y], sp > 2.2 * s ? C.red : sp > 1.6 * s ? C.amber : C.cyan, 2.2); }
+    const vmax = 2500, fT = (c, T) => 4 * Math.PI * (m / (2 * Math.PI * kB * T)) ** 1.5 * c * c * Math.exp(-m * c * c / (2 * kB * T)), f = (c) => fT(c, v.T), cs = linspace(0, vmax, 150), fmax = fT(Math.sqrt(2 * kB * 100 / m), 100);
+    p.line(cs.map((c) => 1.15 + c / vmax), cs.map((c) => 0.05 + 0.9 * Math.min(1, f(c) / fmax)), C.lime, 2).text('0', 1.14, 0.0, C.grey).text('2500 m/s', 1.85, 0.0, C.grey);
+    const pr = v.N * 1000 * kB * v.T / 1e-21, vrms = Math.sqrt(3) * s;
+    out(`N₂ at ${v.T} K: rms speed √(3kT/m) = ${nf(0).format(vrms)} m/s. ${nf(1).format(v.N)}k molecules in a 100 nm cube: p = NkT/V = ${nf(0).format(pr)} Pa. Pressure is momentum delivered to the walls: faster molecules hit harder and more often, so p ∝ T.`);
+  },
+});
+
+// 10.03 p-V work along a polytropic path
+def('pvpath', {
+  controls: [{ k: 'n', label: 'Polytropic exponent n (pVⁿ = const)', min: 0, max: 1.67, step: 0.01, v: 1.4, f: 2 }, { k: 'V2', label: 'Final volume (L)', min: 1, max: 20, step: 0.5, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const p1 = 100, V1 = 10, V2 = v.V2, n = v.n, pf = (V) => p1 * (V1 / V) ** n, Vs = linspace(Math.min(V1, V2), Math.max(V1, V2), 120);
+    const ymax = Math.max(1100, pf(1) * 1.05 > 1100 ? 1100 : 0);
+    p.frame({ x: [0, 21], y: [0, ymax], xlabel: 'V, L', ylabel: 'p, kPa' });
+    [0, 1, 1.4].forEach((nn) => p.line(linspace(1, 20, 100), linspace(1, 20, 100).map((V) => p1 * (V1 / V) ** nn), C.grey, 1, [3, 4]));
+    poly(p, [[Vs[0], 0], ...Vs.map((V) => [V, pf(V)]), [Vs[Vs.length - 1], 0]], null, V2 < V1 ? 'rgba(255,90,54,0.25)' : 'rgba(238,255,65,0.25)');
+    p.line(Vs, Vs.map(pf), C.lime, 2.5).dots([V1, V2], [p1, pf(V2)], C.red, 5);
+    const W = Math.abs(n - 1) < 1e-9 ? p1 * V1 * Math.log(V2 / V1) : (pf(V2) * V2 - p1 * V1) / (1 - n);
+    out(`W = ∫p dV = ${nf(0).format(W)} J (kPa·L = J) ${W < 0 ? 'done on the gas (compression)' : 'done by the gas (expansion)'}. n = 0 isobaric, 1 isothermal, 1.4 adiabatic for air. Final pressure ${nf(0).format(pf(V2))} kPa. The shaded area is the work; it depends on the path, not just the end states.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
