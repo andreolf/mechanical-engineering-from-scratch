@@ -3794,6 +3794,61 @@ def('reynoldsdecomp', {
   },
 });
 
+// 12.10 Moody chart
+function colebrook12(Re, e) { if (Re < 2300) return 64 / Re; let x = 1 / Math.sqrt((-1.8 * Math.log10((e / 3.7) ** 1.11 + 6.9 / Re)) ** -2); for (let i = 0; i < 60; i++) x = -2 * Math.log10(e / 3.7 + 2.51 * x / Re); return 1 / (x * x); }
+def('moodychart', {
+  controls: [{ k: 'lr', label: 'Reynolds number, log₁₀ Re', min: 2.7, max: 8, step: 0.05, v: 5.5, f: 2 }, { k: 'le', label: 'Relative roughness, log₁₀ ε/D (−6 = smooth)', min: -6, max: -1.3, step: 0.1, v: -2.9, f: 1 }],
+  draw(p, v, out) {
+    const Res = logspace(3.61, 8, 120), e = v.le <= -5.95 ? 0 : 10 ** v.le, Re = 10 ** v.lr;
+    p.frame({ x: [500, 1e8], y: [0.006, 0.12], xlog: true, ylog: true, xlabel: 'Reynolds number', ylabel: 'friction factor f' });
+    const lam = logspace(2.7, 3.36, 20); p.line(lam, lam.map((r) => 64 / r), C.amber, 2).text('64/Re', 700, 0.1, C.amber);
+    p.rect(2300, 4000, 0.006, 0.12, 'rgba(154,157,147,0.12)');
+    [0, 1e-5, 1e-4, 1e-3, 5e-3, 0.02, 0.05].forEach((ee) => p.line(Res, Res.map((r) => colebrook12(r, ee)), C.grey, 1));
+    if (Re >= 2300) p.line(Res, Res.map((r) => colebrook12(r, e)), C.lime, 2.5);
+    const f = colebrook12(Re, e); p.dots([Re], [f], C.cyan, 7);
+    out(`Re = ${Re.toExponential(2)}, ε/D = ${e === 0 ? '0 (smooth)' : e.toExponential(1)}: f = ${nf(5).format(f)}. ${Re < 2300 ? 'Laminar: f = 64/Re, roughness is irrelevant.' : Re < 4000 ? 'Transitional (grey band): the real friction factor jumps unpredictably.' : (e > 0 && Re * e > 200 ? 'Fully rough: f hardly depends on Re any more.' : 'Turbulent: Colebrook, solved by iteration.')}`);
+  },
+});
+
+// 12.11 Hardy Cross network
+def('hardycrossnet', {
+  controls: [{ k: 'it', label: 'Hardy Cross sweeps', min: 0, max: 8, step: 1, v: 0, f: 0 }, { k: 'd5', label: 'Demand at the far corner (L/s)', min: 5, max: 40, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const P = [[0, 1, 400, 0.2], [1, 2, 400, 0.15], [0, 3, 300, 0.2], [1, 4, 300, 0.15], [2, 5, 300, 0.1], [3, 4, 400, 0.15], [4, 5, 400, 0.1]];
+    const K = P.map(([, , L, D]) => 8 * 0.02 * L / (9.81 * Math.PI ** 2 * D ** 5)), extra = (v.d5 - 15) / 1000;
+    const Q = [0.03, 0.012, 0.03 + extra, 0.008, 0.002, 0.02 + extra, 0.013 + extra];
+    const loops = [[[0, 1], [3, 1], [5, -1], [2, -1]], [[1, 1], [4, 1], [6, -1], [3, -1]]];
+    const imb = () => loops.map((lp) => lp.reduce((s, [k, sg]) => s + sg * K[k] * Q[k] * Math.abs(Q[k]), 0));
+    for (let it = 0; it < v.it; it++) loops.forEach((lp) => { const num = lp.reduce((s, [k, sg]) => s + sg * K[k] * Q[k] * Math.abs(Q[k]), 0), den = lp.reduce((s, [k]) => s + 2 * K[k] * Math.abs(Q[k]), 0), dQ = -num / den; lp.forEach(([k, sg]) => { Q[k] += sg * dQ; }); });
+    const N = [[-1, 0.6], [0, 0.6], [1, 0.6], [-1, -0.6], [0, -0.6], [1, -0.6]], dem = [0, 10, 10, 10, 15, v.d5];
+    sqframe(p, 1.2, '', '');
+    P.forEach(([a, b], k) => { const q = Q[k], [x1, y1] = N[q >= 0 ? a : b], [x2, y2] = N[q >= 0 ? b : a], w = 1 + Math.abs(q) * 1000 / 4;
+      p.line([x1, x2], [y1, y2], C.grey, 1); arrow(p, x1 + (x2 - x1) * 0.2, y1 + (y2 - y1) * 0.2, x1 + (x2 - x1) * 0.75, y1 + (y2 - y1) * 0.75, C.cyan, w);
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2; p.text(`${nf(1).format(Math.abs(q) * 1000)}`, mx + (y1 === y2 ? -0.12 : 0.06), my + (y1 === y2 ? 0.1 : 0), C.paper); });
+    N.forEach(([x, y], i) => { p.dots([x], [y], i === 0 ? C.lime : C.amber, 7); p.text(i === 0 ? `in ${nf(0).format(45 + v.d5)}` : `−${dem[i]}`, x - 0.12, y + (y > 0 ? 0.17 : -0.24), i === 0 ? C.lime : C.amber); });
+    const [e1, e2] = imb();
+    out(`After ${v.it} sweep${v.it === 1 ? '' : 's'}: head imbalance around the left loop ${nf(4).format(e1)} m, right loop ${nf(4).format(e2)} m (flows in L/s). Every correction adds the same ΔQ all round a loop, so continuity at every node holds from the first guess onwards. ${Math.abs(e1) + Math.abs(e2) < 1e-4 ? 'Converged.' : ''}`);
+  },
+});
+
+// 12.12 pump and system curves
+def('pumpsystem', {
+  controls: [{ k: 'N', label: 'Pump speed (rpm)', min: 700, max: 1800, step: 10, v: 1450, f: 0 }, { k: 'Hs', label: 'Static lift (m)', min: 0, max: 35, step: 0.5, v: 15, f: 1 }],
+  draw(p, v, out) {
+    const ph = (Q, N) => 40 * (N / 1450) ** 2 - 4000 * Q * Q, sh = (Q) => v.Hs + 3000 * Q * Q;
+    const eff = (Q, N) => { const q = Q / (0.06 * N / 1450); return Math.max(0, 0.78 * (2 * q - q * q)); };
+    const Qs = linspace(0, 0.14, 120);
+    p.frame({ x: [0, 140], y: [0, 70], xlabel: 'flow Q, L/s', ylabel: 'head H, m' });
+    p.line(Qs.map((q) => q * 1000), Qs.map((q) => ph(q, 1450)), C.grey, 1.2, [5, 4]).line(Qs.map((q) => q * 1000), Qs.map((q) => ph(q, v.N)), C.lime, 2.5).line(Qs.map((q) => q * 1000), Qs.map(sh), C.cyan, 2);
+    p.text('pump', 4, ph(0, v.N) + 2, C.lime).text('system', 100, Math.min(66, sh(0.1)) - 4, C.cyan);
+    if (ph(0, v.N) <= v.Hs) { out(`At ${v.N} rpm the pump's shut-off head ${nf(1).format(ph(0, v.N))} m is below the static lift: no flow at all.`); return; }
+    let lo = 0, hi = 0.2; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; ph(m, v.N) > sh(m) ? (lo = m) : (hi = m); }
+    const Q = lo, H = sh(Q), e = eff(Q, v.N), P = 1000 * 9.81 * Q * H / Math.max(e, 0.05);
+    p.dots([Q * 1000], [H], C.amber, 7);
+    out(`Operating point: Q = ${nf(1).format(Q * 1000)} L/s at H = ${nf(1).format(H)} m, efficiency ${nf(0).format(e * 100)}%, shaft power ${nf(2).format(P / 1000)} kW. Affinity: the pump curve scales by (N/1450)² in head and N/1450 in flow; ${v.Hs > 0 ? 'with static lift the operating flow falls faster than the speed.' : 'with no static lift the operating flow scales exactly with speed.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
