@@ -966,6 +966,105 @@ def('mmsorder', {
   },
 });
 
+// equal-scale frame centred anywhere
+function sqAt(p, cx, cy, R, xlabel = 'x', ylabel = 'y') {
+  p.size(); const asp = (p.w - p.pad.l - p.pad.r) / (p.h - p.pad.t - p.pad.b);
+  return asp >= 1 ? p.frame({ x: [cx - R * asp, cx + R * asp], y: [cy - R, cy + R], xlabel, ylabel }) : p.frame({ x: [cx - R, cx + R], y: [cy - R / asp, cy + R / asp], xlabel, ylabel });
+}
+// small support symbols for beams (planar)
+function drawSupport(p, kind, x, y, s, dir = -1) {
+  if (kind === 'none') return;
+  if (kind === 'clamp') { p.line([x, x], [y - 1.4 * s, y + 1.4 * s], C.paper, 3); for (let k = -1.2; k <= 1.2; k += 0.6) p.line([x, x + dir * 0.5 * s], [y + k * s, y + (k - 0.5) * s], C.grey, 1); return; }
+  poly(p, [[x, y], [x - 0.6 * s, y - s], [x + 0.6 * s, y - s]], C.paper, null, 1.5);
+  if (kind === 'roller') { p.dots([x - 0.35 * s, x + 0.35 * s], [y - 1.25 * s, y - 1.25 * s], C.paper, 3); p.line([x - 0.9 * s, x + 0.9 * s], [y - 1.5 * s, y - 1.5 * s], C.grey, 1); }
+  else p.line([x - 0.9 * s, x + 0.9 * s], [y - s, y - s], C.grey, 1);
+}
+
+// 05.01 adding forces tip to tail
+def('forceadd', {
+  controls: [{ k: 'm', label: 'Cable 2 force (kN)', min: 0, max: 5, step: 0.1, v: 3, f: 1 }, { k: 'a', label: 'Cable 2 angle (°)', min: 0, max: 360, step: 5, v: 135, f: 0 }],
+  draw(p, v, out) {
+    const F = [[2, 30], [v.m, v.a], [1.5, 250]].map(([m, a]) => [m * Math.cos(a * Math.PI / 180), m * Math.sin(a * Math.PI / 180)]);
+    const R = F.reduce((s, f) => [s[0] + f[0], s[1] + f[1]], [0, 0]);
+    sqAt(p, 0, 0, 4.2, 'Fx, kN', 'Fy, kN');
+    const cols = [C.cyan, C.amber, C.grey];
+    F.forEach((f, i) => arrow(p, 0, 0, f[0], f[1], cols[i], 1.5));
+    let x = 0, y = 0; F.forEach((f, i) => { arrow(p, x, y, x + f[0], y + f[1], cols[i], 2.5); x += f[0]; y += f[1]; });
+    arrow(p, 0, 0, R[0], R[1], C.lime, 3.5);
+    const mag = Math.hypot(...R), ang = (Math.atan2(R[1], R[0]) * 180 / Math.PI + 360) % 360;
+    out(`Resultant (lime) ${nf(3).format(mag)} kN at ${nf(1).format(ang)}°: components (${nf(3).format(R[0])}, ${nf(3).format(R[1])}) kN, the sums of the components. Thin arrows start at the pole head; thick ones are laid tip to tail.`);
+  },
+});
+
+// 05.02 spanner: moment = force x lever arm
+def('spanner', {
+  controls: [{ k: 'P', label: 'Force (N)', min: 0, max: 200, step: 5, v: 120, f: 0 }, { k: 'a', label: 'Angle to the handle (°)', min: 0, max: 180, step: 1, v: 70, f: 0 }, { k: 'd', label: 'Grip distance from the nut (mm)', min: 50, max: 250, step: 5, v: 250, f: 0 }],
+  draw(p, v, out) {
+    const L = v.d / 1000, a = v.a * Math.PI / 180, F = [v.P * Math.cos(a), v.P * Math.sin(a)], s = 0.0011;
+    sqAt(p, 0.13, 0.03, 0.17, 'x, m', 'y, m');
+    poly(p, [[-0.01, -0.012], [0.27, -0.008], [0.27, 0.008], [-0.01, 0.012]], C.grey, 'rgba(154,157,147,0.2)');
+    p.dots([0], [0], C.paper, 7);
+    // line of action and perpendicular distance
+    const ux = Math.cos(a), uy = Math.sin(a), t = -(L * ux), fx = L + t * ux, fy = t * uy;
+    p.line([L - 0.3 * ux, L + 0.3 * ux], [-0.3 * uy, 0.3 * uy], C.rule, 1, [4, 4]).line([0, fx], [0, fy], C.cyan, 1.5, [3, 3]);
+    arrow(p, L, 0, L + F[0] * s * 0.6, F[1] * s * 0.6, C.lime, 3);
+    const M = L * F[1], arm = Math.abs(L * Math.sin(a));
+    out(`Moment about the nut M = r × F = ${nf(2).format(M)} N m (counter-clockwise positive). Lever arm, the perpendicular distance from the nut to the line of action (cyan): ${nf(1).format(arm * 1000)} mm. Pull at 90° for the most moment per newton.`);
+  },
+});
+
+// 05.03 distributed load reduced to a single resultant
+def('distload', {
+  controls: [{ k: 'q1', label: 'Left intensity q₁ (kN/m)', min: 0, max: 6, step: 0.1, v: 2, f: 1 }, { k: 'q2', label: 'Right intensity q₂ (kN/m)', min: 0, max: 6, step: 0.1, v: 5, f: 1 }],
+  draw(p, v, out) {
+    const L = 6, R = (v.q1 + v.q2) * L / 2, xb = R > 0 ? (v.q1 * L * L / 2 + (v.q2 - v.q1) * L / 2 * 2 * L / 3) / R : L / 2;
+    p.frame({ x: [-0.5, 6.5], y: [-1.5, 9], xlabel: 'x, m', ylabel: 'q, kN/m' });
+    poly(p, [[0, 0], [0, v.q1], [L, v.q2], [L, 0]], C.cyan, 'rgba(92,200,255,0.15)');
+    for (let x = 0; x <= L + 1e-9; x += 0.5) { const q = v.q1 + (v.q2 - v.q1) * x / L; if (q > 0.15) arrow(p, x, q, x, 0.05, C.cyan, 1); }
+    p.line([0, L], [0, 0], C.paper, 4);
+    arrow(p, xb, 8.5, xb, 0.1, C.lime, 3.5);
+    p.text(`R = ${nf(1).format(R)} kN`, xb + 0.15, 8, C.lime);
+    out(`Resultant R = (q₁ + q₂)L/2 = ${nf(2).format(R)} kN acting at x = ${nf(3).format(xb)} m, through the centroid of the load area. With q₁ = 0 it sits at 2L/3 = 4 m, L/3 from the high end.`);
+  },
+});
+
+// 05.04 slider-crank velocities and the instantaneous centre of the rod
+def('crank', {
+  controls: [{ k: 'th', label: 'Crank angle θ (°)', min: 0, max: 360, step: 1, v: 60, f: 0 }],
+  draw(p, v, out) {
+    const r = 0.05, l = 0.2, w = 100, th = v.th * Math.PI / 180, A = [r * Math.cos(th), r * Math.sin(th)], B = [A[0] + Math.sqrt(l * l - A[1] * A[1]), 0];
+    const vA = [-w * A[1], w * A[0]], rAB = [B[0] - A[0], B[1] - A[1]], wr = -vA[1] / rAB[0], vB = vA[0] - wr * rAB[1];
+    sqAt(p, 0.11, 0.02, 0.15, 'x, m', 'y, m');
+    p.line([-0.06, 0.3], [0, 0], C.rule, 1);
+    poly(p, [[B[0] - 0.02, -0.012], [B[0] + 0.02, -0.012], [B[0] + 0.02, 0.012], [B[0] - 0.02, 0.012]], C.paper, 'rgba(242,243,236,0.15)');
+    p.line([0, A[0]], [0, A[1]], C.grey, 5).line([A[0], B[0]], [A[1], B[1]], C.paper, 4).dots([0, A[0], B[0]], [0, A[1], 0], C.paper, 4);
+    const s = 0.006; arrow(p, A[0], A[1], A[0] + vA[0] * s, A[1] + vA[1] * s, C.cyan, 2.5); arrow(p, B[0], 0, B[0] + vB * s, 0, C.lime, 3);
+    let msg;
+    if (Math.abs(wr) > 1e-6) { const I = [A[0] - vA[1] / wr, A[1] + vA[0] / wr]; if (Math.abs(I[1]) < 1) { p.line([0, I[0]], [0, I[1]], C.amber, 1, [4, 4]).line([B[0], I[0]], [0, I[1]], C.amber, 1, [4, 4]).dots([I[0]], [I[1]], C.amber, 5); } msg = `Rod instantaneous centre (amber) at (${nf(3).format(I[0])}, ${nf(3).format(I[1])}) m, where line OA meets the vertical through B.`; }
+    else msg = 'The rod is momentarily translating (ω = 0): its instantaneous centre is at infinity.';
+    out(`Crank 100 rad/s: crank pin speed 5.00 m/s (cyan). Rod ω = ${nf(2).format(wr)} rad/s, piston velocity ${nf(3).format(vB)} m/s (lime). ${msg}`);
+  },
+});
+
+// 05.05 supports: count reactions and check rank
+def('supports', {
+  controls: [{ type: 'select', k: 'a', label: 'Left support', options: ['none', 'roller', 'pin', 'clamp'], v: 'pin' }, { type: 'select', k: 'b', label: 'Right support', options: ['none', 'roller', 'pin', 'clamp'], v: 'roller' }],
+  draw(p, v, out) {
+    const R = { none: 0, roller: 1, pin: 2, clamp: 3 }, n = R[v.a] + R[v.b];
+    // reaction rows (Fx, Fy, M about the left end); beam 0..4 m
+    const rows = [], add = (kind, x) => { if (kind === 'roller') rows.push([0, 1, x]); if (kind === 'pin' || kind === 'clamp') { rows.push([1, 0, 0]); rows.push([0, 1, x]); } if (kind === 'clamp') rows.push([0, 0, 1]); };
+    add(v.a, 0); add(v.b, 4);
+    // rank by Gaussian elimination
+    const m = rows.map((r) => r.slice()); let rank = 0;
+    for (let c = 0; c < 3; c++) { const piv = m.findIndex((r, i) => i >= rank && Math.abs(r[c]) > 1e-9); if (piv < 0) continue; [m[rank], m[piv]] = [m[piv], m[rank]]; for (let i = 0; i < m.length; i++) if (i !== rank) { const f = m[i][c] / m[rank][c]; m[i] = m[i].map((x, k) => x - f * m[rank][k]); } rank++; }
+    p.frame({ x: [-0.8, 4.8], y: [-1.6, 1.6], xlabel: 'x, m', ylabel: '' });
+    p.line([0, 4], [0, 0], C.lime, 5);
+    drawSupport(p, v.a, 0, 0, 0.3, -1); drawSupport(p, v.b, 4, 0, 0.3, 1);
+    const dof = 3 - rank, cls = dof > 0 ? `a mechanism with ${dof} free motion${dof > 1 ? 's' : ''}` : n > 3 ? `statically indeterminate (degree ${n - 3})` : 'statically determinate';
+    out(`${n} reaction component${n === 1 ? '' : 's'}, of which ${rank} independent. The beam is ${cls}. ${v.a === 'roller' && v.b === 'roller' ? 'Two rollers cannot stop it sliding sideways.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
