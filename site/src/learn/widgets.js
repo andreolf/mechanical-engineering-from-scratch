@@ -3381,6 +3381,50 @@ def('jetvane', {
   },
 });
 
+// 11.10 Pelton runner: power against bucket speed
+def('peltonrun', {
+  controls: [{ k: 'H', label: 'Net head (m)', min: 100, max: 1900, step: 50, v: 800, f: 0 }, { k: 'r', label: 'Bucket speed / jet speed', min: 0, max: 1, step: 0.01, v: 0.5, f: 2 }, { k: 'b', label: 'Bucket turning angle (°)', min: 90, max: 180, step: 1, v: 165, f: 0 }],
+  draw(p, v, out) {
+    const Q = 2, V = 0.98 * Math.sqrt(2 * 9.81 * v.H), Ph = 1000 * 9.81 * Q * v.H;
+    const P = (x) => { const u = x * V, w1 = V - u, cu2 = u - w1 * Math.cos((180 - v.b) * Math.PI / 180); return 1000 * Q * u * (V - cu2); };
+    const xs = linspace(0, 1, 101);
+    p.frame({ x: [0, 1], y: [0, 1.05], xlabel: 'bucket speed u / jet speed V', ylabel: 'efficiency P / ρgQH' });
+    p.line(xs, xs.map((x) => P(x) / Ph), C.lime, 2.5).dots([v.r], [P(v.r) / Ph], C.amber, 7).line([0.5, 0.5], [0, 1.05], C.grey, 1, [4, 4]);
+    // runner sketch
+    const cx = 0.83, cy = 0.82, R = 0.11;
+    for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6; p.line([cx + 0.6 * R * Math.cos(a), cx + R * Math.cos(a)], [cy + 0.6 * R * Math.sin(a) * 1.6, cy + R * Math.sin(a) * 1.6], C.paper, 2); }
+    arrow(p, cx - 0.32, cy + R * 1.6, cx - 0.02, cy + R * 1.6, C.cyan, 3);
+    out(`Jet speed ${nf(1).format(V)} m/s. At u/V = ${nf(2).format(v.r)} the runner makes ${nf(2).format(P(v.r) / 1e6)} MW of the ${nf(2).format(Ph / 1e6)} MW available (${nf(1).format(100 * P(v.r) / Ph)} %). The ideal optimum is u = V/2, where the water leaves the bucket with almost no absolute speed.`);
+  },
+});
+
+// 11.11 Reynolds number from honey to the Rhine
+def('reslider', {
+  controls: [{ type: 'select', k: 'k', label: 'Case', options: ['Honey dripping off a spoon', 'Blood in a capillary', 'Bacterium swimming', 'Water from a tap', 'Cyclist in air', 'Limmat in Zurich', 'Rhine at Basel', 'Airliner wing'], v: 'Water from a tap' }],
+  draw(p, v, out) {
+    const cases = { 'Honey dripping off a spoon': [0.01, 0.005, 7e-3], 'Blood in a capillary': [1e-3, 8e-6, 3.3e-6], 'Bacterium swimming': [3e-5, 2e-6, 1e-6], 'Water from a tap': [1.5, 0.01, 1e-6], 'Cyclist in air': [12, 1.7, 1.5e-5], 'Limmat in Zurich': [1.0, 3, 1.3e-6], 'Rhine at Basel': [2.0, 8, 1.3e-6], 'Airliner wing': [250, 5, 3.5e-5] };
+    const [U, L, nu] = cases[v.k], Re = U * L / nu, lg = Math.log10(Re);
+    p.frame({ x: [-8, 9], y: [0, 3], xlabel: 'log₁₀ Re', ylabel: '' });
+    p.rect(-8, 0, 0.5, 1.0, 'rgba(90,200,250,0.35)').rect(0, 3.3, 0.5, 1.0, 'rgba(255,190,60,0.35)').rect(3.3, 9, 0.5, 1.0, 'rgba(255,90,54,0.35)');
+    p.text('creeping, viscous', -7.5, 1.3, C.cyan).text('laminar', 0.3, 1.3, C.amber).text('mostly turbulent', 4, 1.3, C.red);
+    Object.entries(cases).forEach(([n, c]) => { const x = Math.log10(c[0] * c[1] / c[2]); p.dots([x], [0.75], n === v.k ? C.lime : C.grey, n === v.k ? 8 : 4); });
+    p.line([lg, lg], [0.5, 2.3], C.lime, 1.5).text(`Re = ${Re < 1 ? Re.toExponential(1) : nf(0).format(Re)}`, Math.min(lg, 5.5) - 0.5, 2.5, C.lime);
+    out(`${v.k}: U = ${U} m/s, L = ${L} m, ν = ${nu.toExponential(1)} m²/s, so Re = UL/ν = ${Re < 1 ? Re.toExponential(2) : nf(0).format(Re)}. Inertia beats viscosity by that factor. The thresholds are rough: pipe flow turns turbulent near Re ≈ 2300 based on diameter.`);
+  },
+});
+
+// 11.12 Froude model vs prototype
+def('froudemodel', {
+  controls: [{ k: 'lam', label: 'Length scale λ (prototype/model)', min: 5, max: 100, step: 1, v: 50, f: 0 }, { k: 'Q', label: 'Prototype discharge (m³/s)', min: 100, max: 3000, step: 50, v: 1500, f: 0 }],
+  draw(p, v, out) {
+    const L = v.lam, items = [['length', 1], ['velocity', 0.5], ['time', 0.5], ['flow', 2.5], ['force', 3], ['power', 3.5]];
+    p.frame({ x: [0, 6], y: [0, 7.5], xlabel: '', ylabel: 'log₁₀ (prototype / model)' });
+    items.forEach(([n, e], i) => { const r = Math.log10(L ** e); p.rect(i + 0.15, i + 0.85, 0, r, C.cyan).text(n, i + 0.1, r + 0.25, C.paper); });
+    const Qm = v.Q / L ** 2.5, Vp = 8, Vm = Vp / Math.sqrt(L), Rer = L ** 1.5;
+    out(`Model discharge ${nf(2).format(Qm * 1000)} L/s for ${v.Q} m³/s at full scale. Water at 8 m/s on the prototype moves at ${nf(3).format(Vm)} m/s in the model, and the model runs ${nf(2).format(Math.sqrt(L))} times faster in time. Froude matches; Reynolds is ${nf(0).format(Rer)} times smaller in the model, so it must stay well turbulent (Re above about 10⁴) for friction to be modelled acceptably.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
