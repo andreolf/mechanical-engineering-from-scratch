@@ -4091,6 +4091,36 @@ def('pipecalc', {
   },
 });
 
+// 13.09 natural convection on a vertical plate
+def('natplate', {
+  controls: [{ k: 'lr', label: 'log₁₀ of the Rayleigh number', min: 4, max: 13, step: 0.1, v: 8.8, f: 1 }],
+  draw(p, v, out) {
+    const Pr = 0.71, cc = (Ra) => (0.825 + 0.387 * Ra ** (1 / 6) / (1 + (0.492 / Pr) ** (9 / 16)) ** (8 / 27)) ** 2, Ras = logspace(4, 13, 200), Ra = 10 ** v.lr;
+    p.frame({ x: [1e4, 1e13], y: [1, 1e4], xlog: true, ylog: true, xlabel: 'Rayleigh number Ra = gβΔT L³/(να)', ylabel: 'average Nusselt number' });
+    p.line([1e9, 1e9], [1, 1e4], C.grey, 1, [4, 3]).text('transition', 1.4e9, 2, C.grey);
+    p.line(Ras, Ras.map((R) => 0.59 * R ** 0.25), C.cyan, 1.5, [5, 4]).line(Ras, Ras.map((R) => 0.10 * R ** (1 / 3)), C.amber, 1.5, [5, 4]).line(Ras, Ras.map(cc), C.lime, 2.5);
+    p.dots([Ra], [cc(Ra)], C.paper, 6);
+    const L = Math.cbrt(Ra * 1.70e-5 * (1.70e-5 / Pr) / (9.81 / 313.15 * 40));
+    out(`Ra = ${Ra.toExponential(2)}: Churchill-Chu Nu = ${nf(1).format(cc(Ra))} (lime). Laminar 0.59 Ra^¼ (cyan) gives ${nf(1).format(0.59 * Ra ** 0.25)}, turbulent 0.10 Ra^⅓ (amber) ${nf(1).format(0.10 * Ra ** (1 / 3))}. ${Ra < 1e9 ? 'Laminar.' : 'Past Ra ≈ 10⁹ the boundary layer is turbulent.'} For a surface 40 K above 20 °C air, this Ra is a plate ${nf(2).format(L)} m tall.`);
+  },
+});
+
+// 13.10 roof heat balance in the tropical sun
+def('roofbalance', {
+  controls: [{ k: 'a', label: 'Solar absorptivity', min: 0.05, max: 0.95, step: 0.01, v: 0.65, f: 2 }, { k: 'e', label: 'Thermal emissivity', min: 0.03, max: 0.95, step: 0.01, v: 0.25, f: 2 }],
+  draw(p, v, out) {
+    const S = 5.670374e-8, Tsky = 294.15, Ta = 304.15, h = 10, G = 1000;
+    const roof = (a, e) => { let lo = 250, hi = 450; for (let i = 0; i < 50; i++) { const m = 0.5 * (lo + hi); if (a * G - e * S * (m ** 4 - Tsky ** 4) - h * (m - Ta) > 0) lo = m; else hi = m; } return 0.5 * (lo + hi) - 273.15; };
+    const as = linspace(0.05, 0.95, 60);
+    p.frame({ x: [0, 1], y: [20, 110], xlabel: 'solar absorptivity', ylabel: 'roof temperature, °C' });
+    p.line(as, as.map((a) => roof(a, 0.9)), C.grey, 1.5, [5, 4]).line(as, as.map((a) => roof(a, 0.05)), C.grey, 1.5, [2, 3]);
+    p.text('dashed: ε = 0.9 (paint)', 0.04, 104, C.grey).text('dotted: ε = 0.05 (polished metal)', 0.04, 96, C.grey);
+    p.line(as, as.map((a) => roof(a, v.e)), C.lime, 2.5);
+    const T = roof(v.a, v.e), Tk = T + 273.15; p.dots([v.a], [T], C.paper, 6);
+    out(`Bali at noon (1000 W/m², air 31 °C, sky 21 °C, h = 10): roof at ${nf(1).format(T)} °C. It absorbs ${nf(0).format(v.a * G)} W/m², radiates away a net ${nf(0).format(v.e * S * (Tk ** 4 - Tsky ** 4))} W/m² and convects ${nf(0).format(h * (Tk - Ta))} W/m². White cool-roof paint (0.20, 0.90) sits near 40 °C; galvanised steel (0.65, 0.25) near 84 °C.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
