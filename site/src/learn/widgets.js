@@ -2585,6 +2585,50 @@ def('crackk', {
   },
 });
 
+// 09.13 S-N curve with Goodman mean-stress correction
+def('sncurve', {
+  controls: [{ k: 'sa', label: 'Stress amplitude (MPa)', min: 150, max: 600, step: 5, v: 250, f: 0 }, { k: 'sm', label: 'Mean stress (MPa)', min: -200, max: 500, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const sf = 1225, b = -0.095, su = 725, life = (s) => 0.5 * (s / sf) ** (1 / b);
+    const Ns = logspace(2, 8, 200);
+    p.frame({ x: [1e2, 1e8], y: [100, 1000], xlog: true, ylog: true, xlabel: 'cycles to failure N', ylabel: 'amplitude, MPa' });
+    p.line(Ns, Ns.map((N) => sf * (2 * N) ** b), C.lime, 2.5);
+    const seq = v.sm >= 0 ? (v.sm < su ? v.sa / (1 - v.sm / su) : 1e9) : v.sa;
+    const N = seq < 1e8 ? life(seq) : 0;
+    p.dots([Math.min(1e8, Math.max(1e2, life(v.sa)))], [v.sa], C.grey, 4);
+    if (seq < 1000 && N > 100) p.dots([Math.min(1e8, N)], [seq], C.red, 6).line([Math.min(1e8, N), Math.min(1e8, N)], [100, seq], C.red, 1, [3, 3]);
+    const fmt = (x) => x >= 1e8 ? 'over 10⁸' : x.toExponential(2).replace('e+', ' × 10^');
+    out(seq >= 1000 || v.sa + v.sm >= su ? 'Peak stress exceeds the tensile strength: static failure.' : `Goodman: σ_a/(1 − σ_m/σ_u) = ${nf(0).format(seq)} MPa equivalent fully reversed amplitude. Life ${fmt(N)} cycles (grey dot: ${fmt(life(v.sa))} with zero mean). ${v.sm < 0 ? 'Compressive mean stress is conservatively ignored; shot peening exploits it.' : 'Tensile mean stress shortens life.'}`);
+  },
+});
+
+// 09.14 galvanic corrosion: thinning against time
+def('galvanic', {
+  controls: [{ k: 'la', label: 'Anode area, log₁₀(cm²)', min: 0, max: 3.5, step: 0.05, v: 1, f: 2 }, { k: 'I', label: 'Couple current (mA)', min: 0.2, max: 10, step: 0.1, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const A = 10 ** v.la, i = v.I * 1e-3 / A * 1e6, rate = i * 0.0116, yrs = linspace(0, 20, 100);
+    p.frame({ x: [0, 20], y: [0, 3.2], xlabel: 'years', ylabel: 'steel wall left, mm' });
+    p.line(yrs, yrs.map((y) => Math.max(0, 3 - 0.0116 * 0.5 * y)), C.grey, 1.5, [4, 4]).line(yrs, yrs.map((y) => Math.max(0, 3 - rate * y)), C.lime, 2.5);
+    const life = 3 / rate;
+    out(`Anode ${nf(0).format(A)} cm²: ${nf(1).format(i)} µA/cm², ${nf(3).format(rate)} mm/year by Faraday's law. A 3 mm wall is gone in ${life > 1000 ? 'over 1000' : nf(1).format(life)} years. Same current through a smaller anode: faster attack. Never put small steel fasteners in a big copper or stainless sheet; the reverse is fine. Grey: free corrosion at 0.5 µA/cm².`);
+  },
+});
+
+// 09.15 Ashby chart: modulus against density
+def('ashbychart', {
+  controls: [{ type: 'select', k: 'ix', label: 'Design', options: ['Light stiff tie: E/ρ', 'Light stiff beam: E^1/2/ρ', 'Light stiff panel: E^1/3/ρ'], v: 'Light stiff beam: E^1/2/ρ' }, { k: 'c', label: 'Move the guideline', min: -1, max: 1, step: 0.02, v: 0, f: 2 }],
+  draw(p, v, out) {
+    const db = [['steel', 210, 7850, 0.5, 1.15], ['aluminium', 70, 2700, 1.08, 0.8], ['titanium', 115, 4500, 1.08, 1.05], ['CFRP', 70, 1560, 0.62, 1.2], ['GFRP', 25, 1900, 0.72, 0.68], ['bamboo', 18, 700, 1.08, 1.05], ['spruce', 12, 450, 1.08, 0.75], ['concrete', 30, 2400, 1.08, 1.0], ['ABS', 2.3, 1050, 1.08, 1.0]];
+    const sel = ['Light stiff tie: E/ρ', 'Light stiff beam: E^1/2/ρ', 'Light stiff panel: E^1/3/ρ'].indexOf(v.ix), n = [1, 2, 3][sel];
+    const M = (E, r) => (E * 1e9) ** (1 / n) / r, ref = M(70, 2700) * 10 ** v.c;
+    p.frame({ x: [300, 1.2e4], y: [1, 500], xlog: true, ylog: true, xlabel: 'density, kg/m³', ylabel: 'Young’s modulus, GPa' });
+    const rs = logspace(Math.log10(300), Math.log10(1.2e4), 80).filter((r) => (ref * r) ** n / 1e9 <= 500 && (ref * r) ** n / 1e9 >= 1); p.line(rs, rs.map((r) => (ref * r) ** n / 1e9), C.amber, 2, [6, 4]);
+    const better = [];
+    db.forEach(([nm, E, r, fx, fy]) => { const good = M(E, r) >= ref * (1 - 1e-9); if (good) better.push(nm); p.dots([r], [E], good ? C.lime : C.grey, 5).text(nm, r * fx, E * fy, good ? C.lime : C.grey); });
+    out(`Slope ${n} guideline: every material on it is equally good. Above it (lime) is better: ${better.length ? better.join(', ') : 'none'}. Rank by the index ${v.ix.split(': ')[1]}.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
