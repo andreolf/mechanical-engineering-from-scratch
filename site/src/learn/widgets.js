@@ -4263,6 +4263,41 @@ def('nurbsweight', {
   },
 });
 
+// 14.05 bicubic patch with a control net
+def('patchview', {
+  controls: [{ k: 'h', label: 'Height of the four inner control points (m)', min: -4, max: 4, step: 0.1, v: 2, f: 1 }, { k: 'tw', label: 'Twist: corner heights ± (m)', min: -2, max: 2, step: 0.1, v: 1, f: 1 }, { k: 'yaw', label: 'Turn the view (°)', min: -90, max: 90, step: 1, v: 35, f: 0 }],
+  draw(p, v, out) {
+    const g = [-5, -5 / 3, 5 / 3, 5], d = Math.PI / 180, cy = Math.cos(v.yaw * d), sy = Math.sin(v.yaw * d), sp = Math.sin(30 * d), cp = Math.cos(30 * d);
+    const N = g.map((x, i) => g.map((y, j) => [x, y, v.tw * x * y / 25 + ((i === 1 || i === 2) && (j === 1 || j === 2) ? v.h : 0)]));
+    const pr = (q) => { const x = cy * q[0] - sy * q[1], y = sy * q[0] + cy * q[1]; return [x, sp * y + cp * q[2] * 2]; };
+    const b = (t) => [(1 - t) ** 3, 3 * t * (1 - t) ** 2, 3 * t * t * (1 - t), t ** 3];
+    const S = (u, w) => { const bu = b(u), bw = b(w), r = [0, 0, 0]; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 3; k++) r[k] += bu[i] * bw[j] * N[i][j][k]; return r; };
+    sqframe(p, 9, 'screen x', 'screen y');
+    for (let i = 0; i < 4; i++) { const a = N[i].map(pr), c = N.map((row) => pr(row[i])); p.line(a.map((q) => q[0]), a.map((q) => q[1]), C.grey, 1, [3, 3]).line(c.map((q) => q[0]), c.map((q) => q[1]), C.grey, 1, [3, 3]); }
+    const ts = linspace(0, 1, 30);
+    for (const s of linspace(0, 1, 9)) { const a = ts.map((t) => pr(S(s, t))), c = ts.map((t) => pr(S(t, s))); p.line(a.map((q) => q[0]), a.map((q) => q[1]), C.lime, 1.5).line(c.map((q) => q[0]), c.map((q) => q[1]), C.lime, 1.5); }
+    const pts = N.flat().map(pr); p.dots(pts.map((q) => q[0]), pts.map((q) => q[1]), C.paper, 3);
+    const c = S(0.5, 0.5);
+    out(`A 10 × 10 m bicubic patch. The surface passes through the four corner control points only; the inner ones pull it like magnets. Centre of the patch at height ${nf(2).format(c[2])} m (the four inner points carry 9/16 of the weight there, so the bump adds ${nf(2).format(v.h * 9 / 16)} m). Heights drawn ×2.`);
+  },
+});
+
+// 14.06 2D boolean playground with signed distances
+def('csg2d', {
+  controls: [{ type: 'select', k: 'op', label: 'Operation', options: ['Union (min)', 'Intersection (max)', 'Square minus circle', 'Circle minus square'], v: 'Square minus circle' }, { k: 'cx', label: 'Circle centre x', min: -3, max: 3, step: 0.1, v: 1.2, f: 1 }, { k: 'r', label: 'Circle radius', min: 0.5, max: 2.5, step: 0.1, v: 1.4, f: 1 }],
+  draw(p, v, out) {
+    const circ = (x, y) => Math.hypot(x - v.cx, y) - v.r, sq = (x, y) => { const qx = Math.abs(x) - 1.5, qy = Math.abs(y) - 1.5; return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0); };
+    const ops = { 'Union (min)': (a, b) => Math.min(a, b), 'Intersection (max)': (a, b) => Math.max(a, b), 'Square minus circle': (a, b) => Math.max(a, -b), 'Circle minus square': (a, b) => Math.max(b, -a) };
+    const f = (x, y) => ops[v.op](sq(x, y), circ(x, y));
+    sqframe(p, 4.2, 'x', 'y');
+    const n = 84, hh = 8 / n; let cnt = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const x = -4 + (i + 0.5) * hh, y = -4 + (j + 0.5) * hh; if (f(x, y) < 0) { cnt++; p.rect(x - hh / 2, x + hh / 2, y - hh / 2, y + hh / 2, 'rgba(238,255,65,0.55)'); } }
+    const th = linspace(0, 2 * Math.PI, 90); p.line(th.map((a) => v.cx + v.r * Math.cos(a)), th.map((a) => v.r * Math.sin(a)), C.cyan, 1.5, [5, 4]);
+    p.line([-1.5, 1.5, 1.5, -1.5, -1.5], [-1.5, -1.5, 1.5, 1.5, -1.5], C.amber, 1.5, [5, 4]);
+    out(`${v.op}: lime cells are where the combined signed distance is negative (inside). Area by counting ${cnt} cells of ${nf(4).format(hh * hh)}: ≈ ${nf(2).format(cnt * hh * hh)}. Square (amber) 9.00, circle (cyan) ${nf(2).format(Math.PI * v.r * v.r)}. Union + intersection always add up to square + circle.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
