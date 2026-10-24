@@ -3471,6 +3471,77 @@ def('rankinevortex', {
   },
 });
 
+// 11.16 potential flow past a cylinder with circulation
+def('potentialcyl', {
+  controls: [{ k: 'g', label: 'Clockwise circulation, Γ/(4πUa)', min: 0, max: 1.4, step: 0.02, v: 0.4, f: 2 }],
+  draw(p, v, out) {
+    const g = v.g, G = g * 4 * Math.PI;                       // U = 1, a = 1
+    const vel = (x, y) => { const r2 = x * x + y * y, re = (x * x - y * y) / (r2 * r2), im = -2 * x * y / (r2 * r2);
+      // dw/dz = 1 - 1/z^2 + i G/(2 pi z);  u = Re, v = -Im
+      const dRe = 1 - re + G / (2 * Math.PI) * (y / r2), dIm = -im + G / (2 * Math.PI) * (x / r2);
+      return [dRe, -dIm]; };
+    sqframe(p, 2.4, 'x / a', 'y / a');
+    for (const y0 of linspace(-2.6, 2.6, 19)) {
+      let x = -4, y = y0; const xs = [x], ys = [y];
+      for (let k = 0; k < 700; k++) {
+        let [u1, v1] = vel(x, y); let s = Math.hypot(u1, v1); if (s < 1e-6) break;
+        const xm = x + 0.015 * u1 / s, ym = y + 0.015 * v1 / s; [u1, v1] = vel(xm, ym); s = Math.hypot(u1, v1); if (s < 1e-6) break;
+        x += 0.03 * u1 / s; y += 0.03 * v1 / s; if (x * x + y * y < 1.0 || x > 4) { xs.push(x); ys.push(y); break; }
+        xs.push(x); ys.push(y);
+      }
+      p.line(xs, ys, C.cyan, 1.3);
+    }
+    const th = linspace(0, 2 * Math.PI, 90);
+    poly(p, th.map((t) => [Math.cos(t), Math.sin(t)]), C.paper, 'rgba(200,200,200,0.25)', 2);
+    if (g <= 1) { const t1 = Math.asin(-g), t2 = Math.PI - t1; p.dots([Math.cos(t1), Math.cos(t2)], [Math.sin(t1), Math.sin(t2)], C.amber, 6); }
+    else { const yy = -(g + Math.sqrt(g * g - 1)); p.dots([0], [yy], C.amber, 6); }
+    arrow(p, 0, 0, 0, Math.min(2, 0.4 + g * 1.2), C.lime, 3);
+    const L = 1.2 * 10 * g * 4 * Math.PI * 10 * 0.5;
+    out(`${g === 0 ? 'No circulation: the flow is symmetric, the pressure forces cancel and there is no lift and no drag (d\'Alembert\'s paradox).' : g <= 1 ? `Circulation speeds the flow over the top and slows it underneath; the stagnation points (amber) slide down to ${nf(1).format(Math.asin(-g) * 180 / Math.PI)}° and ${nf(1).format(180 + Math.asin(g) * 180 / Math.PI)}°.` : 'The circulation is so strong that the stagnation point leaves the surface; a ring of fluid circulates with the cylinder.'} For a 1 m cylinder in a 10 m/s wind, lift = ρUΓ = ${nf(0).format(L)} N per metre; drag stays zero.`);
+  },
+});
+
+// 11.17 specific energy diagram
+def('specenergy', {
+  controls: [{ k: 'q', label: 'Discharge per unit width q (m²/s)', min: 0.5, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'y', label: 'Flow depth y (m)', min: 0.15, max: 3, step: 0.01, v: 1.5, f: 2 }],
+  draw(p, v, out) {
+    const g = 9.81, q = v.q, E = (y) => y + q * q / (2 * g * y * y), yc = Math.cbrt(q * q / g), ys = linspace(0.08, 3.2, 300);
+    p.frame({ x: [0, 4], y: [0, 3.2], xlabel: 'specific energy E, m', ylabel: 'depth y, m' });
+    p.line([0, 3.2], [0, 3.2], C.grey, 1, [4, 4]).text('E = y', 2.75, 3.0, C.grey);
+    p.line(ys.map(E), ys, C.lime, 2.5).line([0, 1.5 * yc], [yc, yc], C.amber, 1, [4, 4]).dots([1.5 * yc], [yc], C.amber, 6).text('critical, Fr = 1', 1.5 * yc + 0.08, yc - 0.12, C.amber);
+    const Ey = E(v.y), Fr = q / (v.y * Math.sqrt(g * v.y));
+    let lo = 1e-4, hi = yc; const target = Ey, other = v.y > yc;
+    if (!other) { lo = yc; hi = 20; }
+    for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; ((E(m) - target) * (E(lo) - target) <= 0) ? (hi = m) : (lo = m); }
+    const ya = (lo + hi) / 2;
+    p.dots([Ey], [v.y], C.cyan, 7);
+    if (Ey < 4) { p.line([Ey, Ey], [v.y, ya], C.cyan, 1, [3, 3]); if (ya < 3.2) p.dots([Ey], [ya], C.red, 5); }
+    out(`Depth ${nf(2).format(v.y)} m: V = ${nf(2).format(q / v.y)} m/s, Fr = ${nf(2).format(Fr)} (${Fr < 1 ? 'subcritical, slow and deep' : 'supercritical, fast and shallow'}), E = ${nf(3).format(Ey)} m. Alternate depth with the same energy: ${nf(3).format(ya)} m (red). Critical depth ${nf(3).format(yc)} m, minimum energy ${nf(3).format(1.5 * yc)} m.`);
+  },
+});
+
+// 11.18 subak terrace cascade
+def('subakcascade', {
+  controls: [{ k: 'Q', label: 'Inflow from the canal (L/s)', min: 2, max: 30, step: 1, v: 10, f: 0 }, { k: 'b', label: 'Notch width (m)', min: 0.1, max: 0.6, step: 0.05, v: 0.3, f: 2 }, { k: 't', label: 'Time since the gate opened (h)', min: 0, max: 12, step: 0.1, v: 3, f: 1 }],
+  draw(p, v, out) {
+    const n = 5, A = 400, crest = 0.05, Qin0 = v.Q / 1000, k = v.b * (2 / 3) ** 1.5 * Math.sqrt(9.81), dt = 5, h = new Array(n).fill(0);
+    let Qend = 0;
+    for (let s = 0; s < Math.round(v.t * 3600 / dt); s++) { let Qi = Qin0; for (let i = 0; i < n; i++) { const Qo = h[i] > crest ? k * (h[i] - crest) ** 1.5 : 0; h[i] += (Qi - Qo) / A * dt; Qi = Qo; } Qend = Qi; }
+    p.frame({ x: [0, n], y: [0, n * 0.6 + 1.0], xlabel: 'terrace', ylabel: '', noy: true });
+    const sc = 4;                                                   // vertical exaggeration of water depth
+    for (let i = 0; i < n; i++) {
+      const bed = (n - i) * 0.6 - 0.3;
+      p.rect(i, i + 1, 0, bed, 'rgba(140,100,60,0.55)');
+      if (h[i] > 0) p.rect(i, i + 0.97, bed, bed + h[i] * sc, 'rgba(41,182,246,0.7)');
+      p.line([i + 0.97, i + 0.97], [bed, bed + crest * sc], C.paper, 3);
+      p.text(`${nf(1).format(h[i] * 100)} cm`, i + 0.12, bed + 0.62, C.cyan);
+    }
+    arrow(p, 0.05, n * 0.6 + 0.88, 0.5, n * 0.6 + 0.88, C.cyan, 2); p.text('canal', 0.55, n * 0.6 + 0.84, C.cyan);
+    const Hs = Math.pow(Qin0 / k, 2 / 3);
+    out(`After ${nf(1).format(v.t)} h: outflow from the last terrace ${nf(2).format(Qend * 1000)} L/s of ${v.Q} L/s in. Each terrace holds 5 cm before spilling; at steady state the head over every notch is (Q/k)²ᐟ³ = ${nf(2).format(Hs * 100)} cm, so each holds ${nf(2).format((crest + Hs) * 100)} cm. Depths drawn ×4.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
