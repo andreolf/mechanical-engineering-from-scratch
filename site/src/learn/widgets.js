@@ -4298,6 +4298,47 @@ def('csg2d', {
   },
 });
 
+// 14.07 mesh viewer with open-edge highlighting
+def('meshview', {
+  controls: [{ type: 'select', k: 'm', label: 'Mesh', options: ['Closed cylinder', 'One triangle deleted', 'One triangle flipped'], v: 'One triangle deleted' }, { k: 'yaw', label: 'Turn (°)', min: -180, max: 180, step: 2, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const n = 12, r = 6, h = 6, V = [];
+    for (let i = 0; i < n; i++) V.push([r * Math.cos(2 * Math.PI * i / n), r * Math.sin(2 * Math.PI * i / n), 0]);
+    for (let i = 0; i < n; i++) V.push([V[i][0], V[i][1], h]);
+    V.push([0, 0, 0], [0, 0, h]);
+    let F = [];
+    for (let i = 0; i < n; i++) { const j = (i + 1) % n; F.push([i, j, n + j], [i, n + j, n + i], [2 * n, j, i], [2 * n + 1, n + i, n + j]); }
+    if (v.m === 'One triangle deleted') F = F.slice(1);
+    if (v.m === 'One triangle flipped') F[0] = [F[0][2], F[0][1], F[0][0]];
+    const und = new Map(), dir = new Map();
+    for (const f of F) for (let k = 0; k < 3; k++) { const a = f[k], b = f[(k + 1) % 3], key = Math.min(a, b) + ',' + Math.max(a, b); und.set(key, (und.get(key) || 0) + 1); dir.set(a + '>' + b, (dir.get(a + '>' + b) || 0) + 1); }
+    const d = Math.PI / 180, cy = Math.cos(v.yaw * d), sy = Math.sin(v.yaw * d), sp = Math.sin(25 * d), cp = Math.cos(25 * d);
+    const pr = (q) => { const x = cy * q[0] - sy * q[1], y = sy * q[0] + cy * q[1]; return [x, sp * y + cp * (q[2] - 3)]; };
+    sqframe(p, 9, 'screen x, mm', 'screen y, mm');
+    let open = 0, bad = 0;
+    for (const [key, c] of und) { const [a, b] = key.split(',').map(Number), A = pr(V[a]), B = pr(V[b]); const flipped = (dir.get(a + '>' + b) || 0) > 1 || (dir.get(b + '>' + a) || 0) > 1; if (c === 1) open++; if (flipped) bad++; p.line([A[0], B[0]], [A[1], B[1]], c === 1 ? C.red : flipped ? C.amber : 'rgba(238,255,65,0.55)', c === 1 || flipped ? 3 : 1); }
+    out(`${F.length} triangles, ${V.length} vertices, ${und.size} edges; Euler V − E + F = ${V.length - und.size + F.length}. ${open ? `${open} open edges (red): each used by only one triangle, so the mesh is not watertight and has no defined volume.` : bad ? `Closed, but ${bad} edges (amber) are traversed twice in the same direction: one triangle is flipped, so its normal points inwards.` : 'Every edge is shared by exactly two triangles, in opposite directions: watertight and consistently oriented.'}`);
+  },
+});
+
+// 14.08 dragging a constrained rectangle sketch
+def('sketchdrag', {
+  controls: [{ k: 'tx', label: 'Drag corner 2 to x (mm)', min: -100, max: 120, step: 1, v: 40, f: 0 }, { k: 'ty', label: 'Drag corner 2 to y (mm)', min: -100, max: 120, step: 1, v: 90, f: 0 }, { type: 'select', k: 'c', label: 'Constraints', options: ['Corner 0 fixed, sizes, right angles', 'Also: bottom edge horizontal'], v: 'Corner 0 fixed, sizes, right angles' }],
+  draw(p, v, out) {
+    const w = 80, h = 50, hor = v.c !== 'Corner 0 fixed, sizes, right angles';
+    const res = (x) => { const P = (i) => [x[2 * i], x[2 * i + 1]], s = (a, b) => [P(b)[0] - P(a)[0], P(b)[1] - P(a)[1]], dot = (u, q) => u[0] * q[0] + u[1] * q[1]; const r = [x[0], x[1], dot(s(0, 1), s(0, 1)) - w * w, dot(s(1, 2), s(1, 2)) - h * h, dot(s(0, 1), s(1, 2)), dot(s(1, 2), s(2, 3)), dot(s(2, 3), s(3, 0))]; if (hor) r.push(x[3] - x[1]); return r; };
+    const solveLin = (A, b) => { const n = b.length, M = A.map((row, i) => row.concat([b[i]])); for (let c = 0; c < n; c++) { let piv = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r; [M[c], M[piv]] = [M[piv], M[c]]; for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; } } return M.map((row, i) => row[n] / row[i]); };
+    let x = [0, 0, 80, 0, v.tx, v.ty, 0, 50], it = 0, rmax = Infinity;
+    for (; it < 60; it++) { const r = res(x); rmax = Math.max(...r.map(Math.abs)); if (rmax < 1e-10) break; const J = r.map(() => new Array(8).fill(0)); for (let k = 0; k < 8; k++) { const a = x.slice(), b = x.slice(); a[k] += 1e-6; b[k] -= 1e-6; const ra = res(a), rb = res(b); for (let i = 0; i < r.length; i++) J[i][k] = (ra[i] - rb[i]) / 2e-6; } const JJ = J.map((ri) => J.map((rj) => ri.reduce((s, q, k) => s + q * rj[k], 0) + 1e-12)); const y = solveLin(JJ, r); for (let k = 0; k < 8; k++) x[k] -= J.reduce((s, ri, i) => s + ri[k] * y[i], 0); }
+    sqframe(p, 110, 'x, mm', 'y, mm');
+    p.line([0, 80, 80, 0, 0], [0, 0, 50, 50, 0], C.grey, 1, [4, 3]);
+    p.line([x[0], x[2], x[4], x[6], x[0]], [x[1], x[3], x[5], x[7], x[1]], C.lime, 2.5);
+    p.dots([x[0], x[2], x[4], x[6]], [x[1], x[3], x[5], x[7]], C.paper, 4).dots([v.tx], [v.ty], C.cyan, 6).dots([0], [0], C.red, 6);
+    [0, 1, 2, 3].forEach((i) => p.text(String(i), x[2 * i] + 4, x[2 * i + 1] + 4, C.paper));
+    out(`${hor ? 'Fully constrained (0 DOF): dragging cannot move it.' : '1 DOF left: the plate can only rotate about corner 0 (red).'} Newton converged in ${it} steps; largest constraint residual ${rmax.toExponential(1)}. The cyan dot is where you dragged corner 2; the solver finds the nearby valid rectangle.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
