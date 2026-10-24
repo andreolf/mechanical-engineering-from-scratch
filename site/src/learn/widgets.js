@@ -4027,6 +4027,39 @@ def('finprofile', {
   },
 });
 
+// 13.05 lumped versus exact cooling of a sphere
+function sphereRoots13(Bir, n) { const r = []; const g = (z) => 1 - z / Math.tan(z) - Bir; for (let k = 1; k <= n; k++) { let a = (k - 1) * Math.PI + 1e-9, b = k * Math.PI - 1e-9, ga = g(a); for (let i = 0; i < 60; i++) { const c = 0.5 * (a + b), gc = g(c); if ((ga < 0) === (gc < 0)) { a = c; ga = gc; } else b = c; } r.push(0.5 * (a + b)); } return r; }
+function sphereExact13(roots, Fo) { let cen = 0, mean = 0; for (const z of roots) { const Cn = 4 * (Math.sin(z) - z * Math.cos(z)) / (2 * z - Math.sin(2 * z)), e = Math.exp(-z * z * Fo); cen += Cn * e; mean += Cn * e * 3 * (Math.sin(z) - z * Math.cos(z)) / z ** 3; } return [cen, mean]; }
+def('lumpedbiot', {
+  controls: [{ k: 'lb', label: 'log₁₀ of the Biot number hL_c/k', min: -3, max: 0.7, step: 0.05, v: -0.5, f: 2 }],
+  draw(p, v, out) {
+    const Bi = 10 ** v.lb, roots = sphereRoots13(3 * Bi, 30), ts = linspace(0.02, 4, 160);
+    p.frame({ x: [0, 4], y: [0, 1.05], xlabel: 'time / lumped time constant τ = ρcV/(hA)', ylabel: '(T − T∞)/(Tᵢ − T∞)' });
+    p.line(ts, ts.map((t) => Math.exp(-t)), C.lime, 2.5);
+    p.line(ts, ts.map((t) => sphereExact13(roots, t / (9 * Bi))[1]), C.cyan, 2, [6, 4]);
+    p.line(ts, ts.map((t) => sphereExact13(roots, t / (9 * Bi))[0]), C.red, 2, [2, 3]);
+    p.text('lumped', 2.6, 0.17, C.lime).text('exact mean', 2.6, 0.27, C.cyan).text('exact centre', 2.6, 0.37, C.red);
+    const [c1, m1] = sphereExact13(roots, 1 / (9 * Bi));
+    out(`Sphere, Bi = ${nf(3).format(Bi)}. After one τ the lumped model says 0.368; the exact mean is ${nf(3).format(m1)} and the centre ${nf(3).format(c1)}. ${Bi < 0.1 ? 'Bi < 0.1: the lumped model is fine.' : 'Warning: Bi > 0.1, so the inside lags the surface and the lumped model is too optimistic.'}`);
+  },
+});
+
+// 13.06 2D transient in a square bar
+def('heatsquare', {
+  controls: [{ k: 't', label: 'Time in the 60 °C bath (min)', min: 0, max: 90, step: 1, v: 10, f: 0 }],
+  draw(p, v, out) {
+    const L = 0.02, al = 1.4e-7, t = v.t * 60, Ti = 5, Tb = 60;
+    const th = (x) => { if (t === 0) return 1; let s = 0; for (let n = 0; n < 60; n++) { const lam = (2 * n + 1) * Math.PI / (2 * L); s += 4 * (n % 2 ? -1 : 1) / ((2 * n + 1) * Math.PI) * Math.cos(lam * x) * Math.exp(-lam * lam * al * t); } return s; };
+    const N = 20, d = 2 * L / N, cols = [[92, 200, 255], [238, 255, 65], [255, 181, 71], [255, 90, 54]];
+    const col = (T) => { const u = Math.min(Math.max((T - Ti) / (Tb - Ti), 0), 1) * 3, i = Math.min(Math.floor(u), 2), f = u - i, a = cols[i], b = cols[i + 1]; return `rgb(${a.map((q, j) => Math.round(q + (b[j] - q) * f)).join(',')})`; };
+    sqframe(p, 24, 'x, mm', 'y, mm');
+    const tx = []; for (let i = 0; i < N; i++) tx.push(th(-L + (i + 0.5) * d));
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) p.rect((-L + i * d) * 1000, (-L + (i + 1) * d) * 1000, (-L + j * d) * 1000, (-L + (j + 1) * d) * 1000, col(Tb + (Ti - Tb) * tx[i] * tx[j]));
+    const c2 = Tb + (Ti - Tb) * th(0) ** 2, c1 = Tb + (Ti - Tb) * th(0);
+    out(`4 × 4 cm bar of meat from 5 °C into a 60 °C bath (faces held at 60 °C). After ${v.t} min the centre is at ${nf(1).format(c2)} °C (product of two slab solutions; a 4 cm slab's centre would be ${nf(1).format(c1)} °C). Blue is 5 °C, lime and amber in between, red is 60 °C.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
