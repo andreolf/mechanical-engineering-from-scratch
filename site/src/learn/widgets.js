@@ -365,17 +365,19 @@ def('arm2', {
 
 // ---------- Phase 03 ----------
 // banded contour fill of f over the current frame
-function bands(p, f, lo, hi, nb = 12, cells = 90) {
-  const [x0, x1] = p.xr, [y0, y1] = p.yr, ny = Math.round(cells * (p.h / p.w)) || cells, g = p.g;
-  const dx = (x1 - x0) / cells, dy = (y1 - y0) / ny;
-  g.save(); g.beginPath(); g.rect(p.pad.l, p.pad.t, p.w - p.pad.l - p.pad.r, p.h - p.pad.t - p.pad.b); g.clip();
-  for (let i = 0; i < cells; i++) for (let j = 0; j < ny; j++) {
-    const v = f(x0 + (i + 0.5) * dx, y0 + (j + 0.5) * dy), t = Math.max(0, Math.min(0.999, (v - lo) / (hi - lo))), b = Math.floor(t * nb);
-    g.fillStyle = `rgba(238,255,65,${0.04 + 0.5 * (b / nb) ** 1.4})`;
-    const a = p.X(x0 + i * dx), c = p.Y(y0 + (j + 1) * dy);
-    g.fillRect(a, c, p.X(x0 + (i + 1) * dx) - a + 0.6, p.Y(y0 + j * dy) - c + 0.6);
+function bands(p, f, lo, hi, nb = 12, cells = 160) {
+  // render quantised values into a small offscreen bitmap, then scale it into the plot area (no seams)
+  const [x0, x1] = p.xr, [y0, y1] = p.yr, pw = p.w - p.pad.l - p.pad.r, ph = p.h - p.pad.t - p.pad.b;
+  const nx = cells, ny = Math.max(2, Math.round(cells * (ph / pw)));
+  const off = document.createElement('canvas'); off.width = nx; off.height = ny;
+  const og = off.getContext('2d'), img = og.createImageData(nx, ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const v = f(x0 + ((i + 0.5) / nx) * (x1 - x0), y1 - ((j + 0.5) / ny) * (y1 - y0));
+    const t = Math.max(0, Math.min(0.999, (v - lo) / (hi - lo))), b = Math.floor(t * nb), a = 0.05 + 0.55 * (b / nb) ** 1.3;
+    const k = 4 * (j * nx + i); img.data[k] = 238; img.data[k + 1] = 255; img.data[k + 2] = 65; img.data[k + 3] = Math.round(255 * a);
   }
-  g.restore();
+  og.putImageData(img, 0, 0);
+  const g = p.g; g.save(); g.imageSmoothingEnabled = false; g.drawImage(off, p.pad.l, p.pad.t, pw, ph); g.restore();
 }
 
 // 03.01 / 03.02 gradient descent on a quadratic bowl
