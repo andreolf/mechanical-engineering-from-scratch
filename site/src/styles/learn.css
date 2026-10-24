@@ -73,7 +73,7 @@ html:has(body.in-lesson) { scroll-padding-top: 64px; }
 
 /* Figures and code */
 .fig { margin: 1.8em 0; }
-.fig svg { display: block; width: 100%; height: auto; }
+.fig > svg { display: block; width: 100%; height: auto; }
 .fig figcaption { font-family: var(--sans); font-size: var(--t-1); color: var(--graphite); margin-top: 8px; }
 .widget { border: 1px solid var(--rule); border-radius: var(--radius-m); padding: 10px; background: #050505; font-family: var(--sans); }
 .w-canvas { display: block; width: 100%; aspect-ratio: 4 / 3; touch-action: pan-y; }
@@ -215,7 +215,7 @@ html:has(body.in-lesson) { scroll-padding-top: 64px; }
 }
 
 /* SVG figure vocabulary used inside lesson markdown */
-.fig svg { font-family: var(--sans); }
+.fig > svg { font-family: var(--sans); }
 .sv-text text, text.sv-text { fill: var(--paper); }
 .sv-muted, .sv-muted text { fill: var(--graphite); }
 .sv-accent-text { fill: var(--lime); }

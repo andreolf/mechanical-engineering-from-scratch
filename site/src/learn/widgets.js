@@ -481,6 +481,60 @@ def('phaseplane', {
   },
 });
 
+// 03.16 steady temperature in a square plate: superposition of edge series
+const sinhRatio = (a, b) => Math.exp(a - b) * (1 - Math.exp(-2 * a)) / (1 - Math.exp(-2 * b));
+const plateTop = (x, y, terms = 41) => { if (y >= 1) return x > 0 && x < 1 ? 1 : 0.5; let s = 0; for (let n = 1; n < terms; n += 2) s += (4 / (n * Math.PI)) * Math.sin(n * Math.PI * x) * sinhRatio(n * Math.PI * y, n * Math.PI); return s; };
+def('plate', {
+  controls: [{ k: 'top', label: 'Top edge (°C)', min: 0, max: 100, step: 5, v: 100, f: 0 }, { k: 'right', label: 'Right edge (°C)', min: 0, max: 100, step: 5, v: 0, f: 0 }, { k: 'left', label: 'Left edge (°C)', min: 0, max: 100, step: 5, v: 0, f: 0 }],
+  draw(p, v, out) {
+    // bottom edge held at 0 °C; the other three by the sliders
+    const T = (x, y) => v.top * plateTop(x, y) + v.right * plateTop(y, x) + v.left * plateTop(y, 1 - x);
+    sqframe(p, 0.62, 'x, m', 'y, m');
+    bands(p, (x, y) => (Math.abs(x) <= 0.5 && Math.abs(y) <= 0.5 ? T(x + 0.5, y + 0.5) : -1), 0, 100, 10, 120);
+    p.line([-0.5, 0.5, 0.5, -0.5, -0.5], [-0.5, -0.5, 0.5, 0.5, -0.5], C.paper, 1.5);
+    p.text(`${v.top} °C`, 0, 0.53, C.lime, 'center').text('0 °C', 0, -0.59, C.grey, 'center');
+    p.dots([0, 0], [0, 0.25], C.cyan, 4);
+    const c = T(0.5, 0.5), q = T(0.5, 0.75);
+    out(`Centre ${nf(2).format(c)} °C, the average of the four edges (${nf(2).format((v.top + v.right + v.left) / 4)}). At (0.5, 0.75): ${nf(1).format(q)} °C. Brighter is hotter; the hottest and coldest points are always on the edges.`);
+  },
+});
+
+// 03.18 step response of m x'' + c x' + k x = F via the Laplace solution
+def('step2', {
+  controls: [{ k: 'c', label: 'Damping c (N·s/m)', min: 0.5, max: 12, step: 0.5, v: 4, f: 1 }, { k: 'k', label: 'Stiffness k (N/m)', min: 5, max: 60, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const m = 1, F = 10, wn = Math.sqrt(v.k / m), z = v.c / (2 * Math.sqrt(v.k * m)), xs = F / v.k, ts = linspace(0, 4, 400);
+    const x = (t) => {
+      if (z < 1) { const wd = wn * Math.sqrt(1 - z * z); return xs * (1 - Math.exp(-z * wn * t) * (Math.cos(wd * t) + (z / Math.sqrt(1 - z * z)) * Math.sin(wd * t))); }
+      if (Math.abs(z - 1) < 1e-9) return xs * (1 - Math.exp(-wn * t) * (1 + wn * t));
+      const r1 = -wn * (z - Math.sqrt(z * z - 1)), r2 = -wn * (z + Math.sqrt(z * z - 1));
+      return xs * (1 + (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r1 - r2));
+    };
+    p.frame({ x: [0, 4], y: [0, 2 * xs], xlabel: 't, s', ylabel: 'x, m' });
+    p.line([0, 4], [xs, xs], C.grey, 1, [4, 4]).line(ts, ts.map(x));
+    let msg = `Steady state F/k = ${nf(3).format(xs)} m, ζ = ${nf(3).format(z)}.`;
+    if (z < 1) { const wd = wn * Math.sqrt(1 - z * z), tp = Math.PI / wd, os = Math.exp(-z * Math.PI / Math.sqrt(1 - z * z)); p.dots([tp], [x(tp)], C.cyan, 4); msg += ` Peak ${nf(3).format(x(tp))} m at ${nf(3).format(tp)} s: overshoot ${nf(1).format(100 * os)}%.`; }
+    else msg += ' No overshoot: the poles are real.';
+    out(msg + ` Poles of 1/(s² + ${nf(1).format(v.c)}s + ${v.k}).`);
+  },
+});
+
+// 03.20 Green's function of a simply supported beam: deflection under a moving point load
+def('beamgreen', {
+  controls: [{ k: 'xi', label: 'Load position ξ (m)', min: 0.1, max: 3.9, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const L = 4, EI = 200e9 * 1943e-8, P = 1e4, xs = linspace(0, L, 200);
+    const G = (x, xi) => { let a = Math.min(x, xi), b = L - Math.max(x, xi); return (b * a * (L * L - b * b - a * a)) / (6 * EI * L); };
+    p.frame({ x: [0, L], y: [-5, 0.8], xlabel: 'x, m', ylabel: 'deflection, mm' });
+    p.line(xs, xs.map((x) => -1e3 * P * G(x, 2)), C.grey, 1, [4, 4]);
+    p.line(xs, xs.map((x) => -1e3 * P * G(x, v.xi)));
+    p.line([v.xi, v.xi], [0.75, 0.1], C.cyan, 2).dots([v.xi], [0.1], C.cyan, 3).dots([0, L], [0, 0], C.paper, 4);
+    const mid = 1e3 * P * G(2, v.xi);
+    let xm = 0, dm = 0; xs.forEach((x) => { const d = 1e3 * P * G(x, v.xi); if (d > dm) { dm = d; xm = x; } });
+    out(`10 kN at ξ = ${nf(1).format(v.xi)} m on a 4 m IPE 200: midspan ${nf(3).format(mid)} mm, largest ${nf(3).format(dm)} mm at x = ${nf(2).format(xm)} m. Dashed: load at midspan (3.431 mm). Reciprocity: the midspan deflection here equals the deflection at ξ for a load at midspan.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
