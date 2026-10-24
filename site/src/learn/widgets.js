@@ -2385,6 +2385,61 @@ def('rodimpact', {
   },
 });
 
+// ---------- Phase 09 ----------
+// 09.01 Lennard-Jones well, force and harmonic fit
+def('ljwell', {
+  controls: [{ k: 'r', label: 'Separation r / r₀', min: 0.9, max: 1.6, step: 0.005, v: 1.05, f: 3 }, { k: 'show', label: 'Show the parabola fitted at r₀', type: 'check', v: 1 }],
+  draw(p, v, out) {
+    const r0 = Math.pow(2, 1 / 6), V = (x) => { const r = x * r0; return 4 * (r ** -12 - r ** -6); }, Fo = (x) => { const r = x * r0; return 24 / r * (2 * r ** -12 - r ** -6); };
+    const S = 72 / Math.pow(2, 1 / 3), xs = linspace(0.88, 1.8, 400);
+    p.frame({ x: [0.88, 1.8], y: [-1.6, 1.2], xlabel: 'separation r / r₀', ylabel: 'energy / ε (lime), force (cyan)' });
+    p.line([0.88, 1.8], [0, 0], C.grey, 1);
+    if (v.show) p.line(xs, xs.map((x) => -1 + 0.5 * S * ((x - 1) * r0) ** 2), C.amber, 1, [4, 4]);
+    p.line(xs, xs.map((x) => Math.min(1.2, V(x))), C.lime, 2.5).line(xs, xs.map((x) => Math.max(-1.6, Math.min(1.2, Fo(x) / 3))), C.cyan, 1.5);
+    p.dots([v.r], [Math.min(1.2, V(v.r))], C.red, 6);
+    const F = Fo(v.r), lin = -S * (v.r - 1) * r0;
+    out(`At r = ${nf(3).format(v.r)} r₀ the bond force is ${nf(3).format(F)} ε/σ (${F > 0 ? 'repulsive' : 'attractive'}); a linear spring of stiffness V''(r₀) = ${nf(2).format(S)} ε/σ² would give ${nf(3).format(lin)}. Near r₀ they agree: Hooke's law. The attraction peaks at 1.109 r₀, the bond's theoretical strength. The well is lopsided, so hot atoms sit further apart: thermal expansion.`);
+  },
+});
+
+// 09.02 cubic unit cells
+def('unitcell', {
+  controls: [{ type: 'select', k: 'kind', label: 'Lattice', options: ['SC', 'BCC', 'FCC'], v: 'FCC' }, { k: 'rot', label: 'Rotate (°)', min: 0, max: 90, step: 1, v: 30, f: 0 }, { k: 'size', label: 'Atom size (fraction of touching)', min: 0.2, max: 1, step: 0.05, v: 0.55, f: 2 }],
+  draw(p, v, out) {
+    const B = { SC: [[0, 0, 0]], BCC: [[0, 0, 0], [0.5, 0.5, 0.5]], FCC: [[0, 0, 0], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5]] }[v.kind];
+    const R = { SC: 0.5, BCC: Math.sqrt(3) / 4, FCC: Math.sqrt(2) / 4 }[v.kind], z = { SC: 6, BCC: 8, FCC: 12 }[v.kind];
+    const th = v.rot * Math.PI / 180, el = 0.45, proj = ([x, y, zz]) => { x -= 0.5; y -= 0.5; zz -= 0.5; const X = x * Math.cos(th) - y * Math.sin(th), Y = x * Math.sin(th) + y * Math.cos(th); return [X, zz * Math.cos(el) + Y * Math.sin(el), Y * Math.cos(el) - zz * Math.sin(el)]; };
+    fitAt(p, 0, 0, 1.0, 1.0, '', '');
+    const corners = []; for (const a of [0, 1]) for (const b of [0, 1]) for (const c of [0, 1]) corners.push([a, b, c]);
+    for (const a of corners) for (const b of corners) { const d = Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]); if (d === 1 && a < b) { const P = proj(a), Q = proj(b); p.line([P[0], Q[0]], [P[1], Q[1]], C.grey, 1); } }
+    const atoms = []; for (const b of B) for (const i of [0, 1]) for (const j of [0, 1]) for (const k of [0, 1]) { const q = [b[0] + i, b[1] + j, b[2] + k]; if (q.every((c) => c <= 1 + 1e-9)) atoms.push(q); }
+    const uniq = [...new Map(atoms.map((a) => [a.join(','), a])).values()].map(proj).sort((a, b) => b[2] - a[2]);
+    const g = p.g, rp = Math.abs(p.X(R * v.size) - p.X(0));
+    for (const [X, Y, D] of uniq) { g.save(); g.beginPath(); g.arc(p.X(X), p.Y(Y), rp, 0, 2 * Math.PI); g.fillStyle = `rgba(238,255,65,${0.25 + 0.5 * (0.9 - D) / 1.8})`; g.strokeStyle = C.ink; g.lineWidth = 1; g.fill(); g.stroke(); g.restore(); }
+    const n = B.length, apf = n * 4 / 3 * Math.PI * R ** 3;
+    out(`${v.kind}: ${n} atom${n > 1 ? 's' : ''} per cell (corners count 1/8, faces 1/2), each touching ${z} neighbours. Atoms touch along the ${v.kind === 'SC' ? 'cube edge' : v.kind === 'BCC' ? 'body diagonal' : 'face diagonal'}, so R = ${nf(4).format(R)} a and the packing factor is ${nf(4).format(apf)}.`);
+  },
+});
+
+// 09.03 Frenkel-Kontorova chain: a kink glides
+def('fkchain', {
+  controls: [{ k: 'F', label: 'Push per atom (fraction of rigid-slip force)', min: 0, max: 0.05, step: 0.001, v: 0.02, f: 3 }, { k: 't', label: 'Time', min: 0, max: 400, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const N = 40, k = 4, V0 = 0.2, Fr = V0 * Math.PI, F = v.F * Fr, dt = 0.4 / (k + 2 * Math.PI ** 2 * V0);
+    const x = Array.from({ length: N + 1 }, (_, i) => i - (2 / Math.PI) * Math.atan(Math.exp((i - 12) / 2))); x[N] = N - 1;
+    const step = (FF) => { const f = x.map((xi) => FF - V0 * Math.PI * Math.sin(2 * Math.PI * xi)); for (let i = 0; i < N; i++) { const s = x[i + 1] - x[i] - 1; f[i] += k * s; f[i + 1] -= k * s; } f[0] = 0; f[N] = 0; for (let i = 0; i <= N; i++) x[i] += dt * f[i]; };
+    for (let i = 0; i < 3000; i++) step(0);
+    for (let i = 0; i < v.t / dt; i++) step(F);
+    const xs = linspace(-0.5, N - 0.5, 2400);
+    p.frame({ x: [-0.5, N - 0.5], y: [-1.2, 1.6], xlabel: 'position (lattice spacings)', ylabel: '' });
+    p.line(xs, xs.map((q) => -0.5 - 0.35 * Math.cos(2 * Math.PI * q)), C.grey, 1);
+    const w = x.slice(0, -1).map((xi, i) => Math.max(0, 1 - (x[i + 1] - xi))), cen = w.reduce((a, b, i) => a + b * i, 0) / Math.max(1e-9, w.reduce((a, b) => a + b, 0));
+    p.dots(x, x.map((xi) => -0.5 - 0.35 * Math.cos(2 * Math.PI * xi)), C.lime, 4);
+    p.line(x.slice(0, -1).map((xi, i) => 0.5 * (xi + x[i + 1])), w.map((q) => 0.6 + 2.5 * q), C.amber, 2);
+    out(`Lime: atoms on the grey substrate wells. Amber: squeeze between neighbours, which marks the kink (an extra atom, like the extra half-plane of an edge dislocation). Pushing with ${nf(1).format(v.F * 100)} % of the force needed to slide a perfect row, the kink ${Math.abs(cen - 12) > 3 ? `has glided to site ${nf(0).format(cen)}` : 'is held by the lattice'}. A kink moves at about 1.2 % here: that's why real metals yield at a tiny fraction of the ideal strength.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
