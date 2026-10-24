@@ -651,6 +651,114 @@ def('spline', {
   },
 });
 
+// seeded normal random numbers, so widgets draw the same noise every time
+function gaussRng(seed) { let s = seed >>> 0; const u = () => { s = (s * 1664525 + 1013904223) >>> 0; return (s + 0.5) / 4294967296; }; return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u()); }
+
+// 04.06 differentiating noisy position data
+def('noisydiff', {
+  controls: [{ k: 'sig', label: 'Sensor noise σ (mm)', min: 0, max: 0.5, step: 0.01, v: 0.1, f: 2 }, { k: 'half', label: 'Savitzky-Golay half-window (samples)', min: 2, max: 60, step: 1, v: 25, f: 0 }],
+  draw(p, v, out) {
+    const h = 1e-3, N = 1000, rnd = gaussRng(7), w = 2 * Math.PI * 1.5;
+    const t = linspace(0, (N - 1) * h, N), x = t.map((ti) => 0.05 * Math.sin(w * ti) + rnd() * v.sig * 1e-3), vt = t.map((ti) => 0.05 * w * Math.cos(w * ti));
+    const raw = t.map((_, i) => (i > 0 && i < N - 1 ? (x[i + 1] - x[i - 1]) / (2 * h) : NaN));
+    // quadratic SG first derivative on a symmetric window equals the least-squares slope
+    const m = v.half; let den = 0; for (let k = -m; k <= m; k++) den += k * k;
+    const sg = t.map((_, i) => { if (i < m || i >= N - m) return NaN; let s = 0; for (let k = -m; k <= m; k++) s += k * x[i + k]; return s / (den * h); });
+    const rms = (a) => { let s = 0, n = 0; a.forEach((y, i) => { if (isFinite(y) && i >= 60 && i < N - 60) { s += (y - vt[i]) ** 2; n++; } }); return Math.sqrt(s / n); };
+    p.frame({ x: [0, 1], y: [-0.8, 0.8], xlabel: 't, s', ylabel: 'velocity, m/s' });
+    p.line(t, raw, 'rgba(154,157,147,0.55)', 1).line(t, vt, C.paper, 1, [4, 4]).line(t, sg);
+    out(`RMS error: raw central difference ${nf(4).format(rms(raw))} m/s (theory σ/(√2 h) = ${nf(4).format(v.sig * 1e-3 / (Math.SQRT2 * h))}), Savitzky-Golay ${nf(4).format(rms(sg))} m/s. Too wide a window starts to flatten the peaks.`);
+  },
+});
+
+// 04.07 Gauss-Legendre nodes and weights
+function gaussLegendre(n) {
+  const x = [], w = [];
+  for (let i = 1; i <= n; i++) {
+    let z = Math.cos(Math.PI * (i - 0.25) / (n + 0.5)), dp = 1;
+    for (let it = 0; it < 100; it++) { let p0 = 1, p1 = z; for (let k = 2; k <= n; k++) { const p2 = ((2 * k - 1) * z * p1 - (k - 1) * p0) / k; p0 = p1; p1 = p2; } const pn = n === 1 ? z : p1, pm = n === 1 ? 1 : p0; dp = n * (z * pn - pm) / (z * z - 1); const dz = pn / dp; z -= dz; if (Math.abs(dz) < 1e-15) break; }
+    x.push(z); w.push(2 / ((1 - z * z) * dp * dp));
+  }
+  return [x, w];
+}
+def('gaussnodes', {
+  controls: [{ k: 'n', label: 'Number of points n', min: 1, max: 10, step: 1, v: 3, f: 0 }],
+  draw(p, v, out) {
+    const [x, w] = gaussLegendre(v.n), xs = linspace(-1, 1, 400);
+    const P = (z) => { let p0 = 1, p1 = z; if (v.n === 1) return z; for (let k = 2; k <= v.n; k++) { const p2 = ((2 * k - 1) * z * p1 - (k - 1) * p0) / k; p0 = p1; p1 = p2; } return p1; };
+    p.frame({ x: [-1.05, 1.05], y: [-1.1, 2.1], xlabel: 'x', ylabel: 'Pₙ(x), weight' });
+    p.line(xs, xs.map(P), C.grey, 1.5);
+    x.forEach((xi, i) => p.line([xi, xi], [0, w[i]], C.lime, 3));
+    p.dots(x, x.map(() => 0), C.cyan, 4);
+    const f = (z) => Math.exp(-z * z), exact = 0.882081390762422, I = x.reduce((s, xi, i) => s + w[i] * f(xi + 1), 0);
+    out(`Nodes (cyan) are the roots of the Legendre polynomial P${v.n} (grey); bar heights are the weights, summing to 2. Exact for polynomials up to degree ${2 * v.n - 1}. ∫₀² e^(−x²) dx with ${v.n} points: error ${Math.abs(I - exact).toExponential(1)}.`);
+  },
+});
+
+// 04.08 explicit Euler stability region
+def('stability', {
+  controls: [{ k: 'h', label: 'Step h (s)', min: 0.02, max: 1.4, step: 0.02, v: 0.3, f: 2 }],
+  draw(p, v, out) {
+    const lams = [{ re: -2, im: 0, name: 'cooling, λ = −2' }, { re: -0.5, im: 3, name: 'damped oscillator, λ = −0.5 ± 3i' }];
+    sqframe(p, 2.6, 'Re(hλ)', 'Im(hλ)');
+    bands(p, (x, y) => (Math.hypot(1 + x, y) <= 1 ? 1 : 0), 0, 1.2, 2, 160);
+    const th = linspace(0, 2 * Math.PI, 200); p.line(th.map((a) => -1 + Math.cos(a)), th.map((a) => Math.sin(a)), C.lime, 1.5);
+    p.line([-9, 9], [0, 0], C.rule, 1).line([0, 0], [-9, 9], C.rule, 1);
+    const msg = lams.map((l, i) => { const zr = v.h * l.re, zi = v.h * l.im, g = Math.hypot(1 + zr, zi), col = i ? C.amber : C.cyan; p.dots([zr], [zi], col, 5); if (zi) p.dots([zr], [-zi], col, 5); return `${l.name}: |1 + hλ| = ${nf(3).format(g)} ${g <= 1 ? 'stable' : 'unstable'}`; });
+    out(`Lime disc: |1 + hλ| ≤ 1, where explicit Euler is stable. ${msg.join('; ')}. The oscillator needs h < ${nf(3).format(2 * 0.5 / (0.25 + 9))} s; the cooling mode h ≤ 1 s.`);
+  },
+});
+
+// 04.09 pendulum: Euler vs Heun vs RK4
+function rkPend(name, h, T, th0) {
+  const f = (y) => [y[1], -9.81 * Math.sin(y[0])], add = (a, b, s) => [a[0] + s * b[0], a[1] + s * b[1]];
+  let y = [th0, 0]; const ts = [0], ys = [y[0]];
+  for (let t = 0; t < T - 1e-12; t += h) {
+    if (name === 'Euler') y = add(y, f(y), h);
+    else if (name === 'Heun') { const k1 = f(y), k2 = f(add(y, k1, h)); y = [y[0] + h / 2 * (k1[0] + k2[0]), y[1] + h / 2 * (k1[1] + k2[1])]; }
+    else { const k1 = f(y), k2 = f(add(y, k1, h / 2)), k3 = f(add(y, k2, h / 2)), k4 = f(add(y, k3, h)); y = [y[0] + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), y[1] + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])]; }
+    ts.push(t + h); ys.push(y[0]);
+  }
+  return [ts, ys];
+}
+def('rkorder', {
+  controls: [{ k: 'h', label: 'Step h (s)', min: 0.005, max: 0.2, step: 0.005, v: 0.05, f: 3 }],
+  draw(p, v, out) {
+    const th0 = Math.PI / 3, T = 10, R = rkPend('RK4', 0.0005, T, th0), deg = (a) => a.map((r) => r * 180 / Math.PI);
+    p.frame({ x: [0, T], y: [-120, 120], xlabel: 't, s', ylabel: 'angle, °' });
+    p.line(R[0], deg(R[1]), C.paper, 1, [4, 4]);
+    const res = ['Euler', 'Heun', 'RK4'].map((m, i) => { const [ts, ys] = rkPend(m, v.h, T, th0); p.line(ts, deg(ys), [C.grey, C.cyan, C.lime][i], i === 2 ? 2 : 1.5); const ref = R[1][Math.round(ts[ts.length - 1] / 0.0005)]; const e = Math.abs(ys[ys.length - 1] - ref) * 180 / Math.PI; return `${m} ${e > 1e3 ? 'diverged' : e < 0.01 ? e.toExponential(1) + '°' : nf(2).format(e) + '°'}`; });
+    out(`Error at t = 10 s: ${res.join(', ')}. Grey Euler gains energy and swings ever wider; cyan Heun (RK2) and lime RK4 track the dashed reference. Halve h: Euler's error halves, Heun's quarters, RK4's drops 16 times.`);
+  },
+});
+
+// 04.10 adaptive Dormand-Prince on a bouncing ball
+def('adaptive', {
+  controls: [{ k: 'tol', label: 'Relative tolerance 10^', min: -10, max: -2, step: 1, v: -6, f: 0 }],
+  draw(p, v, out) {
+    const Cc = [0, 1 / 5, 3 / 10, 4 / 5, 8 / 9, 1, 1], A = [[], [1 / 5], [3 / 40, 9 / 40], [44 / 45, -56 / 15, 32 / 9], [19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729], [9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656], [35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84]];
+    const B5 = [35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84, 0], B4 = [5179 / 57600, 0, 7571 / 16695, 393 / 640, -92097 / 339200, 187 / 2100, 1 / 40];
+    const f = (y) => { const F = -0.06 * 9.81 + (y[0] < 0 ? -2e5 * y[0] - 8 * y[1] : 0); return [y[1], F / 0.06]; };
+    const rtol = 10 ** v.tol, atol = rtol * 1e-3, T = 2.5;
+    let t = 0, y = [1, 0], h = 1e-3, rej = 0; const ts = [0], xs = [1], vs = [0], hs = [];
+    while (t < T && hs.length < 20000) {
+      h = Math.min(h, T - t); const k = [];
+      for (let i = 0; i < 7; i++) { const yi = [y[0], y[1]]; A[i].forEach((a, j) => { yi[0] += h * a * k[j][0]; yi[1] += h * a * k[j][1]; }); k.push(f(yi)); }
+      const y5 = [0, 1].map((c) => y[c] + h * B5.reduce((s, b, i) => s + b * k[i][c], 0)), e = [0, 1].map((c) => h * B5.reduce((s, b, i) => s + (b - B4[i]) * k[i][c], 0));
+      const en = Math.sqrt(0.5 * [0, 1].reduce((s, c) => s + (e[c] / (atol + rtol * Math.max(Math.abs(y[c]), Math.abs(y5[c])))) ** 2, 0));
+      if (en <= 1) { t += h; y = y5; ts.push(t); xs.push(y[0]); vs.push(y[1]); hs.push(h); } else rej++;
+      h *= en > 0 ? Math.min(5, Math.max(0.2, 0.9 * en ** -0.2)) : 5;
+    }
+    p.frame({ x: [0, T], y: [-0.1, 1.1], xlabel: 't, s', ylabel: 'height, m' });
+    // dense output: cubic Hermite through position and velocity at each accepted step (exact for free-flight parabolas)
+    const dt = [], dx = [];
+    for (let i = 0; i < ts.length - 1; i++) { const H = ts[i + 1] - ts[i], m = Math.max(1, Math.ceil(H / 0.004)); for (let j = 0; j < m; j++) { const s = j / m, h00 = 2 * s ** 3 - 3 * s * s + 1, h10 = s ** 3 - 2 * s * s + s, h01 = -2 * s ** 3 + 3 * s * s, h11 = s ** 3 - s * s; dt.push(ts[i] + s * H); dx.push(h00 * xs[i] + h10 * H * vs[i] + h01 * xs[i + 1] + h11 * H * vs[i + 1]); } }
+    dt.push(ts[ts.length - 1]); dx.push(xs[xs.length - 1]);
+    p.line(dt, dx).dots(ts, xs, C.cyan, 2.5);
+    out(`${hs.length} accepted steps (cyan dots), ${rej} rejected. Largest ${nf(0).format(Math.max(...hs) * 1e3)} ms in flight, smallest ${nf(1).format(Math.min(...hs) * 1e6)} µs during the 1.7 ms contacts. A tighter tolerance adds steps mainly around the impacts.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
