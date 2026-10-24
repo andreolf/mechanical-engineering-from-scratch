@@ -2440,6 +2440,51 @@ def('fkchain', {
   },
 });
 
+// 09.04 tensile curve: engineering and true, 0.2 % offset, necking
+def('tensilecurve', {
+  controls: [{ k: 'n', label: 'Strain-hardening exponent n', min: 0.03, max: 0.4, step: 0.01, v: 0.06, f: 2 }, { k: 'K', label: 'Strength coefficient K (MPa)', min: 200, max: 1200, step: 10, v: 380, f: 0 }, { k: 'tr', label: 'Show true stress-strain', type: 'check', v: 1 }],
+  draw(p, v, out) {
+    const E = 69e3, K = v.K, n = v.n, ss = linspace(1, K * n ** n, 600), et = ss.map((s) => s / E + (s / K) ** (1 / n)), ee = et.map((e) => Math.exp(e) - 1), se = ss.map((s, i) => s / (1 + ee[i]));
+    const xmax = Math.max(0.05, 1.3 * (Math.exp(n) - 1)), ymax = 1.15 * K * n ** n;
+    p.frame({ x: [0, xmax * 100], y: [0, ymax], xlabel: 'strain, %', ylabel: 'stress, MPa' });
+    // after necking the engineering curve falls: sketch as a smooth drop over a further 40 % of the uniform strain
+    const eu = ee[ee.length - 1], su = se[se.length - 1], tail = linspace(0, 1, 40).map((q) => [eu * (1 + 0.4 * q), su * (1 - 0.18 * q * q)]);
+    p.line(ee.map((e) => e * 100), se, C.lime, 2.5).line(tail.map((a) => a[0] * 100), tail.map((a) => a[1]), C.lime, 2.5, [5, 3]);
+    if (v.tr) p.line(et.map((e) => e * 100), ss, C.cyan, 1.5);
+    const sy = K * 0.002 ** n; p.line([0.2, 0.2 + ymax / E * 100], [0, ymax], C.grey, 1, [3, 4]).dots([0.2 + sy / E * 100], [sy], C.amber, 5).dots([eu * 100], [su], C.red, 5);
+    out(`0.2 % offset yield ${nf(0).format(sy)} MPa (amber). UTS ${nf(0).format(su)} MPa at ${nf(1).format(eu * 100)} % strain (red): necking starts where the true stress equals its slope, at true plastic strain = n. ${v.tr ? 'Cyan: true stress keeps rising; the engineering curve falls only because the neck shrinks.' : ''} Higher n: more uniform stretch before necking, good for forming.`);
+  },
+});
+
+// 09.05 Hall-Petch
+def('hallpetch', {
+  controls: [{ k: 'ld', label: 'Grain size, log₁₀(µm)', min: -0.5, max: 2.7, step: 0.05, v: 1.3, f: 2 }, { k: 'k', label: 'Hall-Petch k (MPa √m)', min: 0.05, max: 1, step: 0.01, v: 0.74, f: 2 }],
+  draw(p, v, out) {
+    const s0 = 70, d = 10 ** v.ld, sy = (dd) => s0 + v.k / Math.sqrt(dd * 1e-6), ds = logspace(-0.5, 2.7, 200);
+    p.frame({ x: [10 ** -0.5, 10 ** 2.7], y: [0, 1400], xlog: true, xlabel: 'grain size d, µm', ylabel: 'yield strength, MPa' });
+    p.line(ds, ds.map(sy), C.lime, 2.5).line([10 ** -0.5, 10 ** 2.7], [s0, s0], C.grey, 1, [4, 4]).dots([d], [sy(d)], C.red, 6);
+    out(`d = ${nf(d < 10 ? 1 : 0).format(d)} µm: σ_y = σ₀ + k/√d = ${nf(0).format(s0)} + ${nf(0).format(v.k / Math.sqrt(d * 1e-6))} = ${nf(0).format(sy(d))} MPa. Grain boundaries block dislocations; smaller grains mean more boundaries. Refining grains is the one mechanism that raises strength and toughness together. Below about 20 nm the trend reverses.`);
+  },
+});
+
+// 09.06 ideal Cu-Ni phase diagram and the lever rule
+def('leverrule', {
+  controls: [{ k: 'x', label: 'Overall Ni content (%)', min: 0, max: 100, step: 1, v: 40, f: 0 }, { k: 'T', label: 'Temperature (°C)', min: 1000, max: 1500, step: 1, v: 1235, f: 0 }],
+  draw(p, v, out) {
+    const R = 8.314, TA = 1358, HA = 13050, TB = 1728, HB = 17480;
+    const sl = (T) => { const kA = Math.exp(HA / R * (1 / TA - 1 / T)), kB = Math.exp(HB / R * (1 / TB - 1 / T)), xs = (1 - kA) / (kB - kA); return [xs, kB * xs]; };
+    const Ts = linspace(TA + 0.01, TB - 0.01, 200), S = Ts.map(sl);
+    p.frame({ x: [0, 100], y: [1000, 1500], xlabel: 'Ni, % (atomic)', ylabel: 'temperature, °C' });
+    p.line(S.map((a) => a[0] * 100), Ts.map((T) => T - 273.15), C.cyan, 2).line(S.map((a) => a[1] * 100), Ts.map((T) => T - 273.15), C.amber, 2);
+    p.text('liquid', 15, 1450, C.amber).text('solid', 70, 1080, C.cyan);
+    const T = v.T + 273.15, x0 = v.x / 100; p.dots([v.x], [v.T], C.red, 6);
+    let msg;
+    if (T <= TA || T >= TB) msg = T >= TB ? 'Above both melting points: all liquid.' : 'Below both melting points: all solid.';
+    else { const [xs, xl] = sl(T); if (x0 <= xl) msg = `All liquid (the liquidus is at ${nf(1).format(xl * 100)} % Ni here).`; else if (x0 >= xs) msg = `All solid (the solidus is at ${nf(1).format(xs * 100)} % Ni here).`; else { const fl = (xs - x0) / (xs - xl); p.line([xl * 100, xs * 100], [v.T, v.T], C.lime, 2.5); msg = `Two phases. Tie line from liquid at ${nf(1).format(xl * 100)} % Ni to solid at ${nf(1).format(xs * 100)} % Ni. Lever rule: ${nf(1).format(fl * 100)} % liquid, ${nf(1).format((1 - fl) * 100)} % solid; the fraction of each phase is the length of the opposite lever arm.`; } }
+    out(msg + ' (Ideal-solution model from the melting data of Cu and Ni; the real diagram is a little wider.)');
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
