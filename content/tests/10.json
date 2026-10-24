@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Energy (GWh) stored by 10 million m³ of water lifted 400 m. 3 decimals.",
+  "answer": 10.9,
+  "tol": 0.0005,
+  "py": "1000*9.81*400*10e6/3.6e12",
+  "explain": "$\\rho g h V$ / 3.6×10¹²."
+ },
+ {
+  "type": "num",
+  "q": "Carnot efficiency between 300 K and 1200 K. 2 decimals.",
+  "answer": 0.75,
+  "tol": 0.0005,
+  "py": "1-300/1200",
+  "explain": "$1 - T_c/T_h$."
+ },
+ {
+  "type": "num",
+  "q": "Entropy generated (kJ/K) mixing 1 kg at 70 °C with 1 kg at 10 °C (c = 4.186). 4 decimals.",
+  "answer": 0.0386,
+  "tol": 0.0005,
+  "py": "4.186*(math.log(313.15/343.15)+math.log(313.15/283.15))",
+  "explain": "Sum of $c\\ln(T_3/T_i)$."
+ },
+ {
+  "type": "num",
+  "q": "Compressor exit temperature (K): 300 K inlet, isentropic exit 550 K, η_c = 0.8. 1 decimal.",
+  "answer": 612.5,
+  "tol": 0.0005,
+  "py": "300+(550-300)/0.8",
+  "explain": "$T_1 + (T_{2s} - T_1)/\\eta_c$."
+ },
+ {
+  "type": "num",
+  "q": "Exergy (kJ) of 500 kJ of heat at 600 K with T₀ = 300 K.",
+  "answer": 250,
+  "tol": 0.0005,
+  "py": "500*(1-300/600)",
+  "explain": "$Q(1 - T_0/T)$."
+ },
+ {
+  "type": "num",
+  "q": "Otto efficiency at r = 9 with k = 1.4. 4 decimals.",
+  "answer": 0.5848,
+  "tol": 0.0003,
+  "py": "1-9**(-0.4)",
+  "explain": "$1 - r^{1-k}$."
+ },
+ {
+  "type": "num",
+  "q": "Ideal Brayton efficiency at r_p = 20 with k = 1.4. 4 decimals.",
+  "answer": 0.5751,
+  "tol": 0.0003,
+  "py": "1-20**(-0.4/1.4)",
+  "explain": "$1 - r_p^{(1-k)/k}$."
+ },
+ {
+  "type": "num",
+  "q": "Rankine turbine exit quality at 10 kPa for s = 7.0 kJ/(kg K) (s_f 0.6492, s_g 8.1488). 4 decimals.",
+  "answer": 0.8468,
+  "tol": 0.0003,
+  "py": "(7.0-0.6492)/(8.1488-0.6492)",
+  "explain": "$(s - s_f)/(s_g - s_f)$."
+ },
+ {
+  "type": "num",
+  "q": "Carnot heating COP condensing at 35 °C and evaporating at 0 °C. 3 decimals.",
+  "answer": 8.804,
+  "tol": 0.0005,
+  "py": "308.15/35",
+  "explain": "$T_c/(T_c - T_e)$."
+ },
+ {
+  "type": "num",
+  "q": "Van der Waals critical pressure (MPa) for a = 0.3640, b = 4.267e-5. 3 decimals.",
+  "answer": 7.404,
+  "tol": 0.0003,
+  "py": "0.3640/(27*4.267e-5**2)/1e6",
+  "explain": "$a/(27b^2)$."
+ },
+ {
+  "type": "num",
+  "q": "Humidity ratio (g/kg) for p_v = 2000 Pa at 96.6 kPa. 2 decimals.",
+  "answer": 13.15,
+  "tol": 0.0005,
+  "py": "622*2000/(96600-2000)",
+  "explain": "$0.622\\,p_v/(p - p_v)$."
+ },
+ {
+  "type": "num",
+  "q": "Air-fuel mass ratio of methane at φ = 0.9 (stoichiometric 17.12). 2 decimals.",
+  "answer": 19.02,
+  "tol": 0.0005,
+  "py": "17.12/0.9",
+  "explain": "Stoichiometric ratio / φ."
+ },
+ {
+  "type": "num",
+  "q": "Kp for a reaction with ΔG° = 50 kJ/mol at 2000 K. 5 decimals.",
+  "answer": 0.04945,
+  "tol": 0.002,
+  "py": "math.exp(-50000/(8.314462618*2000))",
+  "explain": "$\\exp(-\\Delta G^\\circ/RT)$."
+ },
+ {
+  "type": "num",
+  "q": "Summer electricity (TWh) needed to deliver 3 TWh in winter at 40 % round trip. 1 decimal.",
+  "answer": 7.5,
+  "tol": 0.0005,
+  "py": "3/0.4",
+  "explain": "Output / efficiency."
+ }
+]
