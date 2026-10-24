@@ -3587,6 +3587,65 @@ def('hammerpen', {
   },
 });
 
+// Phase 12 helpers
+function erfc12(x) { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : 2 - y; }
+const BLASIUS12 = (() => {
+  const h = 0.005, n = 2000, eta = [0], fp = [0]; let s = [0, 0, 0.332057];
+  const r = (q) => [q[1], q[2], -0.5 * q[0] * q[2]];
+  for (let i = 0; i < n; i++) {
+    const k1 = r(s), k2 = r(s.map((z, j) => z + h / 2 * k1[j])), k3 = r(s.map((z, j) => z + h / 2 * k2[j])), k4 = r(s.map((z, j) => z + h * k3[j]));
+    s = s.map((z, j) => z + h / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); eta.push((i + 1) * h); fp.push(s[1]);
+  }
+  return { eta, fp };
+})();
+
+// 12.01 Stokes' first problem: the growing diffusion layer
+def('stokeslayer', {
+  controls: [{ type: 'select', k: 'k', label: 'Fluid', options: ['Water (ν = 1.0 mm²/s)', 'Olive oil (ν = 92 mm²/s)', 'Honey (ν = 7000 mm²/s)'], v: 'Water (ν = 1.0 mm²/s)' }, { k: 't', label: 'Time since the plate started (s)', min: 0.5, max: 60, step: 0.5, v: 10, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Water (ν = 1.0 mm²/s)', 'Olive oil (ν = 92 mm²/s)', 'Honey (ν = 7000 mm²/s)'].indexOf(v.k), nu = [1e-6, 9.2e-5, 7e-3][sel];
+    const ymax = 3.643 * Math.sqrt(nu * 60) * 1.15 * 1000, ys = linspace(0, ymax, 160);
+    p.frame({ x: [0, 1.05], y: [0, ymax], xlabel: 'u / U', ylabel: 'height above the plate, mm' });
+    [v.t / 4, v.t / 16].forEach((tt) => p.line(ys.map((y) => erfc12(y / 1000 / (2 * Math.sqrt(nu * tt)))), ys, C.grey, 1.2, [4, 3]));
+    p.line(ys.map((y) => erfc12(y / 1000 / (2 * Math.sqrt(nu * v.t)))), ys, C.lime, 2.5);
+    const d = 3.643 * Math.sqrt(nu * v.t) * 1000;
+    p.line([0, 1.05], [d, d], C.amber, 1.5, [5, 4]).text(`δ₉₉ = ${d < 10 ? nf(2).format(d) : d < 100 ? nf(1).format(d) : nf(0).format(d)} mm`, 0.55, d + ymax * 0.03, C.amber);
+    out(`After ${nf(1).format(v.t)} s the moving fluid reaches ${d < 10 ? nf(2).format(d) : d < 100 ? nf(1).format(d) : nf(0).format(d)} mm. The dashed grey profiles are at t/4 and t/16: each quartering of the time halves the layer, because δ = 3.64 √(νt).`);
+  },
+});
+
+// 12.02 settling velocity of a grain
+def('settlegrain', {
+  controls: [{ k: 'ld', label: 'Grain diameter, log₁₀ of µm', min: 0, max: 3.3, step: 0.05, v: 1.3, f: 2 }, { type: 'select', k: 'k', label: 'Grain', options: ['Quartz (2650 kg/m³)', 'Microplastic (1050 kg/m³)'], v: 'Quartz (2650 kg/m³)' }],
+  draw(p, v, out) {
+    const rp = [2650, 1050][['Quartz (2650 kg/m³)', 'Microplastic (1050 kg/m³)'].indexOf(v.k)], rho = 1000, mu = 1e-3, g = 9.81;
+    const st = (d) => (rp - rho) * g * d * d / (18 * mu);
+    const term = (d) => { let U = st(d); for (let i = 0; i < 200; i++) { const Re = rho * U * d / mu, cd = 24 / Re * (1 + 0.15 * Re ** 0.687); U = 0.5 * (U + Math.sqrt(4 * (rp - rho) * g * d / (3 * rho * cd))); } return U; };
+    const ds = logspace(0, 3.3, 120).map((x) => x * 1e-6);
+    p.frame({ x: [1, 2000], y: [1e-7, 10], xlog: true, ylog: true, xlabel: 'grain diameter, µm', ylabel: 'settling speed, m/s' });
+    p.line(ds.map((d) => d * 1e6), ds.map(st), C.grey, 1.5, [5, 4]).line(ds.map((d) => d * 1e6), ds.map(term), C.lime, 2.5);
+    const d = 10 ** v.ld * 1e-6, U = term(d), Re = rho * U * d / mu;
+    p.dots([d * 1e6], [U], C.cyan, 7).text('Stokes law', 2, 3e-1, C.grey).text('with drag correlation', 2, 1.0, C.lime);
+    const tset = 3 / U, ts = tset < 120 ? `${nf(0).format(tset)} s` : tset < 7200 ? `${nf(1).format(tset / 60)} min` : tset < 172800 ? `${nf(1).format(tset / 3600)} h` : `${nf(1).format(tset / 86400)} days`;
+    out(`d = ${nf(d * 1e6 < 10 ? 1 : 0).format(d * 1e6)} µm: settles at ${U < 1e-3 ? U.toExponential(2) : nf(4).format(U)} m/s, Re = ${Re < 0.01 ? Re.toExponential(1) : nf(2).format(Re)}. ${Re < 0.5 ? 'Stokes law is accurate here.' : 'Stokes overestimates: inertia adds drag.'} To sink through 3 m of still river: ${ts}.`);
+  },
+});
+
+// 12.03 Blasius layer along a plate
+def('blasiusplate', {
+  controls: [{ k: 'U', label: 'Air speed U (m/s)', min: 1, max: 20, step: 0.5, v: 5, f: 1 }, { k: 'x', label: 'Position along the plate x (m)', min: 0.05, max: 1.9, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const nu = 1.5e-5, del = (x) => 4.91 * Math.sqrt(nu * x / v.U) * 1000, top = del(2) * 1.6, xs = linspace(0.001, 2, 150);
+    p.frame({ x: [0, 2.4], y: [0, top], xlabel: 'distance along the plate, m', ylabel: 'height, mm' });
+    p.line([0, 2], [0, 0], C.paper, 4).line(xs, xs.map(del), C.amber, 1.8, [5, 4]).text('δ₉₉', 1.6, del(1.6) + top * 0.04, C.amber);
+    const sc = Math.sqrt(nu * v.x / v.U) * 1000, E = BLASIUS12.eta.filter((e) => e <= top / sc), w = 0.4;
+    p.line(E.map((e, i) => v.x + w * BLASIUS12.fp[i]), E.map((e) => e * sc), C.lime, 2.5).line([v.x, v.x], [0, top], C.grey, 1);
+    for (let k = 1; k <= 6; k++) { const yy = top * k / 7, e = yy / sc, i = Math.min(BLASIUS12.eta.length - 1, Math.round(e / 0.005)); arrow(p, v.x, yy, v.x + w * BLASIUS12.fp[i], yy, C.cyan, 1.3); }
+    const Re = v.U * v.x / nu, cf = 0.664 / Math.sqrt(Re);
+    out(`At x = ${nf(2).format(v.x)} m: Re_x = ${Re.toExponential(2)}, δ₉₉ = ${nf(2).format(del(v.x))} mm, C_f = ${nf(5).format(cf)}, wall shear ${nf(4).format(cf * 0.6 * v.U * v.U)} Pa. ${Re > 5e5 ? 'Beyond Re_x ≈ 5 × 10⁵ the real layer would usually turn turbulent; Blasius no longer applies.' : 'Laminar: the profile has the same shape everywhere, only stretched by √(νx/U).'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
