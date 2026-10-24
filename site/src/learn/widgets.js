@@ -4157,6 +4157,39 @@ def('hxprofile', {
   },
 });
 
+// 13.13 effectiveness against NTU
+def('ntucurve', {
+  controls: [{ k: 'ntu', label: 'NTU = UA/C_min', min: 0.1, max: 6, step: 0.05, v: 0.72, f: 2 }, { k: 'cr', label: 'Capacity ratio C_min/C_max', min: 0, max: 1, step: 0.01, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const par = (n, c) => (1 - Math.exp(-n * (1 + c))) / (1 + c), cnt = (n, c) => (Math.abs(1 - c) < 1e-9 ? n / (1 + n) : (1 - Math.exp(-n * (1 - c))) / (1 - c * Math.exp(-n * (1 - c))));
+    const ns = linspace(0, 6, 200);
+    p.frame({ x: [0, 6], y: [0, 1], xlabel: 'NTU = UA / C_min', ylabel: 'effectiveness ε = Q / Q_max' });
+    p.line(ns, ns.map((n) => 1 - Math.exp(-n)), C.grey, 1, [4, 3]).text('C_r = 0 (condenser)', 3.4, 0.93, C.grey);
+    p.line(ns, ns.map((n) => cnt(n, v.cr)), C.lime, 2.5).line(ns, ns.map((n) => par(n, v.cr)), C.cyan, 2, [6, 4]);
+    p.dots([v.ntu, v.ntu], [cnt(v.ntu, v.cr), par(v.ntu, v.cr)], C.paper, 5);
+    p.text('counterflow', 4.2, cnt(4.2, v.cr) - 0.07, C.lime).text('parallel flow', 4.2, par(4.2, v.cr) - 0.07, C.cyan);
+    out(`NTU = ${nf(2).format(v.ntu)}, C_r = ${nf(2).format(v.cr)}: counterflow ε = ${nf(3).format(cnt(v.ntu, v.cr))}, parallel ε = ${nf(3).format(par(v.ntu, v.cr))}. Parallel flow can never exceed 1/(1 + C_r) = ${nf(3).format(1 / (1 + v.cr))}. Q = ε C_min (T_h,in − T_c,in).`);
+  },
+});
+
+// 13.14 e-bike battery temperature over a ride
+def('battthermal', {
+  controls: [{ k: 'Ta', label: 'Air temperature (°C)', min: 10, max: 40, step: 1, v: 32, f: 0 }, { k: 'Ic', label: 'Current on the climb (A)', min: 5, max: 40, step: 1, v: 25, f: 0 }, { k: 'tc', label: 'Climb duration (min)', min: 0, max: 45, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const R = 0.09, Cc = 2070, Cs = 540, Ri = 0.25, A = 0.12;
+    const ride = [[20, 10, 1], [v.tc, v.Ic, 1], [25, 8, 1], [30, 0, 0]];
+    let Tc = v.Ta, Ts = v.Ta, t = 0; const ts = [0], cs = [Tc], ss = [Ts], Is = [10];
+    const f = (a, b, I, h) => [(I * I * R - (a - b) / Ri) / Cc, ((a - b) / Ri - h * A * (b - v.Ta)) / Cs];
+    for (const [m, I, rid] of ride) { const h = rid ? 15 : 5; for (let k = 0; k < m * 12; k++) { const dt = 5; const k1 = f(Tc, Ts, I, h), k2 = f(Tc + dt / 2 * k1[0], Ts + dt / 2 * k1[1], I, h), k3 = f(Tc + dt / 2 * k2[0], Ts + dt / 2 * k2[1], I, h), k4 = f(Tc + dt * k3[0], Ts + dt * k3[1], I, h); Tc += dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]); Ts += dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]); t += dt; if (k % 6 === 5) { ts.push(t / 60); cs.push(Tc); ss.push(Ts); Is.push(I); } } }
+    const tend = t / 60, peak = Math.max(...cs), tp = ts[cs.indexOf(peak)], ss15 = v.Ta + v.Ic * v.Ic * R * (Ri + 1 / (15 * A));
+    p.frame({ x: [0, 135], y: [0, 80], xlabel: 'time, min', ylabel: '°C (bars: current, A)' });
+    for (let i = 1; i < ts.length; i++) p.rect(ts[i - 1], ts[i], 0, Is[i], 'rgba(154,157,147,0.35)');
+    p.line([0, 135], [60, 60], C.red, 1, [4, 3]).text('60 °C cell limit', 2, 63, C.red);
+    p.line(ts, ss, C.cyan, 2, [6, 4]).line(ts, cs, C.lime, 2.5);
+    out(`Peak cell temperature ${nf(1).format(peak)} °C at ${nf(0).format(tp)} min (case, cyan dashed, runs cooler). Holding ${v.Ic} A for ever would settle at ${nf(1).format(ss15)} °C; the pack's thermal mass (time constant about 31 min) keeps a short climb well below that. ${peak > 60 ? 'Warning: above the 60 °C limit, the controller should cut power.' : ''} Parked from ${nf(0).format(tend - 30)} min, h falls from 15 to 5 W/(m² K).`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
