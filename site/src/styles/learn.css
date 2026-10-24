@@ -1,5 +1,5 @@
 /* Lesson app. Mobile first (360-430px), then a three-column reading layout on desktop. */
-.page { padding: 28px 0 72px; }
+.page { padding-block: 28px 72px; }
 .page.narrow, .narrow { max-width: 760px; }
 .page h1 { font-size: var(--t4); }
 .lede { font-size: var(--t1); color: #d0d1c9; max-width: 40em; }
@@ -10,7 +10,7 @@
 body.in-lesson .nav { position: relative; }
 body.in-lesson { --bar-h: 48px; }
 html:has(body.in-lesson) { scroll-padding-top: 64px; }
-.lesson-bar { position: sticky; top: 0; z-index: 30; background: rgba(0, 0, 0, 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--rule); padding-top: env(safe-area-inset-top); }
+.lesson-bar { position: sticky; top: 0; z-index: 30; background: #000; border-bottom: 1px solid var(--rule); padding-top: env(safe-area-inset-top); }
 .lesson-bar-in { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: var(--bar-h); }
 .lb-title { color: var(--graphite); font-size: var(--t-1); }
 .read-progress { height: 2px; background: transparent; }

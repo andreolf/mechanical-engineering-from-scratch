@@ -18,12 +18,12 @@ let uid = 0;
 export function renderQuiz(host, questions, { onGraded, submitLabel = 'Check answers', title } = {}) {
   const id = `q${++uid}`;
   host.innerHTML = `${title ? `<h2 id="${id}-h">${title}</h2>` : ''}
-  <form class="quiz" novalidate aria-labelledby="${title ? `${id}-h` : ''}">
+  <form class="quiz" novalidate ${title ? `aria-labelledby="${id}-h"` : 'aria-label="Test questions"'}>
     ${questions.map((q, i) => `<fieldset class="qq" data-i="${i}">
       <legend><span class="qn num">${i + 1}</span><span class="qt">${q.q}</span></legend>
       ${q.type === 'mc' ? `<div class="opts">${q.options.map((o, j) => `<label class="opt"><input type="radio" name="${id}-${i}" value="${j}" /><span>${o}</span></label>`).join('')}</div>`
         : `<div class="numrow"><label class="sr-only" for="${id}-${i}">Your answer</label><input id="${id}-${i}" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="Your answer…" />${q.unit ? `<span class="unit">${q.unit}</span>` : ''}</div>
-          <p class="hint small muted">Accepted within ±${+(q.tol * 100).toFixed(2)}%. Scientific notation works: 2.2e-16.</p>`}
+          <p class="hint small muted">Accepted within ±${+(q.tol * 100).toFixed(2)}%. You can type 2.2e-16 for scientific notation.</p>`}
       <div class="fb" aria-live="polite"></div>
     </fieldset>`).join('')}
     <div class="quiz-bar"><button type="submit" class="btn btn-primary">${submitLabel}</button><button type="button" class="btn" data-retry hidden>Try again</button><p class="score num" aria-live="polite"></p></div>

@@ -283,7 +283,7 @@ async function viewCert(scope) {
     const st = load(); st.name = name; save(st);
     const details = { scope: isCourse ? 'course' : `phase-${scope}`, name, date, phases };
     const code = await certCode(details);
-    await document.fonts.ready;
+    try { await Promise.all(["400 38px 'Source Serif 4 Variable'", "800 100px 'Archivo Variable'", "500 26px 'Archivo Variable'"].map((f) => document.fonts.load(f))); } catch { /* fall back to system fonts */ }
     const canvas = app.querySelector('#cert-canvas');
     const statement = isCourse
       ? `has completed Mechanical Engineering from Scratch, passing all ${phases.length} phase tests with a score of at least ${Math.round(PASS_MARK * 100)}%.`

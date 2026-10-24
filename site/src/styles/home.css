@@ -114,3 +114,17 @@
   .lab-canvas { position: sticky; top: calc(var(--nav-h) + 24px); aspect-ratio: 4 / 3.4; }
   .certify { grid-template-columns: 7fr 5fr; gap: 64px; }
 }
+
+/* Phones held sideways: short and wide. Put the headline and the drawing side by side and keep the CTA in view. */
+@media (orientation: landscape) and (max-height: 520px) and (max-width: 1023px) {
+  .hero { padding: 10px 0 32px; }
+  .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .hero-title { font-size: clamp(1.7rem, 4.6vw, 2.4rem); }
+  .dimension { margin: 8px 0 8px; }
+  .hero-lede { font-size: var(--t0); display: -webkit-box; -webkit-line-clamp: 2; line-height: 1.4; -webkit-box-orient: vertical; overflow: hidden; }
+  .hero-cta { margin: 10px 0 6px; }
+  .hero-cta .btn { min-height: 44px; }
+  .sheet { margin: 0; border: 1px solid var(--rule); border-radius: var(--radius-m); overflow: hidden; }
+  .sheet-stage { aspect-ratio: 16 / 10; min-height: 0; max-height: 58svh; }
+  .lab-canvas { max-height: 70svh; }
+}

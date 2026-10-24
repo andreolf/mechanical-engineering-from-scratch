@@ -56,7 +56,7 @@ export function createStage(container, { fov = 40, camPos = [0, 2, 8], target = 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-  if (shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
+  if (shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = COARSE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; }
   const canvas = renderer.domElement;
   canvas.setAttribute('role', 'img');
   container.appendChild(canvas);
@@ -75,6 +75,7 @@ export function createStage(container, { fov = 40, camPos = [0, 2, 8], target = 
     key.shadow.mapSize.set(COARSE ? 1024 : 2048, COARSE ? 1024 : 2048);
     key.shadow.radius = 4;
     key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.02;
   }
   scene.add(key, key.target);
   const rim = new THREE.DirectionalLight(0xdfe9ff, 0.9);
