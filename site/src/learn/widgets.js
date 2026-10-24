@@ -4382,6 +4382,44 @@ def('fourbaranim', {
   },
 });
 
+// 14.11 code-to-model gear preview
+def('gearscript', {
+  controls: [{ k: 'z', label: 'Number of teeth z', min: 8, max: 80, step: 1, v: 20, f: 0 }, { k: 'm', label: 'Module m (mm)', min: 0.1, max: 3, step: 0.05, v: 1, f: 2 }, { type: 'select', k: 'a', label: 'Pressure angle', options: ['14.5°', '20°', '25°'], v: '20°' }],
+  draw(p, v, out) {
+    const al = parseFloat(v.a) * Math.PI / 180, z = v.z, m = v.m, inv = (x) => Math.tan(x) - x;
+    const r = m * z / 2, rb = r * Math.cos(al), ra = r + m, rf = r - 1.25 * m, half = Math.PI / (2 * z) + inv(al), r0 = Math.max(rb, rf);
+    const rs = linspace(r0, ra, 14), phi = rs.map((q) => half - inv(Math.acos(Math.min(rb / q, 1))));
+    const X = [], Y = [], push = (q, t) => { X.push(q * Math.cos(t)); Y.push(q * Math.sin(t)); };
+    for (let k = 0; k < z; k++) { const c = 2 * Math.PI * k / z; for (const t of linspace(c - Math.PI / z, c - phi[0], 4)) push(rf, t); rs.forEach((q, i) => push(q, c - phi[i])); for (const t of linspace(c - phi[13], c + phi[13], 4)) push(ra, t); for (let i = 13; i >= 0; i--) push(rs[i], c + phi[i]); for (const t of linspace(c + phi[0], c + Math.PI / z, 4)) push(rf, t); }
+    X.push(X[0]); Y.push(Y[0]);
+    sqframe(p, ra * 1.1, 'x, mm', 'y, mm');
+    const th = linspace(0, 2 * Math.PI, 160);
+    p.line(th.map((t) => r * Math.cos(t)), th.map((t) => r * Math.sin(t)), C.cyan, 1, [4, 3]).line(th.map((t) => rb * Math.cos(t)), th.map((t) => rb * Math.sin(t)), C.amber, 1, [2, 3]);
+    p.line(X, Y, C.lime, 2);
+    let A = 0; for (let i = 0; i < X.length - 1; i++) A += X[i] * Y[i + 1] - X[i + 1] * Y[i]; A /= 2;
+    const under = rb > rf ? '' : '';
+    out(`gear(module=${nf(2).format(m)}, teeth=${z}, pressure_angle=${v.a}) → pitch Ø ${nf(2).format(2 * r)} mm (cyan), base Ø ${nf(2).format(2 * rb)} (amber), tip Ø ${nf(2).format(2 * ra)}, root Ø ${nf(2).format(2 * rf)}. Face area ${nf(1).format(A)} mm². ${z < 17 && parseFloat(v.a) === 20 ? 'Below 17 teeth at 20° a real hob would undercut the roots; this simple profile ignores that.' : ''}`);
+  },
+});
+
+// 14.12 position tolerance zones
+def('tolzone', {
+  controls: [{ k: 't', label: 'Coordinate tolerance ± (mm)', min: 0.02, max: 0.2, step: 0.01, v: 0.1, f: 2 }, { k: 'sd', label: 'Machine scatter σ per axis (mm)', min: 0.01, max: 0.1, step: 0.005, v: 0.045, f: 3 }, { k: 'bonus', label: 'Bonus from hole size above MMC (mm)', min: 0, max: 0.1, step: 0.01, v: 0, f: 2 }],
+  draw(p, v, out) {
+    let s = 12345; const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    const gauss = () => Math.sqrt(-2 * Math.log(rnd())) * Math.cos(2 * Math.PI * rnd());
+    const n = 400, xs = [], ys = []; for (let i = 0; i < n; i++) { xs.push(gauss() * v.sd); ys.push(gauss() * v.sd); }
+    const R = v.t * Math.SQRT2 + v.bonus / 2;
+    sqframe(p, 0.32, 'x deviation, mm', 'y deviation, mm');
+    const th = linspace(0, 2 * Math.PI, 120); p.line(th.map((a) => R * Math.cos(a)), th.map((a) => R * Math.sin(a)), C.lime, 2);
+    p.line([-v.t, v.t, v.t, -v.t, -v.t], [-v.t, -v.t, v.t, v.t, -v.t], C.amber, 2, [5, 4]);
+    let inSq = 0, inC = 0; const gx = [], gy = [], bx = [], by = [];
+    for (let i = 0; i < n; i++) { const okS = Math.abs(xs[i]) <= v.t && Math.abs(ys[i]) <= v.t, okC = Math.hypot(xs[i], ys[i]) <= R; inSq += okS; inC += okC; (okC ? gx : bx).push(xs[i]); (okC ? gy : by).push(ys[i]); }
+    p.dots(gx, gy, 'rgba(242,243,236,0.7)', 2.2).dots(bx, by, C.red, 2.6);
+    out(`${n} drilled holes. Square ± ${nf(2).format(v.t)} mm zone (amber): ${nf(1).format(100 * inSq / n)}% pass. Cylindrical position zone Ø ${nf(3).format(2 * R)} mm (lime, through the square's corners${v.bonus > 0 ? ` plus ${nf(2).format(v.bonus)} mm bonus` : ''}): ${nf(1).format(100 * inC / n)}% pass. Same worst-case corner, 57% more area: functional parts that the ± zone would scrap.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
