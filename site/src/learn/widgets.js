@@ -4339,6 +4339,49 @@ def('sketchdrag', {
   },
 });
 
+// 14.09 parametric dropout preview
+def('dropoutparam', {
+  controls: [{ type: 'select', k: 'ax', label: 'Axle', options: ['Quick release (10 mm)', 'Thru-axle (12 mm)', 'Thru-axle (15 mm)'], v: 'Thru-axle (12 mm)' }, { k: 'R', label: 'Plate radius R (mm)', min: 10, max: 22, step: 0.5, v: 16, f: 1 }, { k: 'L', label: 'Axle to frame mount L (mm)', min: 30, max: 60, step: 1, v: 45, f: 0 }, { k: 'bg', label: 'Frame bolt spacing (mm)', min: 8, max: 30, step: 1, v: 14, f: 0 }],
+  draw(p, v, out) {
+    const ad = [10, 12, 15][['Quick release (10 mm)', 'Thru-axle (12 mm)', 'Thru-axle (15 mm)'].indexOf(v.ax)], R = v.R, L = v.L, bd = 5.2, hd = 10, tmin = 4;
+    const stad = (ay, by, r) => (x, y) => { const t = Math.min(Math.max((y - ay) / (by - ay), 0), 1); return Math.hypot(x, y - ay - t * (by - ay)) - r; };
+    const circ = (cx, cy, r) => (x, y) => Math.hypot(x - cx, y - cy) - r;
+    const plate = stad(0, L, R), slot = stad(0, -R - 5, ad / 2), holes = [circ(-v.bg / 2, L, bd / 2), circ(v.bg / 2, L, bd / 2), circ(0, L / 2, hd / 2)];
+    const f = (x, y) => { let d = Math.max(plate(x, y), -slot(x, y)); for (const g of holes) d = Math.max(d, -g(x, y)); return d; };
+    p.frame({ x: [-45, 45], y: [-25, 85], xlabel: 'mm', ylabel: 'mm' });
+    const hh = 1; let n = 0;
+    for (let x = -40; x < 40; x += hh) for (let y = -24; y < 84; y += hh) if (f(x + hh / 2, y + hh / 2) < 0) { n++; p.rect(x, x + hh, y, y + hh, 'rgba(238,255,65,0.6)'); }
+    const a = ad / 2, Aex = 2 * R * L + Math.PI * R * R - (a * Math.sqrt(Math.max(R * R - a * a, 0)) + R * R * Math.asin(Math.min(a / R, 1)) + Math.PI * a * a / 2) - 2 * Math.PI * (bd / 2) ** 2 - Math.PI * (hd / 2) ** 2;
+    const issues = [];
+    const wb = R - v.bg / 2 - bd / 2; if (wb < tmin) issues.push(`bolt wall ${nf(1).format(wb)} mm`);
+    if (R - hd / 2 < tmin) issues.push(`hanger wall ${nf(1).format(R - hd / 2)} mm`);
+    const gs = L / 2 - hd / 2 - ad / 2; if (gs < tmin) issues.push(`hanger to slot ${nf(1).format(gs)} mm`);
+    if (v.bg - bd < tmin) issues.push('bolts too close');
+    out(`Area ${nf(0).format(Aex)} mm², mass ${nf(1).format(Aex * 6 / 1000 * 2.7)} g in 6 mm aluminium. Design rules (4 mm minimum wall): ${issues.length ? 'FAIL: ' + issues.join(', ') : 'all pass'}. The feature tree rebuilds from the parameters every time: plate, slot, two bolt holes, hanger hole.`);
+  },
+});
+
+// 14.10 four-bar assembly
+def('fourbaranim', {
+  controls: [{ k: 'th', label: 'Crank angle (°)', min: 0, max: 360, step: 2, v: 60, f: 0 }, { k: 'c', label: 'Coupler length (mm)', min: 70, max: 150, step: 1, v: 120, f: 0 }],
+  draw(p, v, out) {
+    const a = 100, b = 40, c = v.c, d = 80, th = v.th * Math.PI / 180;
+    const K1 = a / b, K2 = a / d, K3 = (b * b - c * c + d * d + a * a) / (2 * b * d);
+    const t4 = (t) => { const A = Math.cos(t) - K1 - K2 * Math.cos(t) + K3, B = -2 * Math.sin(t), Cq = K1 - (K2 + 1) * Math.cos(t) + K3, disc = B * B - 4 * A * Cq; return disc < 0 ? NaN : 2 * Math.atan2(-B - Math.sqrt(disc), 2 * A); };
+    const s = Math.min(a, b, c, d), l = Math.max(a, b, c, d), grash = s + l <= a + b + c + d - s - l;
+    p.frame({ x: [-60, 180], y: [-80, 140], xlabel: 'mm', ylabel: 'mm' });
+    const path = linspace(0, 2 * Math.PI, 181).map((t) => { const q4 = t4(t); if (!isFinite(q4)) return [NaN, NaN]; const B = [b * Math.cos(t), b * Math.sin(t)], Cp = [a + d * Math.cos(q4), d * Math.sin(q4)]; return [(B[0] + Cp[0]) / 2 + (Cp[1] - B[1]) * 0.3, (B[1] + Cp[1]) / 2 - (Cp[0] - B[0]) * 0.3]; });
+    p.line(path.map((q) => q[0]), path.map((q) => q[1]), C.cyan, 1.5, [4, 3]);
+    const q4 = t4(th);
+    p.line([0, a], [0, 0], C.grey, 3).dots([0, a], [0, 0], C.red, 6);
+    if (isFinite(q4)) {
+      const B = [b * Math.cos(th), b * Math.sin(th)], Cp = [a + d * Math.cos(q4), d * Math.sin(q4)], E = [(B[0] + Cp[0]) / 2 + (Cp[1] - B[1]) * 0.3, (B[1] + Cp[1]) / 2 - (Cp[0] - B[0]) * 0.3];
+      p.line([0, B[0]], [0, B[1]], C.amber, 4).line([B[0], Cp[0], E[0], B[0]], [B[1], Cp[1], E[1], B[1]], C.lime, 3).line([a, Cp[0]], [0, Cp[1]], C.paper, 4).dots([B[0], Cp[0], E[0]], [B[1], Cp[1], E[1]], C.paper, 4);
+      out(`Crank ${v.th}° → rocker ${nf(2).format((q4 * 180 / Math.PI + 360) % 360)}° (Freudenstein). Grübler: 3 moving bodies, 4 pin mates, M = 3·3 − 2·4 = 1, so the crank angle alone fixes everything. ${grash ? 'Grashof (s + l ≤ p + q): the crank turns fully.' : 'Not Grashof: the crank cannot turn fully.'} Cyan: the path of the coupler point.`);
+    } else out(`At crank ${v.th}° the links cannot close: the mates have no solution. ${grash ? '' : 'Not Grashof (s + l > p + q), so the crank only rocks between limits.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
