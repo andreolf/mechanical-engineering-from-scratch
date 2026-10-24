@@ -1,0 +1,12 @@
+[
+ {"type":"num","q":"A solver's errors are $3.2\\times10^{-3}$, $8.0\\times10^{-4}$ and $2.0\\times10^{-4}$ for $h$, $h/2$, $h/4$. Observed order?","answer":2,"tol":0.001,"py":"math.log2(8.0e-4/2.0e-4)","explain":"Each halving divides the error by 4."},
+ {"type":"num","q":"Newton step for $f(x) = x^2 - 2$ from $x_0 = 1.5$. 5 decimals.","answer":1.41667,"tol":0.0005,"py":"1.5-(1.5**2-2)/(2*1.5)","explain":"$1.5 - 0.25/3$."},
+ {"type":"num","q":"Simpson's rule on $\\int_0^1 x^4\\,dx$ with one panel (3 points). 5 decimals.","answer":0.20833,"tol":0.0005,"py":"(0+4*0.5**4+1)/6","explain":"$(0 + 4/16 + 1)/6 = 0.20833$; exact 0.2. A 3-point Gauss rule would be exact."},
+ {"type":"num","q":"Largest stable explicit Euler step (ms) for a mode with $\\lambda = -2500$ s⁻¹. 2 decimals.","answer":0.8,"tol":0.001,"py":"2/2500*1e3","explain":"$h \\le 2/|\\lambda|$."},
+ {"type":"mc","q":"For a long orbital simulation where energy must not drift, choose…","options":["Explicit Euler","RK4 with a fixed step","Velocity Verlet","Backward Euler"],"answer":2,"explain":"Symplectic: bounded energy error."},
+ {"type":"num","q":"FTCS for $u_t = \\alpha u_{xx}$ with $\\alpha = 1.2\\times10^{-5}$ m²/s (steel) and $\\Delta x = 5$ mm: largest stable $\\Delta t$ (s). 3 decimals.","answer":1.042,"tol":0.002,"py":"0.005**2/(2*1.2e-5)","explain":"$\\Delta x^2/(2\\alpha)$."},
+ {"type":"num","q":"Courant number for $c = 340$ m/s, $\\Delta t = 10$ µs, $\\Delta x = 5$ mm. 2 decimals.","answer":0.68,"tol":0.001,"py":"340*10e-6/5e-3","explain":"$c\\Delta t/\\Delta x$: stable for leapfrog."},
+ {"type":"mc","q":"A pollutant front must stay between 0 and the inflow concentration. Which scheme guarantees it?","options":["Central differences","Lax-Wendroff","First-order upwind","Leapfrog"],"answer":2,"explain":"Monotone, at the cost of numerical diffusion."},
+ {"type":"mc","q":"The cost of a multigrid V-cycle solve grows with the number of unknowns $N$ like…","options":["$N^3$","$N^2$","$N$","$\\log N$"],"answer":2,"explain":"Grid-independent reduction per cycle at $O(N)$ work per cycle."},
+ {"type":"mc","q":"A grid study shows a nominally second-order solver converging at first order. The most likely cause is…","options":["Round-off","A bug, such as an inconsistent boundary or spacing term","The manufactured solution is too smooth","The computer is too slow"],"answer":1,"explain":"That's exactly what MMS is designed to catch."}
+]
