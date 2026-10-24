@@ -759,6 +759,108 @@ def('adaptive', {
   },
 });
 
+// 04.11 explicit vs implicit Euler on a stiff, stiffening bushing
+def('stiffstep', {
+  controls: [{ k: 'lh', label: 'Step h = 10^ (s)', min: -4, max: -1, step: 0.1, v: -2.5, f: 1 }],
+  draw(p, v, out) {
+    const M = 0.01, Cd = 20, K = 1e4, D = 1e-3, F = 10, h = 10 ** v.lh, T = Math.max(0.02, 3 * h);
+    const f = (x, w) => [w, (F - Cd * w - K * x * (1 + (x / D) ** 2)) / M];
+    const ex = [[0, 0]], im = [[0, 0]], ts = [0]; let blown = false;
+    for (let t = 0; t < T - 1e-12; t += h) {
+      const [x, w] = ex[ex.length - 1], d = f(x, w), nx = x + h * d[0], nw = w + h * d[1];
+      if (!blown && Math.abs(nx) > 1) blown = true;
+      ex.push(blown ? [NaN, NaN] : [nx, nw]);
+      // implicit Euler: Newton on z - y - h f(z) = 0
+      let [zx, zw] = im[im.length - 1]; const [yx, yw] = im[im.length - 1];
+      for (let it = 0; it < 30; it++) {
+        const g = f(zx, zw), G0 = zx - yx - h * g[0], G1 = zw - yw - h * g[1];
+        const a = 1, b = -h, c = h * K * (1 + 3 * (zx / D) ** 2) / M, dd = 1 + h * Cd / M, det = a * dd - b * c;
+        const dx = (-G0 * dd + b * G1) / det, dw = (-a * G1 + c * G0) / det; zx += dx; zw += dw;
+        if (Math.abs(dx) < 1e-15) break;
+      }
+      im.push([zx, zw]); ts.push(t + h);
+    }
+    const ms = ts.map((t) => t * 1e3);
+    p.frame({ x: [0, T * 1e3], y: [-0.2, 1.2], xlabel: 't, ms', ylabel: 'x, mm' });
+    p.line([0, T * 1e3], [0.6823, 0.6823], C.grey, 1, [4, 4]);
+    p.line(ms, ex.map((s) => s[0] * 1e3), C.red, 1.5).line(ms, im.map((s) => s[0] * 1e3)).dots(ms.length < 80 ? ms : [], im.map((s) => s[0] * 1e3), C.lime, 2.5);
+    out(`h = ${h < 1e-3 ? nf(0).format(h * 1e6) + ' µs' : nf(2).format(h * 1e3) + ' ms'}, h|λ| = ${nf(1).format(h * 1000)}. Explicit Euler (red) ${h > 0.002 ? 'blows up: the step is past 2/|λ| = 2 ms' : 'is stable'}; implicit Euler (lime) settles on the static deflection 0.682 mm at any step${h > 0.002 ? ', though it smooths out the fast transient' : ''}.`);
+  },
+});
+
+// 04.12 energy drift: explicit Euler, RK4, velocity Verlet
+def('symplectic', {
+  controls: [{ k: 'h', label: 'Step h (s)', min: 0.01, max: 0.2, step: 0.01, v: 0.05, f: 2 }],
+  draw(p, v, out) {
+    const g = 9.81, h = v.h, T = 500, n = Math.round(T / h), th0 = Math.PI / 3, E = (t, w) => 0.5 * w * w - g * Math.cos(t), E0 = E(th0, 0);
+    const every = Math.max(1, Math.floor(n / 400)), ts = [], eu = [], rk = [], vv = [];
+    let a = [th0, 0], b = [th0, 0], c = [th0, 0], acc = -g * Math.sin(th0);
+    const fr = (t, w) => [w, -g * Math.sin(t)];
+    for (let i = 0; i <= n; i++) {
+      if (i % every === 0) { ts.push(i * h); eu.push(100 * (E(...a) - E0) / Math.abs(E0)); rk.push(100 * (E(...b) - E0) / Math.abs(E0)); vv.push(100 * (E(...c) - E0) / Math.abs(E0)); }
+      a = [a[0] + h * a[1], a[1] - h * g * Math.sin(a[0])];
+      const k1 = fr(...b), k2 = fr(b[0] + h / 2 * k1[0], b[1] + h / 2 * k1[1]), k3 = fr(b[0] + h / 2 * k2[0], b[1] + h / 2 * k2[1]), k4 = fr(b[0] + h * k3[0], b[1] + h * k3[1]);
+      b = [b[0] + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), b[1] + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])];
+      const wh = c[1] + 0.5 * h * acc, nt = c[0] + h * wh; acc = -g * Math.sin(nt); c = [nt, wh + 0.5 * h * acc];
+    }
+    const last = (a) => a[a.length - 1], worst = Math.max(...vv.map(Math.abs)), R = Math.max(2.5 * worst, 1.5 * Math.abs(last(rk)), 0.05);
+    p.frame({ x: [0, T], y: [-R, R], xlabel: 't, s', ylabel: 'energy error, %' });
+    p.line(ts, eu.map((e) => Math.max(-2 * R, Math.min(2 * R, e))), C.red, 1.5).line(ts, rk, C.cyan, 2).line(ts, vv, C.lime, 1);
+    out(`After 500 s: explicit Euler ${Math.abs(last(eu)) > 1e3 ? 'off the chart' : nf(1).format(last(eu)) + '%'} (red), RK4 ${nf(2).format(last(rk))}% and still drifting (cyan), Verlet within ±${nf(2).format(worst)}% the whole time (lime). RK4 costs 4 evaluations per step, Verlet 1.`);
+  },
+});
+
+// 04.13 finite differences for -u'' = f
+def('fdgrid', {
+  controls: [{ k: 'n', label: 'Number of cells n', min: 2, max: 40, step: 1, v: 6, f: 0 }],
+  draw(p, v, out) {
+    const n = v.n, h = 1 / n, solve = (n) => { const h = 1 / n, m = n - 1, a = Array(m).fill(-1), b = Array(m).fill(2), c = Array(m).fill(-1), d = Array.from({ length: m }, (_, i) => h * h * Math.PI ** 2 * Math.sin(Math.PI * (i + 1) * h)); for (let i = 1; i < m; i++) { const w = a[i] / b[i - 1]; b[i] -= w * c[i - 1]; d[i] -= w * d[i - 1]; } const u = Array(m).fill(0); u[m - 1] = d[m - 1] / b[m - 1]; for (let i = m - 2; i >= 0; i--) u[i] = (d[i] - c[i] * u[i + 1]) / b[i]; return [0, ...u, 0]; };
+    const u = solve(n), xs = u.map((_, i) => i * h), err = (uu, nn) => Math.max(...uu.map((ui, i) => Math.abs(ui - Math.sin(Math.PI * i / nn))));
+    const e1 = err(u, n), e2 = n >= 2 ? err(solve(2 * n), 2 * n) : NaN, xx = linspace(0, 1, 200);
+    p.frame({ x: [0, 1], y: [-0.05, 1.15], xlabel: 'x', ylabel: 'u' });
+    p.line(xx, xx.map((x) => Math.sin(Math.PI * x)), C.grey, 1.5, [4, 4]).line(xs, u, C.lime, 1.5).dots(xs, u, C.lime, 3.5);
+    out(`${n} cells, h = ${nf(3).format(h)}: max error ${e1.toExponential(2)}. With ${2 * n} cells it is ${e2.toExponential(2)}, a ratio of ${nf(2).format(e1 / e2)} (second order gives 4).`);
+  },
+});
+
+// 04.14 FTCS vs Crank-Nicolson on a cooling rod
+def('heatscheme', {
+  controls: [{ type: 'select', k: 'm', label: 'Scheme', options: ['FTCS (explicit)', 'Crank-Nicolson'], v: 'FTCS (explicit)' }, { k: 'r', label: 'r = α Δt / Δx²', min: 0.1, max: 5, step: 0.02, v: 0.48, f: 2 }, { k: 't', label: 'Time (s)', min: 0, max: 1200, step: 20, v: 300, f: 0 }],
+  draw(p, v, out) {
+    const alpha = 9.7e-5, L = 0.5, n = 30, dx = L / n, dt = v.r * dx * dx / alpha, steps = Math.round(v.t / dt), xs = linspace(0, L, n + 1);
+    let u = xs.map((x, i) => (i === 0 || i === n ? 0 : 100)); const r = v.r;
+    for (let s = 0; s < steps; s++) {
+      if (v.m.startsWith('FTCS')) { const nu = u.slice(); for (let i = 1; i < n; i++) nu[i] = u[i] + r * (u[i + 1] - 2 * u[i] + u[i - 1]); u = nu; if (Math.abs(u[n >> 1]) > 1e6) break; }
+      else { const m = n - 1, a = Array(m).fill(-r / 2), b = Array(m).fill(1 + r), c = Array(m).fill(-r / 2), d = Array.from({ length: m }, (_, k) => (1 - r) * u[k + 1] + r / 2 * (u[k + 2] + u[k])); for (let i = 1; i < m; i++) { const w = a[i] / b[i - 1]; b[i] -= w * c[i - 1]; d[i] -= w * d[i - 1]; } const z = Array(m).fill(0); z[m - 1] = d[m - 1] / b[m - 1]; for (let i = m - 2; i >= 0; i--) z[i] = (d[i] - c[i] * z[i + 1]) / b[i]; u = [0, ...z, 0]; }
+    }
+    const tt = steps * dt, ex = (x) => { if (tt === 0) return x > 0 && x < L ? 100 : 0; let s = 0; for (let k = 1; k < 200; k += 2) s += 400 / (Math.PI * k) * Math.sin(k * Math.PI * x / L) * Math.exp(-alpha * (k * Math.PI / L) ** 2 * tt); return s; };
+    const xx = linspace(0, L, 200);
+    p.frame({ x: [0, L], y: [-20, 120], xlabel: 'x, m', ylabel: 'T, °C' });
+    p.line(xx, xx.map(ex), C.grey, 1.5, [4, 4]).line(xs, u.map((y) => Math.max(-1e3, Math.min(1e3, y)))).dots(xs, u.map((y) => Math.max(-1e3, Math.min(1e3, y))), C.lime, 2.5);
+    const bad = Math.abs(u[n >> 1]) > 200;
+    out(`${steps} steps of ${nf(1).format(dt)} s. Centre ${bad ? 'blown up' : nf(2).format(u[n >> 1]) + ' °C'} vs exact ${nf(2).format(ex(L / 2))} °C. ${v.m.startsWith('FTCS') ? (r > 0.5 ? 'r > 1/2: the zig-zag mode grows every step.' : 'Stable while r ≤ 1/2.') : 'Stable at any r; large r costs accuracy, and the sharp initial corners ring briefly.'}`);
+  },
+});
+
+// 04.15 leapfrog wave on a guitar string, CFL number
+def('cfl', {
+  controls: [{ k: 'cfl', label: 'CFL number c Δt / Δx', min: 0.3, max: 1.05, step: 0.01, v: 1, f: 2 }, { k: 'per', label: 'Time (periods)', min: 0, max: 3, step: 0.05, v: 0.25, f: 2 }],
+  draw(p, v, out) {
+    const L = 0.648, n = 60, dx = L / n, xs = linspace(0, L, n + 1), a = 0.2 * L, pl = (x) => (x < a ? 2 * x / a : 2 * (L - x) / (L - a));
+    const stepsPer = Math.round(2 * n / v.cfl), s = (2 * n / stepsPer) ** 2, N = Math.round(v.per * stepsPer);
+    let uo = xs.map(pl), u = uo.map((y, i) => (i === 0 || i === n ? 0 : y + 0.5 * s * (uo[i + 1] - 2 * y + uo[i - 1])));
+    if (N === 0) u = uo;
+    for (let k = 1; k < N; k++) { const un = u.map((y, i) => (i === 0 || i === n ? 0 : 2 * y - uo[i] + s * (u[i + 1] - 2 * y + u[i - 1]))); uo = u; u = un; if (Math.abs(u[n >> 1]) > 1e6) break; }
+    // exact: d'Alembert with odd periodic extension
+    const ext = (x) => { x = ((x % (2 * L)) + 2 * L) % (2 * L); return x <= L ? pl(x) : -pl(2 * L - x); }, ct = 2 * L * v.per;
+    const xx = linspace(0, L, 300);
+    p.frame({ x: [0, L], y: [-2.5, 2.5], xlabel: 'x, m', ylabel: 'u, mm' });
+    p.line(xx, xx.map((x) => 0.5 * (ext(x - ct) + ext(x + ct))), C.grey, 1.5, [4, 4]).line(xs, u.map((y) => Math.max(-9, Math.min(9, y))));
+    const cfl = Math.sqrt(s), err = Math.max(...u.map((y, i) => Math.abs(y - 0.5 * (ext(xs[i] - ct) + ext(xs[i] + ct)))));
+    out(`CFL ${nf(3).format(cfl)}, ${stepsPer} steps per period. Max error ${err > 100 ? 'unbounded: unstable' : nf(3).format(err) + ' mm'}. ${cfl > 1 ? 'Past CFL = 1 the scheme blows up.' : cfl > 0.999 ? 'At exactly 1 the scheme is exact.' : 'Below 1 it is stable, but waves of different lengths travel at slightly wrong speeds, so the kinks smear.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
