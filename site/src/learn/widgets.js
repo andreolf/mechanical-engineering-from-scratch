@@ -3059,6 +3059,70 @@ def('pvcycle', {
   },
 });
 
+// 10.13 Brayton T-s loop
+def('braytonts', {
+  controls: [{ k: 'rp', label: 'Pressure ratio', min: 2, max: 40, step: 0.5, v: 8, f: 1 }, { k: 'ec', label: 'Compressor efficiency', min: 0.6, max: 1, step: 0.01, v: 0.85, f: 2 }, { k: 'et', label: 'Turbine efficiency', min: 0.6, max: 1, step: 0.01, v: 0.9, f: 2 }, { k: 'T3', label: 'Turbine inlet (K)', min: 900, max: 1800, step: 10, v: 1400, f: 0 }],
+  draw(p, v, out) {
+    const cp = 1.005, R = 0.287, k = cp / (cp - R), T1 = 300, e = v.rp ** ((k - 1) / k);
+    const T2 = T1 + T1 * (e - 1) / v.ec, T4 = v.T3 - v.et * (v.T3 - v.T3 / e);
+    const s = (T, pr) => cp * Math.log(T / T1) - R * Math.log(pr);
+    const wc = cp * (T2 - T1), wt = cp * (v.T3 - T4), q = cp * (v.T3 - T2), eta = (wt - wc) / q, ei = 1 - 1 / e;
+    p.frame({ x: [-0.3, 1.6], y: [0, 2000], xlabel: 's, kJ/(kg K) (relative to inlet)', ylabel: 'T, K' });
+    const hi = linspace(T2, v.T3, 40), lo = linspace(T4, T1, 40);
+    p.line([s(T1, 1), s(T2, v.rp)], [T1, T2], C.cyan, 2.5).line(hi.map((T) => s(T, v.rp)), hi, C.red, 2.5).line([s(v.T3, v.rp), s(T4, 1)], [v.T3, T4], C.amber, 2.5).line(lo.map((T) => s(T, 1)), lo, C.grey, 2);
+    p.dots([s(T1, 1), s(T2, v.rp), s(v.T3, v.rp), s(T4, 1)], [T1, T2, v.T3, T4], C.paper, 5);
+    p.text('1', s(T1, 1) - 0.08, T1, C.paper).text('2', s(T2, v.rp) - 0.08, T2, C.paper).text('3', s(v.T3, v.rp) + 0.03, v.T3 + 40, C.paper).text('4', s(T4, 1) + 0.04, T4, C.paper);
+    out(`Efficiency ${nf(1).format(eta * 100)} % (ideal ${nf(1).format(ei * 100)} %). Net work ${nf(0).format(wt - wc)} kJ/kg; the compressor eats ${nf(0).format(100 * wc / wt)} % of the turbine output (back-work ratio).${wt <= wc ? ' The turbine no longer drives the compressor: no net output.' : ''}`);
+  },
+});
+
+// 10.14 Rankine T-s with the steam dome
+def('rankinets', {
+  controls: [{ type: 'select', k: 'k', label: 'Cycle', options: ['Simple superheat', 'With reheat at 2 MPa'], v: 'Simple superheat' }, { k: 'T', label: 'Steam temperature (°C)', min: 350, max: 650, step: 10, v: 500, f: 0 }, { k: 'et', label: 'Turbine efficiency', min: 0.7, max: 1, step: 0.01, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const sel = ['Simple superheat', 'With reheat at 2 MPa'].indexOf(v.k);
+    const dome = [[10, 0.1511, 8.8998], [45.81, 0.6492, 8.1488], [100, 1.3072, 7.3541], [150, 1.8418, 6.8371], [200, 2.3305, 6.4302], [250, 2.7935, 6.0721], [300, 3.2552, 5.7059], [330, 3.5518, 5.4422], [350, 3.7784, 5.211], [365, 4.0014, 4.9497], [373.9, 4.3402, 4.4831]];
+    const S10 = [[311.0, 2725.49, 5.6160], [350, 2924.02, 5.9459], [400, 3097.45, 6.2141], [450, 3242.34, 6.4219], [500, 3375.13, 6.5995], [550, 3501.96, 6.7585], [600, 3625.76, 6.9045], [650, 3748.12, 7.0408]];
+    const S2 = [[212.38, 2798.29, 6.3390], [250, 2903.24, 6.5475], [300, 3024.18, 6.7684], [350, 3137.65, 6.9583], [400, 3248.34, 7.1292], [450, 3358.22, 7.2866], [500, 3468.24, 7.4337], [550, 3578.97, 7.5725], [600, 3690.74, 7.7043], [650, 3803.75, 7.8302]];
+    const ip = (rows, a, b, x) => { let i = 1; while (i < rows.length - 1 && rows[i][a] < x) i++; const r0 = rows[i - 1], r1 = rows[i]; return r0[b] + (x - r0[a]) / (r1[a] - r0[a]) * (r1[b] - r0[b]); };
+    const hf = 191.81, hg = 2583.86, sf = 0.6492, sg = 8.1488, wp = 10.09;
+    const expand = (h, s0) => { const x = (s0 - sf) / (sg - sf), hs = hf + x * (hg - hf), h6 = h - v.et * (h - hs), xx = (h6 - hf) / (hg - hf); return [h6, xx, sf + xx * (sg - sf)]; };
+    p.frame({ x: [0, 9], y: [0, 700], xlabel: 's, kJ/(kg K)', ylabel: 'T, °C' });
+    p.line(dome.map((d) => d[1]).concat(dome.map((d) => d[2]).reverse()), dome.map((d) => d[0]).concat(dome.map((d) => d[0]).reverse()), C.grey, 1.5);
+    const liq = dome.filter((d) => d[0] <= 311); const h3 = ip(S10, 0, 1, v.T), s3 = ip(S10, 0, 2, v.T);
+    const sup = S10.filter((r) => r[0] < v.T).concat([[v.T, h3, s3]]);
+    p.line(liq.map((d) => d[1]).concat([3.3606]), liq.map((d) => d[0]).concat([311]), C.red, 2.5).line([3.3606, 5.616], [311, 311], C.red, 2.5).line(sup.map((r) => r[2]), sup.map((r) => r[0]), C.red, 2.5);
+    let wt, qin = h3 - hf - wp, ex;
+    if (sel === 1) {
+      const h4s = ip(S2, 2, 1, s3), h4 = h3 - v.et * (h3 - h4s), T4 = Math.max(212.38, ip(S2, 1, 0, h4)), s4 = ip(S2, 1, 2, h4);
+      const h5 = ip(S2, 0, 1, v.T), s5 = ip(S2, 0, 2, v.T); ex = expand(h5, s5);
+      const rh = S2.filter((r) => r[0] > T4 && r[0] < v.T);
+      p.line([s3, s4], [v.T, T4], C.amber, 2.5).line([s4].concat(rh.map((r) => r[2]), [s5]), [T4].concat(rh.map((r) => r[0]), [v.T]), C.red, 2.5).line([s5, ex[2]], [v.T, 45.81], C.amber, 2.5);
+      wt = h3 - h4 + h5 - ex[0]; qin += h5 - h4;
+    } else { ex = expand(h3, s3); p.line([s3, ex[2]], [v.T, 45.81], C.amber, 2.5); wt = h3 - ex[0]; }
+    p.line([sf, ex[2]], [45.81, 45.81], C.cyan, 2.5);
+    const eta = (wt - wp) / qin;
+    out(`10 MPa boiler, 10 kPa condenser. Efficiency ${nf(1).format(eta * 100)} %, turbine exit quality ${nf(3).format(Math.min(ex[1], 1))}${ex[1] < 0.88 ? ' (too wet: droplets erode the last blades)' : ''}. Heat in ${nf(0).format(qin)} = work ${nf(0).format(wt - wp)} + heat out ${nf(0).format(ex[0] - hf)} kJ/kg.`);
+  },
+});
+
+// 10.15 heat pump COP against outdoor temperature
+def('heatpumpcop', {
+  controls: [{ k: 'Ts', label: 'Supply water (°C)', min: 30, max: 60, step: 1, v: 35, f: 0 }, { k: 'To', label: 'Outdoor air (°C)', min: -20, max: 20, step: 1, v: 2, f: 0 }, { k: 'ec', label: 'Compressor efficiency', min: 0.5, max: 1, step: 0.01, v: 0.7, f: 2 }],
+  draw(p, v, out) {
+    const SAT = [[-25, 546.28, 2.4090, 139.60, 1.546], [-20, 552.13, 2.3999, 151.36, 1.580], [-15, 557.93, 2.3918, 163.28, 1.616], [-10, 563.65, 2.3846, 175.35, 1.655], [-5, 569.30, 2.3781, 187.59, 1.695], [0, 574.87, 2.3724, 200.00, 1.739], [5, 580.33, 2.3672, 212.60, 1.785], [10, 585.67, 2.3626, 225.40, 1.835], [15, 590.89, 2.3583, 238.40, 1.890], [20, 595.95, 2.3544, 251.64, 1.949], [25, 600.84, 2.3507, 265.11, 2.015], [30, 605.54, 2.3471, 278.83, 2.088], [35, 610.01, 2.3436, 292.84, 2.170], [40, 614.21, 2.3399, 307.15, 2.263], [45, 618.12, 2.3360, 321.79, 2.371], [50, 621.66, 2.3317, 336.80, 2.499], [55, 624.77, 2.3268, 352.23, 2.652], [60, 627.36, 2.3210, 368.14, 2.841], [65, 629.29, 2.3139, 384.60, 3.086]];
+    const sat = (T) => { const i = Math.min(Math.max(Math.floor((T + 25) / 5), 0), SAT.length - 2), a = SAT[i], b = SAT[i + 1], t = (T - a[0]) / 5; return a.map((x, j) => x + t * (b[j] - x)); };
+    const cop = (To) => { const Te = To - 5, Tc = v.Ts + 5, A = sat(Te), B = sat(Tc), h1 = A[1], s1 = A[2]; const T2s = (Tc + 273.15) * Math.exp(Math.max(s1 - B[2], 0) / B[4]); const h2s = B[1] + B[4] * (T2s - Tc - 273.15), h2 = h1 + (h2s - h1) / v.ec; return (h2 - B[3]) / (h2 - h1); };
+    const carnot = (To) => (v.Ts + 5 + 273.15) / (v.Ts - To + 10);
+    const xs = linspace(-20, 20, 81);
+    p.frame({ x: [-20, 20], y: [0, 12], xlabel: 'outdoor temperature, °C', ylabel: 'heating COP' });
+    p.line(xs, xs.map(carnot), C.grey, 1.5, [5, 4]).line(xs, xs.map(cop), C.lime, 2.5).dots([v.To], [cop(v.To)], C.amber, 7);
+    p.text('Carnot', -18, Math.min(11.3, carnot(-18) + 0.6), C.grey).text('R290 cycle', 8, Math.max(0.6, cop(8) - 1.0), C.lime);
+    const c = cop(v.To);
+    out(`At ${v.To} °C outdoors, supplying ${v.Ts} °C water: COP ${nf(2).format(c)} (Carnot ${nf(2).format(carnot(v.To))}). Each kWh of electricity delivers ${nf(1).format(c)} kWh of heat. Lower supply temperatures (floor heating) raise the COP; so does milder weather.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
