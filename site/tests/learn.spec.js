@@ -102,7 +102,7 @@ test.describe('Lessons, quizzes, progress and certificates', () => {
     await page.goto('./learn.html#/course');
     await expect(page.locator('[data-k=done]')).toHaveText('1');
     // outline lessons say so plainly
-    await page.goto('./learn.html#/05.01');
+    await page.goto('./learn.html#/19.01');
     await expect(page.locator('.coming-title')).toHaveText('Full lesson coming soon');
     await page.goto('./learn.html#/progress');
     expect(await noOverflow(page)).toBe(true);
