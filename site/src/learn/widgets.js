@@ -1795,6 +1795,94 @@ def('kirsch', {
   },
 });
 
+// 07.01 path coordinates: tangential and normal acceleration on a track
+def('pathaccel', {
+  controls: [{ k: 's', label: 'Position along the track (m)', min: 0, max: 280, step: 1, v: 120, f: 0 }, { k: 'v', label: 'Speed (m/s)', min: 1, max: 20, step: 0.5, v: 10, f: 1 }, { k: 'at', label: 'Braking (−) or speeding up (+), m/s²', min: -3, max: 3, step: 0.1, v: -1, f: 1 }],
+  draw(p, v, out) {
+    const L1 = 100, Rb = 30, arc = Math.PI / 2 * Rb;
+    const place = (s) => s < L1 ? [s, 0, 0] : s < L1 + arc ? [L1 + Rb * Math.sin((s - L1) / Rb), Rb * (1 - Math.cos((s - L1) / Rb)), (s - L1) / Rb] : [L1 + Rb, Rb + (s - L1 - arc), Math.PI / 2];
+    const ss = linspace(0, 280, 300), pts = ss.map(place);
+    fitAt(p, 75, 70, 85, 90, 'x, m', 'y, m');
+    p.line(pts.map((q) => q[0]), pts.map((q) => q[1]), C.grey, 3);
+    const [x, y, th] = place(v.s), onArc = v.s > L1 && v.s < L1 + arc, an = onArc ? v.v * v.v / Rb : 0;
+    const tx = Math.cos(th), ty = Math.sin(th), nx = -ty, ny = tx, k = 12;
+    p.dots([x], [y], C.lime, 5);
+    if (Math.abs(v.at) > 0.01) arrow(p, x, y, x + k * v.at * tx, y + k * v.at * ty, C.cyan, 3);
+    if (an > 0) arrow(p, x, y, x + k * an * nx, y + k * an * ny, C.amber, 3);
+    out(`Tangential a_t = dv/dt = ${nf(1).format(v.at)} m/s² (cyan) changes the speed. Normal a_n = v²/ρ = ${nf(2).format(an)} m/s² (amber) ${onArc ? `points to the centre of the ${Rb} m bend` : 'is zero on a straight (ρ → ∞)'}. Total ${nf(2).format(Math.hypot(v.at, an))} m/s².`);
+  },
+});
+
+// 07.02 ski jump with drag
+def('skijump', {
+  controls: [{ k: 'v0', label: 'Take-off speed (km/h)', min: 60, max: 100, step: 1, v: 90, f: 0 }, { k: 'cda', label: 'Drag area CdA (m²)', min: 0, max: 1, step: 0.05, v: 0.5, f: 2 }],
+  draw(p, v, out) {
+    const g = 9.81, m = 65, rho = 1.2, ang = -11 * Math.PI / 180, slope = Math.tan(35 * Math.PI / 180), dt = 0.005;
+    const run = (cda) => { let s = [0, 0, v.v0 / 3.6 * Math.cos(ang), v.v0 / 3.6 * Math.sin(ang)]; const xs = [0], ys = [0]; let t = 0;
+      const f = (q) => { const sp = Math.hypot(q[2], q[3]), k = 0.5 * rho * cda * sp / m; return [q[2], q[3], -k * q[2], -g - k * q[3]]; };
+      let prev = s;
+      while (s[1] + slope * s[0] > 0 || t === 0) { prev = s; const k1 = f(s), k2 = f(s.map((q, i) => q + dt / 2 * k1[i])), k3 = f(s.map((q, i) => q + dt / 2 * k2[i])), k4 = f(s.map((q, i) => q + dt * k3[i])); s = s.map((q, i) => q + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])); t += dt; xs.push(s[0]); ys.push(s[1]); if (t > 10) break; }
+      const g0 = prev[1] + slope * prev[0], g1 = s[1] + slope * s[0], fr = g0 / (g0 - g1), q = prev.map((u, i) => u + fr * (s[i] - u));
+      xs[xs.length - 1] = q[0]; ys[ys.length - 1] = q[1];
+      return { xs, ys, t: t - dt + fr * dt, v: Math.hypot(q[2], q[3]), d: Math.hypot(q[0], q[1]) }; };
+    const a = run(v.cda), b = run(0);
+    fitAt(p, 40, -30, 50, 35, 'x, m', 'y, m');
+    p.line([0, 90], [0, -90 * slope], C.grey, 2).line(b.xs, b.ys, C.grey, 1.5, [5, 4]).line(a.xs, a.ys, C.lime, 2.5);
+    out(`Lands ${nf(1).format(a.d)} m down the 35° slope after ${nf(2).format(a.t)} s at ${nf(0).format(a.v * 3.6)} km/h. Without drag (dashed parabola): ${nf(1).format(b.d)} m. Real jumpers fly further than both, because their body and skis also make lift.`);
+  },
+});
+
+// 07.03 roller coaster speed from energy
+def('coaster', {
+  controls: [{ k: 'h1', label: 'Bump height near x = 80 m (m)', min: 0, max: 30, step: 1, v: 12, f: 0 }, { k: 'h2', label: 'Last hill height (m)', min: 0, max: 40, step: 1, v: 17, f: 0 }, { k: 'v0', label: 'Speed at the top (m/s)', min: 0, max: 10, step: 0.5, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const tr = (x) => 40 - 30 / (1 + Math.exp(-(x - 30) / 8)) + v.h1 * Math.exp(-(((x - 80) / 15) ** 2)) + v.h2 * Math.exp(-(((x - 150) / 18) ** 2));
+    const xs = linspace(0, 190, 191), hs = xs.map(tr), E = v.v0 ** 2 / 2 + 9.81 * tr(0);
+    p.frame({ x: [0, 190], y: [0, Math.max(50, ...hs) + 5], xlabel: 'x, m', ylabel: 'height, m' });
+    let stall = -1;
+    for (let i = 0; i < xs.length - 1; i++) {
+      const vv = 2 * (E - 9.81 * hs[i]);
+      if (vv < 0) { stall = xs[i]; break; }
+      const sp = Math.sqrt(vv), t = Math.min(1, sp / 30);
+      p.line([xs[i], xs[i + 1]], [hs[i], hs[i + 1]], `rgba(${Math.round(92 + 146 * t)},${Math.round(200 + 55 * t)},${Math.round(255 - 190 * t)},1)`, 4);
+    }
+    if (stall >= 0) { p.line(xs.filter((x) => x >= stall), hs.filter((_, i) => xs[i] >= stall), C.grey, 2, [4, 4]); p.dots([stall], [tr(stall)], C.red, 6); }
+    const vmax = Math.sqrt(2 * (E - 9.81 * Math.min(...hs.slice(0, stall >= 0 ? xs.indexOf(stall) + 1 : xs.length))));
+    out(stall >= 0 ? `The car can't climb above ${nf(1).format(E / 9.81)} m (its total energy per unit weight): it stops at x = ${nf(0).format(stall)} m and rolls back.` : `v = √(v₀² + 2g(h₀ − h)): fastest ${nf(1).format(vmax)} m/s = ${nf(0).format(vmax * 3.6)} km/h at the lowest point; ${nf(1).format(Math.sqrt(2 * (E - 9.81 * tr(150))))} m/s over the last hill. Colour: slow cyan to fast lime. Mass never enters.`);
+  },
+});
+
+// 07.04 two-cart collision
+def('carts', {
+  controls: [{ k: 'm1', label: 'Cart 1 mass (kg)', min: 0.2, max: 2, step: 0.1, v: 0.5, f: 1 }, { k: 'm2', label: 'Cart 2 mass (kg)', min: 0.2, max: 2, step: 0.1, v: 1, f: 1 }, { k: 'e', label: 'Restitution e', min: 0, max: 1, step: 0.05, v: 0.6, f: 2 }],
+  draw(p, v, out) {
+    const v1 = 2, v2 = 0, P = v.m1 * v1 + v.m2 * v2;
+    const a = (P - v.m2 * v.e * (v1 - v2)) / (v.m1 + v.m2), b = (P + v.m1 * v.e * (v1 - v2)) / (v.m1 + v.m2);
+    p.frame({ x: [0, 2], y: [-0.5, 2.5], xlabel: 'time, s (impact at 1 s)', ylabel: 'position, m' });
+    const ts = linspace(0, 2, 81), x1 = (t) => t < 1 ? -1 + 2 * t + 0.5 : 1.5 + a * (t - 1) - 0.0, x2 = (t) => t < 1 ? 1.5 + 0.0 : 1.5 + b * (t - 1);
+    p.line(ts, ts.map(x1), C.cyan, 2.5).line(ts, ts.map(x2), C.amber, 2.5);
+    p.line([1, 1], [-0.5, 2.5], C.rule, 1, [3, 3]);
+    const vc = P / (v.m1 + v.m2); p.line(ts, ts.map((t) => (v.m1 * x1(t) + v.m2 * x2(t)) / (v.m1 + v.m2)), C.paper, 1.5, [6, 4]);
+    const loss = 0.5 * v.m1 * v1 * v1 - 0.5 * v.m1 * a * a - 0.5 * v.m2 * b * b;
+    out(`Cart 1 (cyan) hits cart 2 (amber) at 2 m/s. After: ${nf(3).format(a)} and ${nf(3).format(b)} m/s. Momentum ${nf(3).format(P)} kg m/s before and ${nf(3).format(v.m1 * a + v.m2 * b)} after; the centre of mass (dashed) moves at ${nf(3).format(vc)} m/s throughout. Kinetic energy lost: ${nf(3).format(loss)} J.`);
+  },
+});
+
+// 07.05 rocket mass ratio
+def('rocket', {
+  controls: [{ k: 'mr', label: 'Mass ratio m₀ / m₁', min: 1.2, max: 20, step: 0.1, v: 4, f: 1 }, { k: 've', label: 'Exhaust speed (m/s)', min: 1500, max: 4500, step: 50, v: 2500, f: 0 }],
+  draw(p, v, out) {
+    const mrs = linspace(1, 20, 200), dv = v.ve * Math.log(v.mr);
+    p.frame({ x: [1, 20], y: [0, 14], xlabel: 'mass ratio m₀/m₁', ylabel: 'Δv, km/s' });
+    p.line([1, 20], [7.8, 7.8], C.red, 1, [5, 4]).text('orbit ≈ 7.8 km/s + ~1.5 km/s losses', 1.5, 8.2, C.red);
+    p.line([1, 20], [9.3, 9.3], C.grey, 1, [2, 4]);
+    [2500, 4500].forEach((ve) => p.line(mrs, mrs.map((r) => ve * Math.log(r) / 1e3), C.rule, 1.5));
+    p.line(mrs, mrs.map((r) => v.ve * Math.log(r) / 1e3), C.lime, 2.5).dots([v.mr], [dv / 1e3], C.cyan, 6);
+    const need = Math.exp(9300 / v.ve);
+    out(`Δv = v_e ln(m₀/m₁) = ${nf(0).format(dv)} m/s. Propellant is ${nf(1).format(100 * (1 - 1 / v.mr))} % of lift-off mass. Reaching orbit (about 9.3 km/s including losses) in one stage needs m₀/m₁ = ${nf(1).format(need)}: ${nf(1).format(100 * (1 - 1 / need))} % propellant. That's why rockets have stages.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
