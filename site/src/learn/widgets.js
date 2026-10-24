@@ -363,6 +363,122 @@ def('arm2', {
   },
 });
 
+// ---------- Phase 03 ----------
+// banded contour fill of f over the current frame
+function bands(p, f, lo, hi, nb = 12, cells = 90) {
+  const [x0, x1] = p.xr, [y0, y1] = p.yr, ny = Math.round(cells * (p.h / p.w)) || cells, g = p.g;
+  const dx = (x1 - x0) / cells, dy = (y1 - y0) / ny;
+  g.save(); g.beginPath(); g.rect(p.pad.l, p.pad.t, p.w - p.pad.l - p.pad.r, p.h - p.pad.t - p.pad.b); g.clip();
+  for (let i = 0; i < cells; i++) for (let j = 0; j < ny; j++) {
+    const v = f(x0 + (i + 0.5) * dx, y0 + (j + 0.5) * dy), t = Math.max(0, Math.min(0.999, (v - lo) / (hi - lo))), b = Math.floor(t * nb);
+    g.fillStyle = `rgba(238,255,65,${0.04 + 0.5 * (b / nb) ** 1.4})`;
+    const a = p.X(x0 + i * dx), c = p.Y(y0 + (j + 1) * dy);
+    g.fillRect(a, c, p.X(x0 + (i + 1) * dx) - a + 0.6, p.Y(y0 + j * dy) - c + 0.6);
+  }
+  g.restore();
+}
+
+// 03.01 / 03.02 gradient descent on a quadratic bowl
+def('gradient', {
+  controls: [{ k: 'kappa', label: 'Bowl elongation (condition number)', min: 1, max: 25, step: 1, v: 8, f: 0 }, { k: 'eta', label: 'Step size (fraction of the stable limit)', min: 0.1, max: 1.05, step: 0.05, v: 0.6, f: 2 }],
+  draw(p, v, out) {
+    const a = 1, b = v.kappa, f = (x, y) => 0.5 * (a * x * x + b * y * y);
+    sqframe(p, 2.2);
+    bands(p, f, 0, 0.5 * b * 4, 14);
+    const h = (v.eta * 2) / b; let x = -2, y = 1.2; const X = [x], Y = [y];
+    let k = 0; for (; k < 200 && Math.hypot(x, y) > 1e-3; k++) { x -= h * a * x; y -= h * b * y; X.push(x); Y.push(y); if (Math.abs(y) > 50) break; }
+    p.line(X, Y, C.paper, 1.5).dots(X.slice(0, 40), Y.slice(0, 40), C.paper, 2.5).dots([0], [0], C.lime, 5);
+    // gradient arrows on a coarse grid
+    for (let i = -2; i <= 2; i += 1) for (let j = -1; j <= 1; j += 1) { const gx = a * i, gy = b * j, n = Math.hypot(gx, gy) || 1; if (i || j) arrow(p, i, j, i + 0.35 * gx / n, j + 0.35 * gy / n, 'rgba(92,200,255,0.8)', 1.5); }
+    out(Math.abs(y) > 50 || v.eta > 1 ? `Step too large: the steep direction overshoots and diverges.` : `Gradient descent from (−2, 1.2): ${k} steps to reach the minimum within 0.001. Cyan arrows are ∇f, perpendicular to the contours.`);
+  },
+});
+
+// 03.10 uniform flow past a cylinder: uniform stream + doublet
+def('cylinder', {
+  controls: [{ k: 'G', label: 'Circulation Γ / (U R)', min: 0, max: 12, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const U = 1, R = 1, G = v.G;
+    const psi = (x, y) => { const r2 = x * x + y * y; if (r2 < R * R) return NaN; return U * y * (1 - (R * R) / r2) + (G / (2 * Math.PI)) * Math.log(Math.sqrt(r2) / R); };
+    sqframe(p, 2.6);
+    // streamlines: integrate the velocity field from seeds on the left
+    const vel = (x, y) => { const r2 = x * x + y * y, th = Math.atan2(y, x), r = Math.sqrt(r2); const ur = U * (1 - R * R / r2) * Math.cos(th), ut = -U * (1 + R * R / r2) * Math.sin(th) + G / (2 * Math.PI * r); return [ur * Math.cos(th) - ut * Math.sin(th), ur * Math.sin(th) + ut * Math.cos(th)]; };
+    for (let y0 = -2.6; y0 <= 2.61; y0 += 0.26) {
+      let x = p.xr[0], y = y0 + 0.0001; const X = [x], Y = [y];
+      for (let i = 0; i < 1600 && x < p.xr[1]; i++) { const [u1, v1] = vel(x, y), n = Math.hypot(u1, v1) || 1; const ds = 0.02; const [u2, v2] = vel(x + 0.5 * ds * u1 / n, y + 0.5 * ds * v1 / n), n2 = Math.hypot(u2, v2) || 1; x += ds * u2 / n2; y += ds * v2 / n2; if (x * x + y * y < R * R * 0.98) break; X.push(x); Y.push(y); }
+      p.line(X, Y, 'rgba(242,243,236,0.55)', 1.2);
+    }
+    const c = linspace(0, 2 * Math.PI, 100);
+    poly(p, c.map((t) => [Math.cos(t), Math.sin(t)]), C.lime, 'rgba(238,255,65,0.15)', 2);
+    // stagnation points on the surface: sin th = G / (4 pi U R)
+    const sth = G / (4 * Math.PI * U * R);
+    let msg;
+    if (sth <= 1) { const th = Math.asin(sth); p.dots([Math.cos(th), -Math.cos(th)], [Math.sin(th), Math.sin(th)], C.red, 5); msg = `Stagnation points at ${nf(1).format((th * 180) / Math.PI)}° and ${nf(1).format(180 - (th * 180) / Math.PI)}° (red).`; }
+    else msg = 'Γ > 4πUR: the stagnation point lifts off the cylinder into the flow.';
+    out(`Top surface speed ${nf(2).format(2 * U + G / (2 * Math.PI * R))} U, bottom ${nf(2).format(Math.abs(-2 * U + G / (2 * Math.PI * R)))} U. Lift per unit span ρUΓ (Kutta-Joukowski). ${msg}`);
+    void psi;
+  },
+});
+
+// 03.11 Fourier partial sums of a square wave
+def('fourier', {
+  controls: [{ k: 'n', label: 'Number of odd harmonics', min: 1, max: 60, step: 1, v: 5, f: 0 }, { type: 'select', k: 'wave', label: 'Signal', options: ['square', 'sawtooth', 'triangle'], v: 'square' }],
+  draw(p, v, out) {
+    const xs = linspace(-Math.PI, 3 * Math.PI, 900);
+    const tgt = { square: (x) => Math.sign(Math.sin(x)), sawtooth: (x) => ((((x + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) / Math.PI - 1, triangle: (x) => (2 / Math.PI) * Math.asin(Math.sin(x)) }[v.wave];
+    const S = (x) => { let s = 0; for (let m = 1; m <= v.n; m++) { if (v.wave === 'square') { const k = 2 * m - 1; s += (4 / (Math.PI * k)) * Math.sin(k * x); } else if (v.wave === 'sawtooth') { s += ((2 * (-1) ** (m + 1)) / (Math.PI * m)) * Math.sin(m * x); } else { const k = 2 * m - 1; s += ((8 / (Math.PI * Math.PI * k * k)) * (-1) ** (m - 1)) * Math.sin(k * x); } } return s; };
+    p.frame({ x: [-Math.PI, 3 * Math.PI], y: [-1.5, 1.5], xlabel: 'x', ylabel: '' }).line(xs, xs.map(tgt), C.grey, 1.5).line(xs, xs.map(S));
+    let mx = 0; for (const x of linspace(0.0001, Math.PI - 0.0001, 4000)) mx = Math.max(mx, S(x));
+    out(v.wave === 'square' ? `Peak ${nf(4).format(mx)}: the overshoot near the jump tends to about 9% of the jump (Gibbs), however many terms you add.` : v.wave === 'triangle' ? `Coefficients fall like 1/k²: a continuous signal converges fast. Max error ${nf(4).format(Math.max(...xs.map((x) => Math.abs(S(x) - tgt(x)))))}.` : `Coefficients fall like 1/m: the jump causes Gibbs overshoot again.`);
+  },
+});
+
+// 03.14 heat equation in a rod, ends held at 0, initial temperature 100
+def('heat1d', {
+  controls: [{ k: 't', label: 'Time t (minutes)', min: 0, max: 120, step: 1, v: 10, f: 0 }, { type: 'select', k: 'mat', label: 'Material (rod 0.5 m)', options: ['steel', 'aluminium', 'copper'], v: 'steel' }],
+  draw(p, v, out) {
+    const alpha = { steel: 1.2e-5, aluminium: 9.7e-5, copper: 1.11e-4 }[v.mat], L = 0.5, t = v.t * 60, xs = linspace(0, L, 200);
+    const T = (x) => { if (t === 0) return x > 0 && x < L ? 100 : 0; let s = 0; for (let k = 1; k < 400; k += 2) s += (400 / (Math.PI * k)) * Math.sin((k * Math.PI * x) / L) * Math.exp(-alpha * ((k * Math.PI) / L) ** 2 * t); return s; };
+    p.frame({ x: [0, L], y: [0, 110], xlabel: 'x, m', ylabel: 'T, °C' });
+    p.line(xs, xs.map(T));
+    const tau = (L * L) / (Math.PI * Math.PI * alpha);
+    out(`Centre ${nf(1).format(T(L / 2))} °C. Slowest mode decays with time constant L²/(π²α) = ${nf(0).format(tau / 60)} min for ${v.mat}.`);
+  },
+});
+
+// 03.15 plucked string: d'Alembert travelling waves
+def('wave1d', {
+  controls: [{ k: 't', label: 'Time (fraction of a period)', min: 0, max: 1, step: 0.01, v: 0.1, f: 2 }, { k: 'pos', label: 'Pluck position (fraction of L)', min: 0.1, max: 0.5, step: 0.05, v: 0.25, f: 2 }],
+  draw(p, v, out) {
+    const L = 1, a = v.pos, f0 = (x) => { x = ((x % (2 * L)) + 2 * L) % (2 * L); const s = x > L ? -1 : 1; if (x > L) x = 2 * L - x; return s * (x < a ? x / a : (L - x) / (L - a)); };
+    const ct = 2 * L * v.t, xs = linspace(0, L, 300);
+    p.frame({ x: [0, L], y: [-1.2, 1.2], xlabel: 'x / L', ylabel: 'u' });
+    p.line(xs, xs.map((x) => 0.5 * f0(x - ct)), C.cyan, 1, [4, 4]).line(xs, xs.map((x) => 0.5 * f0(x + ct)), C.grey, 1, [4, 4]).line(xs, xs.map((x) => 0.5 * (f0(x - ct) + f0(x + ct))));
+    // harmonic content: b_n ∝ sin(n pi a)/n^2
+    const bn = [1, 2, 3, 4, 5].map((n) => Math.abs(Math.sin(n * Math.PI * a)) / (n * n)), b1 = bn[0];
+    out(`Two half-size copies travel left (grey) and right (cyan); the string (lime) is their sum. Harmonic amplitudes relative to the fundamental: ${bn.map((b) => nf(2).format(b / b1)).join(', ')}.`);
+  },
+});
+
+// 03.19 phase plane of a damped pendulum
+def('phaseplane', {
+  controls: [{ k: 'c', label: 'Damping ratio ζ', min: 0, max: 1.2, step: 0.05, v: 0.1, f: 2 }, { k: 'w0', label: 'Initial speed (rad/s)', min: 0, max: 3, step: 0.05, v: 1.9, f: 2 }],
+  draw(p, v, out) {
+    const rhs = (x, y) => [y, -Math.sin(x) - 2 * v.c * y];
+    p.frame({ x: [-Math.PI * 1.6, Math.PI * 3.2], y: [-3.2, 3.2], xlabel: 'angle θ, rad', ylabel: 'θ̇' });
+    // direction field
+    for (let x = -4.5; x <= 10; x += 0.7) for (let y = -2.8; y <= 2.8; y += 0.7) { const [u, w] = rhs(x, y), n = Math.hypot(u, w) || 1; p.line([x, x + 0.25 * u / n], [y, y + 0.25 * w / n], 'rgba(242,243,236,0.25)', 1); }
+    // separatrix of the undamped pendulum
+    const sx = linspace(-Math.PI, 3 * Math.PI, 300);
+    p.line(sx, sx.map((x) => 2 * Math.cos(x / 2)), C.rule, 1, [4, 4]).line(sx, sx.map((x) => -2 * Math.cos(x / 2)), C.rule, 1, [4, 4]);
+    let x = 0, y = v.w0; const X = [x], Y = [y], h = 0.01;
+    for (let i = 0; i < 6000; i++) { const k1 = rhs(x, y), k2 = rhs(x + h / 2 * k1[0], y + h / 2 * k1[1]), k3 = rhs(x + h / 2 * k2[0], y + h / 2 * k2[1]), k4 = rhs(x + h * k3[0], y + h * k3[1]); x += h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]); y += h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]); X.push(x); Y.push(y); }
+    p.line(X, Y).dots([0, 2 * Math.PI], [0, 0], C.cyan, 4).dots([Math.PI], [0], C.red, 4);
+    const turns = Math.round(x / (2 * Math.PI));
+    out(`${turns > 0 ? `The pendulum goes over the top ${turns} time${turns > 1 ? 's' : ''} before settling.` : 'It swings back and forth without going over the top.'} Cyan: stable equilibria (spirals or centres). Red: unstable (a saddle). Dashed: the undamped separatrix.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
