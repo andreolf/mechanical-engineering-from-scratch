@@ -1,0 +1,11 @@
+[
+ {"type":"num","q":"$f(x,y) = x^2 y + 3y^2$. What is $\\partial f/\\partial y$ at $(2, 1)$?","answer":10,"tol":0.001,"py":"2**2 + 6*1","explain":"$f_y = x^2 + 6y = 4 + 6$."},
+ {"type":"num","q":"Directional derivative of $T = x^2 + 2y^2$ at $(1, 1)$ in the direction $(3, 4)/5$.","answer":4.4,"tol":0.001,"py":"(2*1*3 + 4*1*4)/5","explain":"$\\nabla T = (2, 4)$, dotted with $(0.6, 0.8)$ gives $1.2 + 3.2$."},
+ {"type":"mc","q":"At a critical point the Hessian has eigenvalues $3$ and $-2$. The point is…","options":["A minimum","A maximum","A saddle","Degenerate, test inconclusive"],"answer":2,"explain":"Mixed signs mean a saddle."},
+ {"type":"num","q":"Polar second moment of area $J = \\pi d^4/32$ of a 40 mm solid shaft, in $10^{-7}$ m$^4$. 3 decimals.","answer":2.513,"tol":0.002,"py":"pi*0.04**4/32*1e7","explain":"$\\pi (0.04)^4/32 = 2.513\\times10^{-7}$ m$^4$."},
+ {"type":"num","q":"Divergence of $\\mathbf v = (3x, -y, 2z)$.","answer":4,"tol":0.001,"py":"3 - 1 + 2","explain":"$3 - 1 + 2 = 4$: the field is not incompressible."},
+ {"type":"num","q":"Fourier coefficient $b_1$ of a square wave of amplitude 1 (odd, period $2\\pi$). 4 decimals.","answer":1.2732,"tol":0.001,"py":"4/pi","explain":"$b_n = 4/(n\\pi)$ for odd $n$."},
+ {"type":"mc","q":"$u_{xx} + 4u_{xy} + 4u_{yy} = 0$ is…","options":["Elliptic","Parabolic","Hyperbolic","Not a second-order PDE"],"answer":1,"explain":"$B^2 - 4AC = 16 - 16 = 0$."},
+ {"type":"num","q":"Wave speed $c = \\sqrt{T/\\mu}$ on a string with tension 400 N and 4 g/m. What is the fundamental frequency (Hz) for a 0.65 m length? 1 decimal.","answer":243.25,"tol":0.002,"py":"sqrt(400/0.004)/(2*0.65)","explain":"$c = 316.2$ m/s, $f_1 = c/(2L)$."},
+ {"type":"num","q":"Damping ratio of $\\ddot x + 4\\dot x + 20x = 0$. 4 decimals.","answer":0.4472,"tol":0.001,"py":"4/(2*sqrt(20))","explain":"$\\zeta = c/(2\\sqrt{km}) = 4/(2\\sqrt{20})$."}
+]
