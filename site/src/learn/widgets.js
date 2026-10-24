@@ -3969,6 +3969,36 @@ def('dyerelease', {
   },
 });
 
+// 13.01 conduction through a wall
+def('wallprofile', {
+  controls: [{ k: 'k', label: 'Thermal conductivity k (W/(m K))', min: 0.03, max: 2.5, step: 0.01, v: 1.4, f: 2 }, { k: 'L', label: 'Wall thickness (cm)', min: 5, max: 40, step: 1, v: 20, f: 0 }, { k: 'To', label: 'Outside surface (°C)', min: 26, max: 50, step: 0.5, v: 34, f: 1 }],
+  draw(p, v, out) {
+    const Ti = 26, L = v.L / 100, q = v.k * (v.To - Ti) / L;
+    p.frame({ x: [-10, 50], y: [20, 52], xlabel: 'position, cm (outside on the left)', ylabel: 'temperature, °C' });
+    p.rect(0, v.L, 20, 52, 'rgba(154,157,147,0.25)').text('wall', v.L / 2 - 2, 50, C.paper).text('sun side', -9, 50, C.amber).text('room', v.L + 1, 50, C.cyan);
+    p.line([-10, 0, v.L, 50], [v.To, v.To, Ti, Ti], C.lime, 2.5);
+    for (let i = 1; i <= 3; i++) arrow(p, v.L * (i / 4) - 2, 22.5, v.L * (i / 4) + 2, 22.5, C.red, 1 + Math.min(4, q / 40));
+    out(`Fourier's law: q = k ΔT / L = ${nf(2).format(v.k)} × ${nf(1).format(v.To - Ti)} / ${nf(2).format(L)} = ${nf(1).format(q)} W/m², the same at every depth, so the profile is a straight line. A 12 m² wall lets ${nf(0).format(q * 12)} W into the room${v.k < 0.1 ? ', insulation-level conductivity.' : '.'}`);
+  },
+});
+
+// 13.02 alpine hut wall builder
+def('hutbuilder', {
+  controls: [{ k: 'ins', label: 'Mineral wool (cm)', min: 0, max: 30, step: 1, v: 12, f: 0 }, { k: 'To', label: 'Outside air (°C)', min: -25, max: 10, step: 1, v: -10, f: 0 }, { k: 'win', label: 'Window share of a 12 m² wall (%)', min: 0, max: 50, step: 1, v: 17, f: 0 }],
+  draw(p, v, out) {
+    const Ti = 20, hi = 7.7, ho = 25, lay = [['spruce', 0.02, 0.13, 'rgba(255,181,71,0.45)'], ['wool', v.ins / 100, 0.035, 'rgba(238,255,65,0.25)'], ['larch', 0.024, 0.13, 'rgba(255,181,71,0.45)']];
+    const R = [1 / hi].concat(lay.map(([, L, k]) => L / k), [1 / ho]), Rt = R.reduce((a, b) => a + b, 0), U = 1 / Rt, q = (Ti - v.To) * U;
+    p.frame({ x: [0, 40], y: [-26, 22], xlabel: 'through the wall, cm (inside on the left)', ylabel: 'temperature, °C' });
+    const xs = [0], Ts = [Ti]; let x = 0, T = Ti; const film = 2;
+    T -= q * R[0]; xs.push(film); Ts.push(T); x = film;
+    lay.forEach(([, L, k], i) => { p.rect(x, x + L * 100, -26, 22, lay[i][3]); x += L * 100; T -= q * R[i + 1]; xs.push(x); Ts.push(T); });
+    T -= q * R[4]; xs.push(x + film); Ts.push(T);
+    p.line(xs, Ts, C.lime, 2.5).dots(xs, Ts, C.lime, 3).text('in', 0.3, 20, C.cyan).text('out', Math.min(37, x + 2.2), 20, C.cyan);
+    const Aw = 12 * v.win / 100, Q = (Ti - v.To) * (U * (12 - Aw) + 1.1 * Aw);
+    out(`R_total = ${nf(3).format(Rt)} m² K/W, U = ${nf(3).format(U)} W/(m² K): ${nf(2).format(q)} W/m² through the wall. With ${nf(1).format(Aw)} m² of window (U = 1.1) the 12 m² wall loses ${nf(0).format(Q)} W, ${Q > 0 ? nf(0).format(100 * 1.1 * Aw * (Ti - v.To) / Q) : 0}% through the glass. Nearly all the temperature drop sits across the insulation.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
