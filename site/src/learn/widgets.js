@@ -4227,6 +4227,42 @@ def('xform2d', {
   },
 });
 
+// 14.03 de Casteljau construction on a fairing curve
+def('bezierlab', {
+  controls: [{ k: 'y1', label: 'Control point P₁ height (mm)', min: 0, max: 400, step: 10, v: 160, f: 0 }, { k: 'x2', label: 'Control point P₂ position (mm)', min: 0, max: 600, step: 10, v: 300, f: 0 }, { k: 't', label: 'Parameter t', min: 0, max: 1, step: 0.01, v: 0.5, f: 2 }],
+  draw(p, v, out) {
+    const P = [[0, 0], [0, v.y1], [v.x2, 250], [600, 250]];
+    const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    const dc = (t) => { let Q = P; while (Q.length > 1) Q = Q.slice(1).map((q, i) => lerp(Q[i], q, t)); return Q[0]; };
+    const ts = linspace(0, 1, 120), cur = ts.map(dc);
+    p.frame({ x: [-50, 650], y: [-50, 420], xlabel: 'along the fairing, mm', ylabel: 'half-width, mm' });
+    p.line(P.map((q) => q[0]), P.map((q) => q[1]), C.grey, 1, [4, 3]).dots(P.map((q) => q[0]), P.map((q) => q[1]), C.grey, 5);
+    let Q = P; const cols = [C.cyan, C.amber];
+    for (let lvl = 0; Q.length > 1; lvl++) { Q = Q.slice(1).map((q, i) => lerp(Q[i], q, v.t)); if (Q.length > 1) p.line(Q.map((q) => q[0]), Q.map((q) => q[1]), cols[lvl], 1.5).dots(Q.map((q) => q[0]), Q.map((q) => q[1]), cols[lvl], 3.5); }
+    p.line(cur.map((q) => q[0]), cur.map((q) => q[1]), C.lime, 2.5);
+    const b = dc(v.t); p.dots([b[0]], [b[1]], C.paper, 6);
+    P.forEach((q, i) => p.text(`P${i}`, q[0] + 8, q[1] + 10, C.grey));
+    out(`B(${nf(2).format(v.t)}) = (${nf(1).format(b[0])}, ${nf(1).format(b[1])}) mm. De Casteljau: interpolate each leg of the control polygon at t (cyan), then each leg of that (amber), until one point is left. The curve always starts at P₀ and ends at P₃, tangent to the first and last legs.`);
+  },
+});
+
+// 14.04 weight of a rational quadratic arc
+def('nurbsweight', {
+  controls: [{ k: 'w', label: 'Weight of the middle control point', min: 0.1, max: 3, step: 0.01, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const snap = Math.abs(v.w - Math.SQRT1_2) < 0.006; v = { w: snap ? Math.SQRT1_2 : v.w };
+    const R = 31, P0 = [R, 0], P1 = [R, R], P2 = [0, R];
+    const rq = (w, t) => { const b0 = (1 - t) ** 2, b1 = 2 * t * (1 - t) * w, b2 = t * t, s = b0 + b1 + b2; return [(b0 * P0[0] + b1 * P1[0] + b2 * P2[0]) / s, (b0 * P0[1] + b1 * P1[1] + b2 * P2[1]) / s]; };
+    sqframe(p, 40, 'x, mm', 'y, mm');
+    const th = linspace(0, Math.PI / 2, 80); p.line(th.map((a) => R * Math.cos(a)), th.map((a) => R * Math.sin(a)), C.grey, 1.5, [5, 4]);
+    p.line([P0[0], P1[0], P2[0]], [P0[1], P1[1], P2[1]], C.grey, 1, [2, 3]).dots([P0[0], P1[0], P2[0]], [P0[1], P1[1], P2[1]], C.grey, 5);
+    const ts = linspace(0, 1, 120), c = ts.map((t) => rq(v.w, t)); p.line(c.map((q) => q[0]), c.map((q) => q[1]), C.lime, 2.5);
+    const err = Math.max(...c.map((q) => Math.abs(Math.hypot(q[0], q[1]) - R)));
+    const kind = snap ? 'a circle (snapped to w = √2/2 = 0.70711)' : v.w < 1 ? 'an ellipse' : Math.abs(v.w - 1) < 0.005 ? 'a parabola (a plain Bezier)' : 'a hyperbola';
+    out(`w = ${nf(snap ? 5 : 2).format(v.w)}: the arc is part of ${kind}. Largest distance from the true 31 mm circle (dashed): ${nf(3).format(err)} mm. Raising the weight pulls the curve towards the middle control point.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
