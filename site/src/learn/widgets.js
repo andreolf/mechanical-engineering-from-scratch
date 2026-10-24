@@ -2629,6 +2629,53 @@ def('ashbychart', {
   },
 });
 
+// 09.16 embodied energy of the 09.15 beam
+def('embodied', {
+  controls: [{ type: 'select', k: 'q', label: 'Show', options: ['Mass (kg)', 'Embodied energy (MJ)', 'Carbon (kg CO₂)'], v: 'Embodied energy (MJ)' }],
+  draw(p, v, out) {
+    const db = [['steel', 210, 7850, 25, 2], ['aluminium', 70, 2700, 200, 12], ['recycled Al', 70, 2700, 30, 2], ['titanium', 115, 4500, 600, 40], ['CFRP', 70, 1560, 270, 25], ['bamboo', 18, 700, 3, 0.4], ['spruce', 12, 450, 8, 0.5]];
+    const sel = ['Mass (kg)', 'Embodied energy (MJ)', 'Carbon (kg CO₂)'].indexOf(v.q);
+    const rows = db.map(([nm, E, r, H, c]) => { const m = r * Math.sqrt(12 * 1000 / (3 * E * 1e9 * 0.005)); return [nm, [m, m * H, m * c][sel]]; });
+    const mx = Math.max(...rows.map((r) => r[1])), lg = sel > 0;
+    p.frame({ x: [lg ? 1 : 0, lg ? mx * 40 : mx * 1.45], y: [0, rows.length], xlog: lg, xlabel: v.q + (lg ? ', log scale' : ''), ylabel: '' });
+    rows.forEach(([nm, val], i) => { const y = rows.length - i - 0.5; p.rect(lg ? 1 : 0, val, y - 0.3, y + 0.3, i === 0 ? C.grey : val <= rows[0][1] ? C.lime : C.red).text(`${nm} ${nf(val < 10 ? 1 : 0).format(val)}`, lg ? Math.max(val * 1.1, 1.2) : val + mx * 0.02, y - 0.1, C.paper); });
+    out(`The 1 m cantilever from 09.15 (5 mm under 1 kN). Lime: better than steel, red: worse. ${sel === 0 ? 'Lightest is not the same as greenest.' : 'Primary aluminium, titanium and carbon fibre are energy-hungry; wood and bamboo store carbon instead. Recycling aluminium cuts its energy by about 85 %.'}`);
+  },
+});
+
+// 09.17 unit cost against batch size
+def('processcost', {
+  controls: [{ k: 'ln', label: 'Batch size, log₁₀(n)', min: 0, max: 5, step: 0.05, v: 3, f: 2 }, { k: 'tool', label: 'Die-casting tooling (kUSD)', min: 10, max: 100, step: 1, v: 40, f: 0 }],
+  draw(p, v, out) {
+    const pr = [['CNC machining', 0.6, 300, 80, 4, C.cyan], ['sand casting', 0.3, 2000, 50, 10, C.amber], ['die casting', 0.1, v.tool * 1000, 120, 120, C.lime], ['metal 3D print', 0.05, 0, 60, 0.5, C.red]];
+    const cost = (q, n) => 0.75 / (1 - q[1]) + q[2] / n + q[3] / q[4], ns = logspace(0, 5, 150), n = 10 ** v.ln;
+    p.frame({ x: [1, 1e5], y: [1, 1e4], xlog: true, ylog: true, xlabel: 'batch size n', ylabel: 'cost per part, USD' });
+    pr.forEach((q) => p.line(ns, ns.map((x) => cost(q, x)), q[5], 2.2));
+    p.line([n, n], [1, 1e4], C.grey, 1, [4, 4]);
+    const c = pr.map((q) => [q[0], cost(q, n)]).sort((a, b) => a[1] - b[1]);
+    out(`n = ${nf(0).format(n)}: cheapest is ${c[0][0]} at ${nf(2).format(c[0][1])} USD per part (then ${c[1][0]}, ${nf(2).format(c[1][1])}). Tooling is spread over the batch (falling part of each curve); the flat floor is material plus machine time. Cyan CNC, amber sand casting, lime die casting, red 3D printing.`);
+  },
+});
+
+// 09.18 Merchant orthogonal cutting
+def('merchant', {
+  controls: [{ k: 'a', label: 'Rake angle α (°)', min: -5, max: 25, step: 1, v: 10, f: 0 }, { k: 'mu', label: 'Friction coefficient μ on the rake face', min: 0.2, max: 1.2, step: 0.05, v: 0.5, f: 2 }],
+  draw(p, v, out) {
+    const al = v.a * Math.PI / 180, be = Math.atan(v.mu), ph = Math.PI / 4 + al / 2 - be / 2, t0 = 1, tc = t0 * Math.cos(ph - al) / Math.sin(ph);
+    const d = [Math.sin(al), Math.cos(al)], nn = [-Math.cos(al), Math.sin(al)], B = [-t0 / Math.tan(ph), t0], L = 3.2;
+    p.frame({ x: [-5, 4], y: [-1.5, 4], xlabel: '', ylabel: '' });
+    p.rect(-5, 4, -1.5, 0, 'rgba(242,243,236,0.18)');
+    poly(p, [[-5, 0], [0, 0], B, [-5, t0]], null, 'rgba(242,243,236,0.28)');
+    const s = (t0 - tc * Math.sin(al)) / Math.cos(al), top = [L * d[0], L * d[1]];
+    poly(p, [[0, 0], top, [top[0] + tc * nn[0], top[1] + tc * nn[1]], B], C.amber, 'rgba(255,170,60,0.35)');
+    poly(p, [[0, 0], top, [3.8, top[1]], [3.8, 0.35]], C.cyan, 'rgba(90,200,250,0.25)');
+    p.line([0, B[0]], [0, B[1]], C.red, 2.5).text('shear plane', B[0] - 0.4, B[1] + 0.25, C.red).text('chip', top[0] - 2.3, top[1] - 0.3, C.amber).text('tool', 2.2, 1.5, C.cyan);
+    arrow(p, -3.5, -0.8, -1.5, -0.8, C.grey, 2); p.text('work moves', -4.6, -0.45, C.grey);
+    const ratio = Math.sin(ph) / Math.cos(ph - al), Fc = 550 * 0.2 * 2 / Math.sin(ph) / Math.cos(ph + be - al) * Math.cos(be - al);
+    out(`Merchant: φ = 45° + α/2 − β/2 = ${nf(1).format(ph * 180 / Math.PI)}°. The chip is ${nf(2).format(1 / ratio)} times thicker than the cut. For 0.2 mm × 2 mm in steel (τ = 550 MPa): cutting force ${nf(0).format(Fc)} N, ${nf(2).format(Fc * 200 / 60 / 1000)} kW at 200 m/min. More rake or less friction: steeper shear plane, thinner chip, less force.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
