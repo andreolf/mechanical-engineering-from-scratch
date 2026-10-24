@@ -1565,6 +1565,100 @@ def('sectioncmp', {
   },
 });
 
+// beam deflection by double integration of M/EI (w up, sagging M positive)
+function deflectBeam(xs, Ms, EI, bc) {
+  const n = xs.length, th = new Array(n).fill(0), w = new Array(n).fill(0);
+  for (let i = 1; i < n; i++) th[i] = th[i - 1] + (Ms[i] + Ms[i - 1]) / 2 / EI * (xs[i] - xs[i - 1]);
+  for (let i = 1; i < n; i++) w[i] = w[i - 1] + (th[i] + th[i - 1]) / 2 * (xs[i] - xs[i - 1]);
+  if (bc === 'simple') { const L = xs[n - 1] - xs[0], wl = w[n - 1]; for (let i = 0; i < n; i++) w[i] -= (xs[i] - xs[0]) / L * wl; }
+  return w;
+}
+
+// 06.11 live deflected shape
+def('deflect', {
+  controls: [{ k: 'a', label: 'Point load position (m)', min: 0, max: 6, step: 0.1, v: 3, f: 1 }, { k: 'P', label: 'Point load P (kN)', min: 0, max: 40, step: 1, v: 20, f: 0 }, { k: 'q', label: 'Uniform load q (kN/m)', min: 0, max: 10, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const L = 6, EI = 210e9 * 1.8456e-5, xs = linspace(0, L, 601);     // N m^2, the I-section of 06.10
+    const Rb = (v.P * v.a + v.q * L * L / 2) / L, Ra = v.P + v.q * L - Rb;
+    const Ms = xs.map((x) => (Ra * x - v.q * x * x / 2 - v.P * Math.max(0, x - v.a)) * 1e3);
+    const w = deflectBeam(xs, Ms, EI, 'simple').map((z) => z * 1e3);   // mm
+    let k = 0; w.forEach((z, i) => { if (z < w[k]) k = i; });
+    const wmax = -w[k], sc = Math.max(10, wmax * 1.3);
+    p.frame({ x: [-0.3, 6.3], y: [-sc, sc * 0.5], xlabel: 'x, m', ylabel: 'deflection, mm' });
+    p.line([0, L], [0, 0], C.rule, 1, [4, 4]).line(xs, w, C.cyan, 3);
+    [0, L].forEach((x0) => poly(p, [[x0, 0], [x0 - 0.12, -sc * 0.08], [x0 + 0.12, -sc * 0.08]], C.paper, null, 1.5));
+    if (v.P > 0) arrow(p, v.a, sc * 0.45, v.a, sc * 0.08, C.amber, 2.5);
+    p.dots([xs[k]], [w[k]], C.lime, 5);
+    out(`IPE-like steel beam (EI = ${nf(2).format(EI / 1e6)} MN m²), 6 m span. Largest deflection ${nf(2).format(wmax)} mm at x = ${nf(2).format(xs[k])} m, span/${wmax > 0 ? nf(0).format(6000 / wmax) : '∞'}. Central load alone: PL³/48EI = ${nf(2).format(v.P * 1e3 * 216 / (48 * EI) * 1e3)} mm. Footbridges usually aim for span/300 or stiffer.`);
+  },
+});
+
+// 06.12 moment redistribution with and without a prop
+def('propped', {
+  controls: [{ type: 'select', k: 'c', label: 'Supports (4 m beam, 5 kN/m)', options: ['cantilever', 'propped cantilever', 'simply supported'], v: 'propped cantilever' }],
+  draw(p, v, out) {
+    const L = 4, q = 5, xs = linspace(0, L, 401), EI = 210e9 * 1.8456e-5;
+    let M, w, txt;
+    if (v.c === 'cantilever') { M = xs.map((x) => -q * (L - x) ** 2 / 2); w = deflectBeam(xs, M.map((m) => m * 1e3), EI, 'cant'); txt = `Wall moment −qL²/2 = ${nf(1).format(-q * L * L / 2)} kN m, tip drops qL⁴/8EI.`; }
+    else if (v.c === 'propped cantilever') { const R = 3 * q * L / 8; M = xs.map((x) => -q * (L - x) ** 2 / 2 + R * (L - x)); w = deflectBeam(xs, M.map((m) => m * 1e3), EI, 'cant'); txt = `Prop reaction 3qL/8 = ${nf(2).format(R)} kN. Wall moment −qL²/8 = ${nf(2).format(-q * L * L / 8)} kN m, largest sagging 9qL²/128 = ${nf(3).format(9 * q * L * L / 128)} kN m at 5L/8 from the wall.`; }
+    else { M = xs.map((x) => q * x * (L - x) / 2); w = deflectBeam(xs, M.map((m) => m * 1e3), EI, 'simple'); txt = `No wall moment; mid-span moment qL²/8 = ${nf(1).format(q * L * L / 8)} kN m.`; }
+    const wm = w.map((z) => z * 1e3), Ms = 40, Ws = Math.max(5, ...wm.map(Math.abs));
+    p.frame({ x: [-0.3, 4.3], y: [-2.4, 1.3], xlabel: 'x, m', ylabel: '', noy: true });
+    p.line([0, L], [0.6, 0.6], C.rule, 1, [4, 4]).line(xs, wm.map((z) => 0.6 + 0.55 * z / Ws), C.cyan, 3);
+    if (v.c !== 'simply supported') p.rect(-0.12, 0, 0.2, 1.0, 'rgba(154,157,147,0.5)'); else drawSupport(p, 'pin', 0, 0.6, 0.12);
+    if (v.c !== 'cantilever') drawSupport(p, 'roller', L, 0.6, 0.12);
+    p.line([0, L], [-1.55, -1.55], C.rule, 1).line([0, ...xs, L], [-1.55, ...M.map((m) => -1.55 - 1.4 * m / Ms), -1.55], C.lime, 2);
+    p.text('deflection (cyan, scaled)', 0.1, 1.15, C.cyan).text('M, sagging down (lime)', 0.1, -0.2, C.lime);
+    out(`${txt} Max deflection ${nf(2).format(Math.max(...wm.map(Math.abs)))} mm. Adding a support makes the beam indeterminate and redistributes the moment: the prop cuts the wall moment from qL²/2 to qL²/8.`);
+  },
+});
+
+// 06.13 shear stress profile over a section
+def('shearprofile', {
+  controls: [{ type: 'select', k: 's', label: 'Section', options: ['rectangle 50 × 200', 'I-section 200 × 100'], v: 'I-section 200 × 100' }, { k: 'V', label: 'Shear force V (kN)', min: 0, max: 60, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const rect = v.s.startsWith('rect'), H = 200, B = rect ? 50 : 100, tf = 8.5, tw = 5.6, ys = linspace(-H / 2, H / 2, 801);
+    const b = (y) => (rect ? 50 : Math.abs(y) > H / 2 - tf ? B : tw);
+    let I = 0; for (let i = 1; i < ys.length; i++) { const y = (ys[i] + ys[i - 1]) / 2; I += b(y) * y * y * (ys[i] - ys[i - 1]); }
+    const Q = new Array(ys.length).fill(0); for (let i = ys.length - 2; i >= 0; i--) { const y = (ys[i] + ys[i + 1]) / 2; Q[i] = Q[i + 1] + b(y) * y * (ys[i + 1] - ys[i]); }
+    const tau = ys.map((y, i) => v.V * 1e3 * Q[i] / (I * b(y)));
+    const tm = Math.max(...tau), sc = 110 / Math.max(1, tm);
+    sqAt(p, 60, 0, 120, '', 'y, mm');
+    if (rect) poly(p, [[-25, -100], [25, -100], [25, 100], [-25, 100]], C.grey, 'rgba(154,157,147,0.2)');
+    else poly(p, [[-50, -100], [50, -100], [50, -91.5], [2.8, -91.5], [2.8, 91.5], [50, 91.5], [50, 100], [-50, 100], [-50, 91.5], [-2.8, 91.5], [-2.8, -91.5], [-50, -91.5]], C.grey, 'rgba(154,157,147,0.2)');
+    p.line([70, 70], [-100, 100], C.rule, 1).line(tau.map((t) => 70 + t * sc), ys, C.lime, 2);
+    out(`τ = VQ/(Ib), drawn to the right of the section. Maximum ${nf(2).format(tm)} MPa at the neutral axis. ${rect ? `For a rectangle that's exactly 1.5 V/A = ${nf(2).format(1.5 * v.V * 1e3 / (50 * 200))} MPa: parabolic, zero at the top and bottom.` : `The web carries nearly all of V, at almost uniform stress (V/(h_w t_w) = ${nf(2).format(v.V * 1e3 / (183 * 5.6))} MPa); the stress drops sharply where the width jumps to the flange.`}`);
+  },
+});
+
+// 06.14 twisting shaft
+def('shafttwist', {
+  controls: [{ k: 'T', label: 'Torque T (kN m)', min: 0, max: 3, step: 0.05, v: 1.2, f: 2 }, { k: 'D', label: 'Outer diameter D (mm)', min: 30, max: 80, step: 1, v: 50, f: 0 }, { k: 'd', label: 'Inner diameter d (mm)', min: 0, max: 70, step: 1, v: 42, f: 0 }],
+  draw(p, v, out) {
+    const d = Math.min(v.d, v.D - 2), L = 1400, G = 80e3, J = Math.PI * (v.D ** 4 - d ** 4) / 32, T = v.T * 1e6, tau = T * v.D / 2 / J, phi = T * L / (G * J);
+    p.frame({ x: [-100, 1500], y: [-90, 90], xlabel: 'x, mm', ylabel: '', noy: true });
+    p.rect(0, L, -v.D / 2, v.D / 2, 'rgba(154,157,147,0.22)'); p.rect(-60, 0, -80, 80, 'rgba(154,157,147,0.45)');
+    // grid lines on the surface: a line at angle a round the shaft rotates by phi x / L
+    for (let k = 0; k < 12; k++) { const a0 = k * Math.PI / 6, xs = linspace(0, L, 60), ys = xs.map((x) => v.D / 2 * Math.sin(a0 + phi * x / L * 8)), vis = xs.map((x) => Math.cos(a0 + phi * x / L * 8) > 0); p.line(xs.filter((_, i) => vis[i]), ys.filter((_, i) => vis[i]), C.cyan, 1.2); }
+    p.line([0, L], [d / 2, d / 2], C.rule, 1, [3, 3]).line([0, L], [-d / 2, -d / 2], C.rule, 1, [3, 3]);
+    out(`J = π(D⁴ − d⁴)/32 = ${nf(0).format(J)} mm⁴. τmax = TR/J = ${nf(1).format(tau)} MPa at the surface, zero at the centre. Twist over 1.4 m: φ = TL/GJ = ${nf(2).format(phi * 180 / Math.PI)}° (grid lines drawn 8× twisted). The dashed bore removes lightly stressed material.`);
+  },
+});
+
+// 06.15 closed tube against a slit tube
+def('slittube', {
+  controls: [{ k: 'D', label: 'Tube diameter (mm)', min: 20, max: 60, step: 1, v: 35, f: 0 }, { k: 't', label: 'Wall thickness (mm)', min: 0.6, max: 4, step: 0.1, v: 1.2, f: 1 }, { type: 'check', k: 'slit', label: 'Slit the tube along its length', v: 0 }],
+  draw(p, v, out) {
+    const rm = (v.D - v.t) / 2, Am = Math.PI * rm * rm, s = 2 * Math.PI * rm, Jc = 4 * Am * Am * v.t / s, Jo = s * v.t ** 3 / 3, T = 60e3, G = 26e3;
+    const J = v.slit ? Jo : Jc, tau = v.slit ? T * v.t / Jo : T / (2 * Am * v.t), phi = T * 1000 / (G * J) * 180 / Math.PI;
+    sqAt(p, 0, 0, 40, 'mm', 'mm');
+    const a0 = v.slit ? 0.06 : 0, ang = linspace(a0, 2 * Math.PI - a0, 121), ro = v.D / 2, ri = v.D / 2 - v.t;
+    poly(p, [...ang.map((q) => [ro * Math.cos(q), ro * Math.sin(q)]), ...ang.slice().reverse().map((q) => [ri * Math.cos(q), ri * Math.sin(q)])], C.lime, 'rgba(184,255,92,0.35)');
+    // shear flow arrows: closed tube circulates; slit tube runs up one face and down the other
+    out(`${v.slit ? 'Slit' : 'Closed'} tube: J = ${nf(1).format(J)} mm⁴ (closed ${nf(0).format(Jc)}, slit ${nf(1).format(Jo)}, ratio ${nf(0).format(Jc / Jo)} = 3(r/t)²). Under 60 N m: τ = ${nf(1).format(tau)} MPa, twist ${phi < 1000 ? nf(2).format(phi) : '> 1000'}° per metre in aluminium. ${v.slit ? 'Open sections are hopeless in torsion.' : 'Closed: the shear flow circulates round the wall, q = T/(2Aₘ).'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
