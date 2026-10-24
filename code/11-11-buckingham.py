@@ -1,0 +1,57 @@
+"""Buckingham Pi from scratch: dimensionless groups as the null space of the dimension matrix, with exact fractions."""
+from fractions import Fraction as Fr
+
+# exponents of mass, length, time
+DIMS = {"F": (1, 1, -2), "rho": (1, -3, 0), "V": (0, 1, -1), "D": (0, 1, 0), "mu": (1, -1, -1),
+        "g": (0, 1, -2), "sigma": (1, 0, -2), "c": (0, 1, -1), "Q": (0, 3, -1), "dp": (1, -1, -2), "L": (0, 1, 0)}
+
+
+def null_space(M):
+    """Rational null space of a small integer matrix (rows: M, L, T; columns: variables) by Gauss-Jordan elimination."""
+    A = [[Fr(x) for x in row] for row in M]; rows, cols = len(A), len(A[0])
+    pivots, r = [], 0
+    for c in range(cols):
+        p = next((i for i in range(r, rows) if A[i][c] != 0), None)
+        if p is None: continue
+        A[r], A[p] = A[p], A[r]
+        A[r] = [x / A[r][c] for x in A[r]]
+        for i in range(rows):
+            if i != r and A[i][c] != 0:
+                A[i] = [a - A[i][c] * b for a, b in zip(A[i], A[r])]
+        pivots.append(c); r += 1
+    free = [c for c in range(cols) if c not in pivots]
+    basis = []
+    for f in free:
+        v = [Fr(0)] * cols; v[f] = Fr(1)
+        for i, pc in enumerate(pivots):
+            v[pc] = -A[i][f]
+        basis.append(v)
+    return basis
+
+
+def pi_groups(variables, repeating):
+    """One group per non-repeating variable: the repeating variables come first so they become the pivot columns."""
+    order = list(repeating) + [v for v in variables if v not in repeating]
+    M = [[DIMS[v][k] for v in order] for k in range(3)]
+    groups = []
+    for vec in null_space(M):
+        g = {v: e for v, e in zip(order, vec) if e != 0}
+        groups.append(dict(sorted(g.items(), key=lambda kv: kv[0] in repeating)))
+    return groups
+
+
+def show(g):
+    return " ".join(f"{v}^{e}" if e != 1 else v for v, e in g.items())
+
+
+if __name__ == "__main__":
+    groups = pi_groups(["F", "mu", "rho", "V", "D"], ["rho", "V", "D"])
+    for g in groups: print("drag:", show(g))
+    # textbook: F / (rho V^2 D^2) and mu / (rho V D) = 1/Re
+    assert groups[0] == {"F": 1, "rho": -1, "V": -2, "D": -2}
+    assert groups[1] == {"mu": 1, "rho": -1, "V": -1, "D": -1}
+    for g in pi_groups(["dp", "mu", "g", "sigma", "c", "rho", "V", "L"], ["rho", "V", "L"]):
+        print("general:", show(g))
+        dims = [sum(DIMS[v][k] * e for v, e in g.items()) for k in range(3)]
+        assert dims == [0, 0, 0]
+    print("n = 8 variables, k = 3 dimensions -> 5 groups: Euler, 1/Re, 1/Fr^2, 1/We, 1/Ma")
