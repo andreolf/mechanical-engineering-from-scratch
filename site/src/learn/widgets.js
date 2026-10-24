@@ -1970,6 +1970,92 @@ def('flywheelprof', {
   },
 });
 
+// 07.11 rotor balancing, end view of the m r vectors
+def('rotorbal', {
+  controls: [{ k: 'm2', label: 'Middle unbalance mass (g)', min: 0, max: 40, step: 1, v: 15, f: 0 }, { k: 'a2', label: 'Its angle (°)', min: 0, max: 360, step: 5, v: 160, f: 0 }, { type: 'select', k: 'fix', label: 'Correction', options: ['none', 'static (one plane)', 'dynamic (two planes)'], v: 'none' }],
+  draw(p, v, out) {
+    const d2r = Math.PI / 180, rot = [[0.020, 0.10, 30, 0.10], [v.m2 / 1000, 0.12, v.a2, 0.30], [0.010, 0.08, 270, 0.50]];
+    const sum = (ms) => { let F = [0, 0], M = [0, 0]; ms.forEach(([m, r, a, z]) => { const u = [m * r * Math.cos(a * d2r), m * r * Math.sin(a * d2r)]; F = [F[0] + u[0], F[1] + u[1]]; M = [M[0] + u[0] * z, M[1] + u[1] * z]; }); return [F, M]; };
+    let [F, M] = sum(rot), corr = [];
+    if (v.fix.startsWith('static')) corr = [[Math.hypot(...F) / 0.1, 0.1, Math.atan2(-F[1], -F[0]) / d2r, 0.3]];
+    if (v.fix.startsWith('dynamic')) { const uR = [(-M[0] + F[0] * 0) / 0.6, (-M[1] + F[1] * 0) / 0.6], uL = [-F[0] - uR[0], -F[1] - uR[1]]; corr = [[Math.hypot(...uL) / 0.1, 0.1, Math.atan2(uL[1], uL[0]) / d2r, 0], [Math.hypot(...uR) / 0.1, 0.1, Math.atan2(uR[1], uR[0]) / d2r, 0.6]]; }
+    const [F2, M2] = sum(rot.concat(corr)), s = 1000;
+    fitAt(p, 0, 0, 3.2, 3.2, 'm r, g m (end view)', '');
+    const ring = linspace(0, 2 * Math.PI, 97); p.line(ring.map((q) => 2.5 * Math.cos(q)), ring.map((q) => 2.5 * Math.sin(q)), C.rule, 1.5);
+    rot.forEach(([m, r, a]) => { const u = m * r * s; if (u > 1e-6) arrow(p, 0, 0, u * Math.cos(a * d2r), u * Math.sin(a * d2r), C.cyan, 2); });
+    corr.forEach(([m, r, a]) => arrow(p, 0, 0, m * r * s * Math.cos(a * d2r), m * r * s * Math.sin(a * d2r), C.amber, 2));
+    if (Math.hypot(...F2) > 1e-7) arrow(p, 0, 0, F2[0] * s, F2[1] * s, C.red, 3);
+    const w = 100 * Math.PI;
+    out(`Residual force ${nf(3).format(Math.hypot(...F2) * 1e3)} g m (red; ${nf(1).format(Math.hypot(...F2) * w * w)} N at 3000 rpm) and moment ${nf(3).format(Math.hypot(...M2) * 1e3)} g m². ${v.fix === 'none' ? 'Cyan: the three unbalances.' : v.fix.startsWith('static') ? 'One mass (amber) kills the force, but a couple remains: the rotor still rocks in its bearings.' : 'Two masses in the end planes (amber) cancel force and moment together.'}`);
+  },
+});
+
+// 07.12 ball on a carousel, inertial vs rotating view
+def('carousel', {
+  controls: [{ k: 't', label: 'Time (s)', min: 0, max: 1.5, step: 0.01, v: 1.2, f: 2 }, { k: 'u', label: 'Rolling speed (m/s)', min: 0.5, max: 4, step: 0.1, v: 2, f: 1 }, { type: 'select', k: 'view', label: 'View', options: ['rotating (riding the carousel)', 'inertial (from above, standing still)'], v: 'rotating (riding the carousel)' }, { type: 'check', k: 'cw', label: 'Turn clockwise instead', v: 0 }],
+  draw(p, v, out) {
+    const Om = (v.cw ? -1 : 1) * 2 * Math.PI / 6, R = 3, ts = linspace(0, v.t, 150);
+    const rotView = v.view.startsWith('rotating');
+    const X = ts.map((t) => Math.min(v.u * t, R)), pts = ts.map((t, i) => rotView ? [X[i] * Math.cos(Om * t), -X[i] * Math.sin(Om * t)] : [X[i], 0]);
+    fitAt(p, 0, 0, 3.4, 3.4, 'x, m', 'y, m');
+    const ring = linspace(0, 2 * Math.PI, 121); p.line(ring.map((q) => R * Math.cos(q)), ring.map((q) => R * Math.sin(q)), C.grey, 2);
+    const ang = rotView ? 0 : Om * v.t; p.line([0, R * Math.cos(ang)], [0, R * Math.sin(ang)], C.rule, 2, [5, 4]);
+    p.line(pts.map((q) => q[0]), pts.map((q) => q[1]), C.lime, 2.5).dots([pts[pts.length - 1][0]], [pts[pts.length - 1][1]], C.cyan, 6);
+    const e = pts[pts.length - 1];
+    out(rotView ? `Riding along, the ball curves to the ${v.cw ? 'left' : 'right'} (it ends at (${nf(2).format(e[0])}, ${nf(2).format(e[1])}) m), as if pushed by the Coriolis force 2Ωv = ${nf(2).format(2 * Math.abs(Om) * v.u)} m/s² plus the centrifugal force. The dashed line is where it was aimed.` : `From outside, no force acts and the ball rolls dead straight. The carousel (dashed radius) simply turns underneath it. Same motion, different frame.`);
+  },
+});
+
+// 07.13 gimbal lock: Euler-angle rates against quaternion rates
+def('gimbal', {
+  controls: [{ k: 'th', label: 'Pitch angle θ (°)', min: 0, max: 89.5, step: 0.5, v: 60, f: 1 }],
+  draw(p, v, out) {
+    const phi = 0.3, rate = (th) => { const t = th * Math.PI / 180; const c = Math.cos(phi), s = Math.sin(phi); return Math.hypot(c * Math.tan(t), -s, c / Math.cos(t)); };
+    const ths = linspace(0, 89.5, 180);
+    p.frame({ x: [0, 90], y: [0.1, 1000], ylog: true, xlabel: 'pitch θ, degrees', ylabel: 'rate needed, rad/s' });
+    p.line(ths, ths.map(rate), C.red, 2.5).line([0, 90], [0.5, 0.5], C.lime, 2.5);
+    p.dots([v.th], [rate(v.th)], C.red, 6).dots([v.th], [0.5], C.lime, 6);
+    out(`A body yawing at 1 rad/s about its own axis. The roll-pitch-yaw angles must change at ${nf(2).format(rate(v.th))} rad/s (red), heading to infinity at θ = 90° where two gimbal axes line up. The quaternion (lime) changes at a steady |q̇| = |ω|/2 = 0.50 for any orientation.`);
+  },
+});
+
+// 07.14 inertia tensor and principal axes of a tilted plate
+def('principal', {
+  controls: [{ k: 'th', label: 'Tilt of the plate (°)', min: 0, max: 180, step: 1, v: 30, f: 0 }, { k: 'a', label: 'Length a (m)', min: 0.1, max: 0.6, step: 0.01, v: 0.4, f: 2 }, { k: 'b', label: 'Width b (m)', min: 0.05, max: 0.6, step: 0.01, v: 0.2, f: 2 }],
+  draw(p, v, out) {
+    const M = 8, t = v.th * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    const Ia = M * v.b * v.b / 12, Ib = M * v.a * v.a / 12;
+    // in-plane tensor of the rotated plate: R diag(Ia, Ib) R^T, with Ixy as the product of inertia (sign convention: I = [[Ixx, -Pxy], ...])
+    const Ixx = Ia * c * c + Ib * s * s, Iyy = Ia * s * s + Ib * c * c, Ixy = (Ia - Ib) * s * c;
+    const Cn = (Ixx + Iyy) / 2, Rr = Math.hypot((Ixx - Iyy) / 2, Ixy), l1 = Cn - Rr, l2 = Cn + Rr, ang = 0.5 * Math.atan2(2 * Ixy, Ixx - Iyy);
+    fitAt(p, 0, 0, 0.4, 0.4, 'x, m', 'y, m');
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, w]) => [u * v.a / 2 * c - w * v.b / 2 * s, u * v.a / 2 * s + w * v.b / 2 * c]);
+    poly(p, corners, C.paper, 'rgba(238,255,65,0.25)', 1.5);
+    const L = 0.38; p.line([-L * Math.cos(ang), L * Math.cos(ang)], [-L * Math.sin(ang), L * Math.sin(ang)], C.cyan, 2).line([L * Math.sin(ang), -L * Math.sin(ang)], [-L * Math.cos(ang), L * Math.cos(ang)], C.amber, 2);
+    out(`In x-y axes: Ixx = ${nf(5).format(Ixx)}, Iyy = ${nf(5).format(Iyy)}, product term ${nf(5).format(Ixy)} kg m². Eigenvalues ${nf(5).format(l1)} (cyan axis) and ${nf(5).format(l2)} (amber axis): always m b²/12 = ${nf(5).format(Ia)} and m a²/12 = ${nf(5).format(Ib)}, whatever the tilt. The eigenvectors follow the plate's edges.`);
+  },
+});
+
+// 07.15 the tennis racket theorem
+def('racket', {
+  controls: [{ type: 'select', k: 'ax', label: 'Spin about', options: ['smallest axis', 'intermediate axis', 'largest axis'], v: 'intermediate axis' }, { k: 'e', label: 'Initial wobble (log10 rad/s)', min: -5, max: -1, step: 0.5, v: -3, f: 1 }],
+  draw(p, v, out) {
+    const I = [1.0, 2.5, 3.3], k = ['smallest axis', 'intermediate axis', 'largest axis'].indexOf(v.ax), eps = 10 ** v.e;
+    let w = [eps, eps, eps]; w[k] = 10;
+    const f = (w) => [(I[1] - I[2]) * w[1] * w[2] / I[0], (I[2] - I[0]) * w[2] * w[0] / I[1], (I[0] - I[1]) * w[0] * w[1] / I[2]];
+    const dt = 0.002, n = 5000, ts = [0], W = [[w[0]], [w[1]], [w[2]]];
+    for (let i = 0; i < n; i++) {
+      const k1 = f(w), k2 = f(w.map((q, j) => q + dt / 2 * k1[j])), k3 = f(w.map((q, j) => q + dt / 2 * k2[j])), k4 = f(w.map((q, j) => q + dt * k3[j]));
+      w = w.map((q, j) => q + dt / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]));
+      if (i % 5 === 4) { ts.push((i + 1) * dt); W.forEach((a, j) => a.push(w[j])); }
+    }
+    p.frame({ x: [0, 10], y: [-12, 12], xlabel: 'time, s', ylabel: 'ω about each body axis, rad/s' });
+    [C.cyan, C.lime, C.amber].forEach((col, j) => p.line(ts, W[j], col, 2));
+    const flips = W[k].slice(1).filter((x, i) => Math.sign(x) !== Math.sign(W[k][i])).length;
+    out(k === 1 ? `Spinning about the intermediate axis (lime), a wobble of ${eps.toExponential(0)} rad/s grows like e^(6.03 t) until the body flips over, ${flips} times in 10 s. Smaller wobbles only delay the flip.` : `About the ${v.ax}, the wobble stays tiny: rotation about the smallest and largest axes is stable. Cyan, lime, amber: smallest, intermediate, largest axis.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
