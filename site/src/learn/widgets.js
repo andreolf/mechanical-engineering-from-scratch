@@ -2518,9 +2518,10 @@ def('carburise', {
 
 // 09.09 viscoelastic models
 def('creeprelax', {
-  controls: [{ type: 'select', k: 'm', label: 'Test', options: ['Maxwell: hold strain (relaxation)', 'Kelvin-Voigt: hold stress (creep)', 'Standard linear solid: creep', 'Maxwell: hold stress (creep)'], v: 0 }, { k: 'tau', label: 'Time constant τ = η/E (s)', min: 100, max: 3000, step: 50, v: 1000, f: 0 }],
+  controls: [{ type: 'select', k: 'm', label: 'Test', options: ['Maxwell: hold strain (relaxation)', 'Kelvin-Voigt: hold stress (creep)', 'Standard linear solid: creep', 'Maxwell: hold stress (creep)'], v: 'Maxwell: hold strain (relaxation)' }, { k: 'tau', label: 'Time constant τ = η/E (s)', min: 100, max: 3000, step: 50, v: 1000, f: 0 }],
   draw(p, v, out) {
-    const ts = linspace(0, 5000, 300), tau = v.tau, m = +v.m;
+    const sel = ['Maxwell: hold strain (relaxation)', 'Kelvin-Voigt: hold stress (creep)', 'Standard linear solid: creep', 'Maxwell: hold stress (creep)'].indexOf(v.m);
+    const ts = linspace(0, 5000, 300), tau = v.tau, m = sel;
     let ys, yl, msg;
     if (m === 0) { ys = ts.map((t) => 20 * Math.exp(-t / tau)); yl = 'stress, MPa'; msg = `Held at 1 % strain, the stress decays as e^(−t/τ): ${nf(1).format(20 * Math.exp(-1))} MPa after τ, ${nf(2).format(20 * Math.exp(-3))} after 3τ. This is why plastic snap fits and bolted gaskets lose their grip.`; }
     else if (m === 1) { ys = ts.map((t) => 0.5 * (1 - Math.exp(-t / tau))); yl = 'strain, %'; msg = 'Under 10 MPa the strain creeps up to σ/E = 0.5 % but there is no instant stretch: the dashpot holds the spring back.'; }
@@ -2529,6 +2530,58 @@ def('creeprelax', {
     p.frame({ x: [0, 5000], y: [0, Math.max(...ys) * 1.15], xlabel: 'time, s', ylabel: yl });
     p.line(ts, ys, C.lime, 2.5).line([tau, tau], [0, Math.max(...ys) * 1.15], C.grey, 1, [4, 4]);
     out(msg + ` (τ = ${nf(0).format(tau)} s marked.)`);
+  },
+});
+
+// 09.10 laminate stiffness in polar form
+def('laminate', {
+  controls: [{ type: 'select', k: 'L', label: 'Layup', options: ['Unidirectional [0]', 'Cross-ply [0/90]s', 'Angle-ply [±45]s', 'Quasi-isotropic [0/±45/90]s'], v: 'Unidirectional [0]' }, { k: 'vf', label: 'Fibre volume fraction', min: 0.3, max: 0.7, step: 0.01, v: 0.6, f: 2 }],
+  draw(p, v, out) {
+    const sel = ['Unidirectional [0]', 'Cross-ply [0/90]s', 'Angle-ply [±45]s', 'Quasi-isotropic [0/±45/90]s'].indexOf(v.L);
+    const vf = v.vf, E1 = vf * 230 + (1 - vf) * 3.5, E2 = 1 / (vf / 230 + (1 - vf) / 3.5), G = 1 / (vf / 15 + (1 - vf) / 1.3), nu = vf * 0.2 + (1 - vf) * 0.35, nu21 = nu * E2 / E1, d = 1 - nu * nu21;
+    const Q11 = E1 / d, Q22 = E2 / d, Q12 = nu * E2 / d, Q66 = G;
+    const qb = (t) => { const c = Math.cos(t), s = Math.sin(t), c2 = c * c, s2 = s * s; return [Q11 * c2 * c2 + 2 * (Q12 + 2 * Q66) * s2 * c2 + Q22 * s2 * s2, (Q11 + Q22 - 4 * Q66) * s2 * c2 + Q12 * (s2 * s2 + c2 * c2), Q11 * s2 * s2 + 2 * (Q12 + 2 * Q66) * s2 * c2 + Q22 * c2 * c2, (Q11 - Q12 - 2 * Q66) * s * c2 * c + (Q12 - Q22 + 2 * Q66) * s2 * s * c, (Q11 - Q12 - 2 * Q66) * s2 * s * c + (Q12 - Q22 + 2 * Q66) * s * c2 * c, (Q11 + Q22 - 2 * Q12 - 2 * Q66) * s2 * c2 + Q66 * (s2 * s2 + c2 * c2)]; };
+    const lay = [[0], [0, 90], [45, -45], [0, 45, -45, 90]][sel];
+    const A = [0, 0, 0, 0, 0, 0]; lay.forEach((a) => qb(a * Math.PI / 180).forEach((q, i) => (A[i] += q / lay.length)));
+    // E along direction phi: rotate the laminate by -phi and take 1/inv(A)[0][0]
+    const Ephi = (phi) => { const rot = [0, 0, 0, 0, 0, 0]; lay.forEach((a) => qb((a - phi) * Math.PI / 180).forEach((q, i) => (rot[i] += q / lay.length))); const [a11, a12, a22, a16, a26, a66] = rot; const det = a11 * (a22 * a66 - a26 * a26) - a12 * (a12 * a66 - a26 * a16) + a16 * (a12 * a26 - a22 * a16); return det / (a22 * a66 - a26 * a26); };
+    const ph = linspace(0, 360, 361), Es = ph.map(Ephi), R = 150;
+    p.frame({ x: [-R, R], y: [-R * 0.8, R * 0.8], xlabel: 'E along x, GPa', ylabel: 'E along y, GPa' });
+    p.line(ph.map((a, i) => Es[i] * Math.cos(a * Math.PI / 180)), ph.map((a, i) => Es[i] * Math.sin(a * Math.PI / 180)), C.lime, 2.5);
+    p.line(ph.map((a) => 70 * Math.cos(a * Math.PI / 180)), ph.map((a) => 70 * Math.sin(a * Math.PI / 180)), C.grey, 1, [4, 4]);
+    out(`Lime: modulus in each direction. E at 0° = ${nf(1).format(Es[0])} GPa, at 45° = ${nf(1).format(Es[45])} GPa, at 90° = ${nf(1).format(Es[90])} GPa. Grey: aluminium, 70 GPa in every direction (and 1.7 times denser). ${sel === 3 ? 'Quasi-isotropic: a circle, the same stiffness every way.' : sel === 0 ? 'Very stiff along the fibres, weak a few degrees off.' : ''}`);
+  },
+});
+
+// 09.11 bamboo culm against a solid rod of the same mass
+def('culm', {
+  controls: [{ k: 'D', label: 'Outer diameter (mm)', min: 40, max: 160, step: 1, v: 100, f: 0 }, { k: 'g', label: 'Fibre grading (outer minus inner fraction)', min: 0, max: 0.6, step: 0.01, v: 0.45, f: 2 }],
+  draw(p, v, out) {
+    const A = 2827.4, D = v.D, ri = Math.sqrt(Math.max(0, D * D / 4 - A / Math.PI)), ro = D / 2, t = ro - ri, ds = Math.sqrt(4 * A / Math.PI);
+    const vm = 0.383, n = 400; let EI = 0, F = 0, Ar = 0;
+    // choose the inner value so the mean fibre fraction stays at vm
+    const rr = linspace(ri, ro, n + 1); let w1 = 0, w2 = 0; for (let i = 0; i < n; i++) { const r = (rr[i] + rr[i + 1]) / 2, dr = rr[i + 1] - rr[i]; w1 += 2 * Math.PI * r * dr; w2 += 2 * Math.PI * r * dr * (r - ri) / t; }
+    const vin = vm - v.g * w2 / w1;
+    for (let i = 0; i < n; i++) { const r = (rr[i] + rr[i + 1]) / 2, dr = rr[i + 1] - rr[i], vf = vin + v.g * (r - ri) / t, E = vf * 40 + (1 - vf) * 2; EI += E * Math.PI * r ** 3 * dr; F += vf * 2 * Math.PI * r * dr; Ar += 2 * Math.PI * r * dr; }
+    const EIs = (vm * 40 + (1 - vm) * 2) * Math.PI * ds ** 4 / 64;
+    p.frame({ x: [-95, 95], y: [-85, 85], xlabel: 'mm', ylabel: 'mm' });
+    for (let k = 0; k < 12; k++) { const r = ri + (k + 0.5) * t / 12, vf = vin + v.g * (k + 0.5) / 12, th = linspace(0, 2 * Math.PI, 90); p.line(th.map((a) => r * Math.cos(a) - (D < 120 ? 25 : 0)), th.map((a) => r * Math.sin(a)), vf > 0.45 ? C.lime : vf > 0.3 ? C.amber : C.grey, Math.max(1, t / 12 * 1.4)); }
+    const th = linspace(0, 2 * Math.PI, 90); p.line(th.map((a) => (ds / 2) * Math.cos(a) + 56), th.map((a) => (ds / 2) * Math.sin(a) - 50), C.cyan, 2);
+    out(`Same material and mass (2827 mm²). Culm ${nf(0).format(D)} mm, wall ${nf(1).format(t)} mm: EI = ${nf(1).format(EI / 1e6)} kN m², versus ${nf(1).format(EIs / 1e6)} for the solid ${nf(0).format(ds)} mm rod (cyan): ${nf(1).format(EI / EIs)} times stiffer. Lime rings are fibre-rich. Too thin a wall would buckle locally, which is why bamboo has nodes.`);
+  },
+});
+
+// 09.12 stress intensity against crack length
+def('crackk', {
+  controls: [{ type: 'select', k: 'm', label: 'Material', options: ['Glass (K_IC 0.75)', '7075-T6 aluminium (25)', 'Structural steel (50)', 'Pressure-vessel steel (150)'], v: 'Structural steel (50)' }, { k: 's', label: 'Stress (MPa)', min: 10, max: 500, step: 5, v: 300, f: 0 }, { k: 'a', label: 'Edge crack depth (mm)', min: 0.1, max: 40, step: 0.1, v: 5, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Glass (K_IC 0.75)', '7075-T6 aluminium (25)', 'Structural steel (50)', 'Pressure-vessel steel (150)'].indexOf(v.m);
+    const KIC = [0.75, 25, 50, 150][sel], Y = 1.12, as = linspace(0.01, 40, 300), Kf = (a) => Y * v.s * Math.sqrt(Math.PI * a * 1e-3);
+    const ymax = Math.max(KIC * 1.6, Kf(40) * 1.05);
+    p.frame({ x: [0, 40], y: [0, ymax], xlabel: 'crack depth a, mm', ylabel: 'K, MPa √m' });
+    p.line(as, as.map(Kf), C.lime, 2.5).line([0, 40], [KIC, KIC], C.red, 1.5, [5, 4]).dots([v.a], [Kf(v.a)], Kf(v.a) >= KIC ? C.red : C.cyan, 6);
+    const ac = (KIC / (Y * v.s)) ** 2 / Math.PI * 1e3;
+    out(`K = 1.12 σ √(πa) = ${nf(1).format(Kf(v.a))} MPa √m against K_IC = ${KIC}. ${Kf(v.a) >= KIC ? 'Fast fracture.' : 'Safe for now.'} Critical depth at this stress: ${ac < 0.1 ? nf(3).format(ac) : nf(1).format(ac)} mm. Halving the stress quadruples the tolerable crack.`);
   },
 });
 
