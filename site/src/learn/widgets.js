@@ -2771,6 +2771,54 @@ def('chvorinov', {
   },
 });
 
+// 09.25 injection moulding: centre temperature of the wall against time
+def('mouldcool', {
+  controls: [{ k: 's', label: 'Wall thickness (mm)', min: 0.5, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'Tw', label: 'Mould temperature (°C)', min: 20, max: 80, step: 1, v: 60, f: 0 }],
+  draw(p, v, out) {
+    const a = 8.095e-8, Tm = 240, Te = 90, s = v.s / 1000, Tw = v.Tw;
+    const Tc = (t, ss) => { let sum = 0; for (let k = 0; k < 40; k++) { const m = 2 * k + 1; sum += (4 / (m * Math.PI)) * Math.sin(m * Math.PI / 2) * Math.exp(-((m * Math.PI / ss) ** 2) * a * t); } return Tw + (Tm - Tw) * sum; };
+    const ts = linspace(0.01, 60, 300);
+    p.frame({ x: [0, 60], y: [0, 260], xlabel: 'time, s', ylabel: 'centre temperature, °C' });
+    p.line(ts, ts.map((t) => Tc(t, 0.002)), C.grey, 1, [4, 4]).line(ts, ts.map((t) => Tc(t, s)), C.lime, 2.5).line([0, 60], [Te, Te], C.amber, 1, [3, 3]).text('eject at 90 °C', 40, 100, C.amber);
+    const tc = s * s / (Math.PI ** 2 * a) * Math.log(4 / Math.PI * (Tm - Tw) / (Te - Tw));
+    if (tc < 60) p.dots([tc], [Te], C.red, 6);
+    out(`Cooling time t = s²/(π²α) ln[(4/π)(T_melt − T_mould)/(T_eject − T_mould)] = ${nf(1).format(tc)} s. Cycle about ${nf(1).format(tc + 5)} s, ${nf(0).format(3600 / (tc + 5))} shots per hour. Twice the wall, four times the wait: keep walls thin and even. Grey: 2 mm.`);
+  },
+});
+
+// 09.26 Rosenthal weld: top-view isotherms
+def('weldpool', {
+  controls: [{ k: 'I', label: 'Current (A)', min: 80, max: 300, step: 5, v: 200, f: 0 }, { k: 'v', label: 'Travel speed (mm/s)', min: 1, max: 15, step: 0.5, v: 5, f: 1 }, { k: 'T0', label: 'Preheat (°C)', min: 20, max: 250, step: 5, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const k = 40, al = 40 / (7850 * 600), q = 0.8 * 25 * v.I, vv = v.v / 1000;
+    const T = (x, y) => { const xi = x / 1000, yy = y / 1000, r = Math.max(1e-5, Math.hypot(xi, yy)); return v.T0 + q / (2 * Math.PI * k * r) * Math.exp(-vv * (xi + r) / (2 * al)); };
+    p.frame({ x: [-30, 8], y: [-12, 12], xlabel: 'along the weld, mm (arc at 0, moving right)', ylabel: 'mm' });
+    bands(p, (x, y) => Math.min(T(x, y), 1600), 0, 1600, 16, 140);
+    // pool boundary: scan each column for the melt width
+    const xs = linspace(-30, 8, 300), w = xs.map((x) => { let lo = 0, hi = 12; if (T(x, 0.001) < 1510) return NaN; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (T(x, m) > 1510) lo = m; else hi = m; } return lo; });
+    const ok = xs.map((x, i) => [x, w[i]]).filter((q) => !isNaN(q[1]));
+    if (ok.length) p.line(ok.map((q) => q[0]), ok.map((q) => q[1]), C.red, 2).line(ok.map((q) => q[0]), ok.map((q) => -q[1]), C.red, 2);
+    const t85 = q / vv / (2 * Math.PI * k) * (1 / (500 - v.T0) - 1 / (800 - v.T0)), L = ok.length ? ok[ok.length - 1][0] - ok[0][0] : 0;
+    out(`Heat input ${nf(2).format(q / vv / 1e6)} kJ/mm. Melt pool (red) about ${nf(1).format(L)} mm long, a teardrop trailing the arc. Cooling 800 → 500 °C takes ${nf(2).format(t85)} s: ${t85 < 3 ? 'fast, so hard, brittle martensite risks cracking in the heat-affected zone; preheat or slow down.' : 'slow enough for most structural steels.'}`);
+  },
+});
+
+// 09.27 slicing a sphere into layers
+def('slicelayers', {
+  controls: [{ k: 'h', label: 'Layer height (mm)', min: 0.05, max: 3, step: 0.05, v: 2, f: 2 }, { type: 'select', k: 'sh', label: 'Shape', options: ['Sphere, 40 mm', 'Cone, 40 mm', 'Vase (vertical walls)'], v: 'Sphere, 40 mm' }],
+  draw(p, v, out) {
+    const sel = ['Sphere, 40 mm', 'Cone, 40 mm', 'Vase (vertical walls)'].indexOf(v.sh), R = 20, H = 40;
+    const rad = (z) => sel === 0 ? Math.sqrt(Math.max(0, R * R - (z - R) ** 2)) : sel === 1 ? R * (1 - z / H) : 12 + 4 * Math.sin(z / 6);
+    p.frame({ x: [-25, 25], y: [0, 42], xlabel: 'mm', ylabel: 'height, mm' });
+    const zs = linspace(0, H, 200); p.line(zs.map(rad), zs, C.grey, 1.5).line(zs.map((z) => -rad(z)), zs, C.grey, 1.5);
+    let V = 0, n = 0, per = 0;
+    for (let z = 0; z < H - 1e-9; z += v.h) { const zm = Math.min(z + v.h / 2, H), r = rad(zm), h = Math.min(v.h, H - z); V += Math.PI * r * r * h; per += 2 * Math.PI * r; n++; p.rect(-r, r, z, z + h, n % 2 ? 'rgba(238,255,65,0.45)' : 'rgba(238,255,65,0.3)'); }
+    const Vex = sel === 0 ? 4 / 3 * Math.PI * R ** 3 : sel === 1 ? Math.PI * R * R * H / 3 : (() => { let s = 0; for (let i = 0; i < 4000; i++) { const z = (i + 0.5) * H / 4000; s += Math.PI * rad(z) ** 2 * H / 4000; } return s; })();
+    const tmin = (2 * per + 0.2 * V / 0.4) / 40 / 60;
+    out(`${n} layers. Sliced volume ${nf(0).format(V)} mm³ vs ${nf(0).format(Vex)} exact (${nf(2).format((V / Vex - 1) * 100)} %). About ${nf(0).format(tmin)} min at 40 mm/s (two perimeters, 20 % infill). Steps are worst where the surface is nearly flat (top of the sphere) and vanish on vertical walls. Thinner layers: smoother but slower.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
