@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Mechanical Engineering from Scratch · free, open-source curriculum</title>
+  <title>Mechanical Engineering from Scratch: a free, open-source course</title>
   <meta name="description" content="A free, open-source mechanical engineering curriculum. Derive the math by hand, code it from scratch, prove it with a test, then use the pro tool. Interactive 3D labs." />
   <meta name="theme-color" content="#000000" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
   <link rel="canonical" href="https://andreolf.github.io/mechanical-engineering-from-scratch/" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://andreolf.github.io/mechanical-engineering-from-scratch/" />
@@ -23,158 +24,154 @@
   <meta name="twitter:image" content="https://andreolf.github.io/mechanical-engineering-from-scratch/og-image.png" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='black'/%3E%3Cpath d='M4 22h24M8 22l4-10 4 10 4-10 4 10' stroke='%23EEFF41' stroke-width='2.5' fill='none'/%3E%3C/svg%3E" />
 </head>
-<body>
-  <a class="skip" href="#curriculum">Skip to curriculum</a>
-  <header class="top">
-    <a class="brand" href="#hero"><span class="mark">ME</span> from scratch</a>
-    <nav><a href="#labs">Labs</a><a href="#how">How it works</a><a href="#curriculum">Phase map</a><a href="#colophon">Colophon</a></nav>
-  </header>
-
-  <main>
+<body class="home">
+  <a class="skip" href="#main">Skip to content</a>
+  <header id="site-nav"></header>
+  <main id="main">
     <section id="hero" class="hero">
-      <div class="hero-canvas" aria-describedby="hero-readout"></div>
-      <div class="hero-copy">
-        <p class="eyebrow">FIG_000 · curriculum v0.1 · open source · MIT</p>
-        <h1>Mechanical Engineering<br /><span>from Scratch</span></h1>
-        <p class="tagline">Every machine derived from raw math, coded from nothing, and proven with a test before you touch a commercial tool. <b data-count="phases">20</b> phases · <b data-count="lessons">356</b> lessons, from Analysis 1 to your own FEM and CFD solvers.</p>
-        <div class="cta">
-          <a class="btn primary" href="#phase-00">Start the course</a>
-          <a class="btn" href="#labs">Break a machine</a>
-          <a class="btn ghost" href="#curriculum">Phase map</a>
-        </div>
-      </div>
-      <div class="hero-panel">
-        <p class="panel-title">Live: 2 m cantilever · <span class="hint">drag the beam to move the load</span></p>
-        <div id="hero-readout" class="readout" aria-live="polite"></div>
-        <div class="controls">
-          <label>Load <input id="hero-load" type="range" min="0" max="8000" step="50" value="2500" /></label>
-          <label>Material
-            <select id="hero-material">
-              <option value="steel">Steel S235</option>
-              <option value="aluminium">Aluminium 6061-T6</option>
-              <option value="bamboo">Bamboo (typical)</option>
-            </select>
-          </label>
-        </div>
-      </div>
-    </section>
-
-    <section id="tutor" class="tutor">
-      <div>
-        <p class="eyebrow">Learn with your AI tutor</p>
-        <h2>Turn your coding agent into a mechanics tutor</h2>
-        <p>A placement quiz, a personalised path through the phases, and lessons taught interactively: you derive, it checks; you code, it runs the test.</p>
-      </div>
-      <div class="install">
-        <div class="cmd"><code id="install-cmd">npx skills add andreolf/mechanical-engineering-from-scratch</code><button data-copy="#install-cmd">copy</button></div>
-        <p class="tbd"><b>Coming soon (TBD):</b> placeholder command. The tutor skill is not published yet, so this will not work today.</p>
-        <p class="fine">Planned for Claude, Cursor, Codex and any agent that reads SKILL.md files.</p>
-      </div>
-    </section>
-
-    <section id="labs" class="labs">
-      <p class="eyebrow">Interactive simulations</p>
-      <h2>Break the machine</h2>
-      <p class="lead">Each lab runs a real (simplified) model in your browser. Delete parts, stop the spin, choke the flow, and watch exactly what fails. Every model is labelled with its assumptions: these are educational approximations, not design tools.</p>
-
-      <article id="lab-truss" class="lab">
-        <div class="lab-text">
-          <p class="fig">FIG_TRS · Phase 05 Statics · Phase 16 FEM</p>
-          <h3>Break the bridge</h3>
-          <p>A 12 m steel truss bridge carries a truck. Tap any member to delete it. The direct stiffness method re-solves instantly: cyan is tension, orange compression. Remove a redundant brace and the load finds another path. Remove the wrong one and the bridge becomes a mechanism.</p>
-          <div class="controls">
-            <label>Truck load <input name="truss-load" type="range" min="0" max="300" step="5" value="100" /></label>
-            <label>Truck position <input name="truss-pos" type="range" min="0" max="1" step="0.01" value="0.5" /></label>
-            <div class="btns"><button data-action="truss-autofail" aria-pressed="true">Progressive failure: on</button><button data-action="truss-reset">Rebuild bridge</button></div>
+      <div class="wrap hero-grid">
+        <div class="hero-copy">
+          <h1 class="hero-title">Mechanical Engineering from Scratch</h1>
+          <div class="dimension" aria-hidden="true"><span class="dim-line"></span><span class="dim-label"><span data-count="phases">20</span> phases, <span data-count="lessons">356</span> lessons</span><span class="dim-line"></span></div>
+          <p class="hero-lede">Learn mechanical engineering the way you’d build a machine: derive each model by hand, code it in Python, and prove it with a test. Free, from Analysis 1 to your own finite-element and CFD solvers.</p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="learn.html#/00.01">Start lesson 00.01</a>
+            <a class="btn" href="#labs">Try the labs</a>
           </div>
-          <p class="lab-banner" aria-live="polite"></p>
-          <div class="lab-readout readout"></div>
+          <p class="hero-facts small muted"><span data-count="written">0</span> full lessons written so far. No account, no paywall.</p>
         </div>
-        <div class="lab-canvas"></div>
-      </article>
-
-      <article id="lab-flywheel" class="lab reverse">
-        <div class="lab-text">
-          <p class="fig">FIG_GYR · Phase 07 Dynamics</p>
-          <h3>Why the spinning wheel doesn't fall</h3>
-          <p>A 2 kg flywheel hangs off a pivot by one end of its axle. Gravity's torque should tip it over. With enough spin it swings sideways instead, because torque changes angular momentum (lime arrow) in the direction of the torque (red arrow). Stop the spin and watch it drop.</p>
-          <div class="controls">
-            <label>Spin <input name="gyro-spin" type="range" min="0" max="400" step="5" value="220" /></label>
-            <div class="btns"><button data-action="gyro-release">Release from horizontal</button><button data-action="gyro-stop" class="danger">Break it: stop the spin</button></div>
-          </div>
-          <p class="lab-banner" aria-live="polite"></p>
-          <div class="lab-readout readout"></div>
-        </div>
-        <div class="lab-canvas"></div>
-      </article>
-
-      <article id="lab-pipe" class="lab">
-        <div class="lab-text">
-          <p class="fig">FIG_VEN · Phase 11 Fluid Dynamics 1</p>
-          <h3>Choke the pipe</h3>
-          <p>Water flows through a venturi. Squeeze the throat or open the valve: particles speed up where the pipe narrows and the pressure columns fall. Push too far and Bernoulli predicts pressure below vapour pressure, so the water would cavitate.</p>
-          <div class="controls">
-            <label>Flow rate (L/s) <input name="pipe-q" type="range" min="1" max="60" step="1" value="15" /></label>
-            <label>Throat diameter (mm) <input name="pipe-d" type="range" min="25" max="95" step="1" value="60" /></label>
-            <label class="inline"><input name="pipe-friction" type="checkbox" checked /> Include pipe friction (Darcy-Weisbach)</label>
-          </div>
-          <p class="lab-banner" aria-live="polite"></p>
-          <div class="lab-readout readout"></div>
-          <p class="fine">Gauge column height is proportional to absolute pressure head; red means below vapour pressure.</p>
-        </div>
-        <div class="lab-canvas"></div>
-      </article>
-
-      <div class="live-labs">
-        <a class="live" href="https://andreolf.github.io/coconut-lab/" target="_blank" rel="noopener">
-          <p class="fig">FIG_COC · Phase 11 · Phase 17 CFD · live</p>
-          <h3>The coconut that never escapes</h3>
-          <p>A coconut caught in the eddy behind a boulder in a Bali river. Vorticity, separation and recirculation you can watch.</p>
-          <span>Open lab ↗</span>
-        </a>
-        <a class="live" href="https://andreolf.github.io/subak-lab/" target="_blank" rel="noopener">
-          <p class="fig">FIG_SBK · Phase 11 · Phase 17 CFD · live</p>
-          <h3>Subak rice terraces</h3>
-          <p>Weir hydraulics of Bali's terrace irrigation: how water is shared, step by step, down the hillside.</p>
-          <span>Open lab ↗</span>
-        </a>
+        <figure class="sheet" aria-labelledby="sheet-cap">
+          <div class="sheet-stage hero-canvas"></div>
+          <figcaption id="sheet-cap" class="sheet-block">
+            <div class="tb-head"><span class="tb-title">Cantilever, 2 m span</span><span class="tb-hint">Drag across the beam or use the sliders</span></div>
+            <dl class="tb-grid num">
+              <div><dt>Load</dt><dd data-k="P">–</dd></div>
+              <div><dt>Position</dt><dd data-k="a">–</dd></div>
+              <div><dt>Tip deflection</dt><dd data-k="tip">–</dd></div>
+              <div><dt>Max stress</dt><dd data-k="sigma">–</dd></div>
+              <div><dt>Safety factor</dt><dd data-k="sf">–</dd></div>
+              <div><dt>Material</dt><dd data-k="mat">–</dd></div>
+            </dl>
+            <div class="tb-legend" aria-hidden="true"><span>0</span><i></i><span>yield</span></div>
+            <div class="tb-controls">
+              <label><span>Load</span><input id="hero-load" type="range" min="0" max="8000" step="50" value="2500" /></label>
+              <label><span>Position</span><input id="hero-pos" type="range" min="0.1" max="2" step="0.01" value="1.7" /></label>
+              <label><span>Material</span><select id="hero-material" name="material">
+                <option value="steel">Steel S235</option>
+                <option value="aluminium">Aluminium 6061-T6</option>
+                <option value="bamboo">Bamboo (typical values)</option>
+              </select></label>
+            </div>
+            <p id="hero-note" class="tb-note small muted" aria-live="polite"></p>
+          </figcaption>
+        </figure>
       </div>
     </section>
 
-    <section id="how" class="how">
-      <p class="eyebrow">How this works</p>
-      <h2>One loop, <span data-count="lessons">356</span> times</h2>
-      <p class="lead">Engineering material usually arrives in pieces: a formula sheet here, a CAD tutorial there, a simulation button you're told to trust. Here every lesson runs the same loop, from Analysis 1 to a working FEM and CFD solver, and only then the open-source pro tool.</p>
-      <ol class="loop">
-        <li><b>01 Derive</b><span>Work the math by hand: free-body diagram, balance law, assumptions written down.</span></li>
-        <li><b>02 Code</b><span>Implement it from scratch in Python/NumPy (sometimes JS). No black boxes.</span></li>
-        <li><b>03 Test</b><span>A test proves it: analytic limit, conservation law or benchmark.</span></li>
-        <li><b>04 Keep the artifact</b><span>Commit the solver, plot or lab. Then meet the pro tool it maps to: FreeCAD, CalculiX, FEniCSx, OpenFOAM.</span></li>
-      </ol>
-    </section>
-
-    <section id="curriculum" class="curriculum">
-      <p class="eyebrow">Curriculum · <span data-count="phases">20</span> phases · <span data-count="lessons">356</span> lessons</p>
-      <h2>Phase map</h2>
-      <p class="lead">Tap a phase to open its lessons, and tap a lesson for its derivation, code exercise, lab, test, pro tool and the ETH course it mirrors. All lessons are outlines for now (v0.1).</p>
-      <div class="map-tools">
-        <input id="lesson-search" type="search" placeholder="Search lessons: Bernoulli, buckling, OpenFOAM…" aria-label="Search lessons" />
-        <div id="progress-stats" class="stats"></div>
-        <button id="progress-reset" class="ghost">Reset progress</button>
+    <section id="how" class="band">
+      <div class="wrap">
+        <h2>How a lesson works</h2>
+        <p class="lede">Every lesson follows the same four steps, so you always know what comes next and what “done” means.</p>
+        <ol class="steps">
+          <li><h3>Derive</h3><p>Work the model out by hand with the assumptions written down. Equations are typeset so you can follow every line.</p></li>
+          <li><h3>Code</h3><p>Write it in Python from nothing, without black boxes. Every code file is downloadable and tests itself.</p></li>
+          <li><h3>Test</h3><p>Prove it against a hand calculation, an analytic limit or a conservation law. Then check yourself with the quiz.</p></li>
+          <li><h3>Keep</h3><p>Commit the result to your own repository and meet the open-source tool it maps to, from FreeCAD to OpenFOAM.</p></li>
+        </ol>
+        <p class="how-link"><a href="learn.html#/00.02">Read a sample lesson: SI units and why rockets crash</a></p>
       </div>
-      <p id="search-count" class="fine" aria-live="polite"></p>
-      <p class="fine">Progress saved in this browser only. No account, no tracking.</p>
-      <div id="phase-grid" class="phase-grid"></div>
     </section>
 
-    <section id="colophon" class="colophon">
-      <h2>Colophon</h2>
-      <p>Free and open source under the MIT licence. No paywall, no signup, no tracking. Your progress lives in your browser's localStorage and nowhere else.</p>
-      <p>Made by <b>Francesco Andreoli</b>, mechanical-engineering alumnus of ETH Zurich, now building in Bali. <a href="https://x.com/francescoswiss" target="_blank" rel="noopener">@francescoswiss</a> · <a href="https://www.youtube.com/@swissintech" target="_blank" rel="noopener">YouTube @swissintech</a> · <a href="https://github.com/andreolf" target="_blank" rel="noopener">github.com/andreolf</a></p>
-      <p class="fine">ETH course names refer to the public D-MAVT Bachelor programme (2022 regulations) where marked; others are generic. Not affiliated with or endorsed by ETH Zurich. Simulations are simplified educational models; never use them to design real structures. Built with three.js, rendered on your device.</p>
-      <p class="fine">Source code and curriculum: <a href="https://github.com/andreolf/mechanical-engineering-from-scratch" target="_blank" rel="noopener">github.com/andreolf/mechanical-engineering-from-scratch</a>. Issues and pull requests welcome.</p>
+    <section id="labs" class="band">
+      <div class="wrap">
+        <h2>Break the machine</h2>
+        <p class="lede">Each lab runs a simplified physical model in your browser. Remove parts, stop the spin or choke the flow, and see what fails. Every lab states its assumptions; these are teaching models, not design tools.</p>
+
+        <article id="lab-truss" class="lab">
+          <div class="lab-canvas"></div>
+          <div class="lab-text">
+            <h3>Break the bridge</h3>
+            <p>A 12 m steel truss carries a truck. Tap a member to remove it and the forces are solved again at once: blue members are in tension, orange in compression. Remove a redundant brace and the load finds another path; remove the wrong one and the bridge folds.</p>
+            <div class="controls">
+              <label><span>Truck load</span><input name="truss-load" type="range" min="0" max="300" step="5" value="100" /></label>
+              <label><span>Truck position</span><input name="truss-pos" type="range" min="0" max="1" step="0.01" value="0.5" /></label>
+              <div class="btns"><button type="button" class="btn" data-action="truss-autofail" aria-pressed="true">Progressive failure: on</button><button type="button" class="btn" data-action="truss-reset">Rebuild bridge</button></div>
+            </div>
+            <p class="lab-banner" aria-live="polite"></p>
+            <div class="lab-readout readout"></div>
+          </div>
+        </article>
+
+        <article id="lab-flywheel" class="lab">
+          <div class="lab-canvas"></div>
+          <div class="lab-text">
+            <h3>Why the spinning wheel doesn’t fall</h3>
+            <p>A 2 kg flywheel hangs from a pivot by one end of its axle. Gravity’s torque should tip it over, yet with enough spin it swings sideways instead: the torque (red arrow) turns the angular momentum (lime arrow) rather than tipping it. Stop the spin and it drops.</p>
+            <div class="controls">
+              <label><span>Spin</span><input name="gyro-spin" type="range" min="0" max="400" step="5" value="220" /></label>
+              <div class="btns"><button type="button" class="btn" data-action="gyro-release">Release from horizontal</button><button type="button" class="btn btn-danger" data-action="gyro-stop">Stop the spin</button></div>
+            </div>
+            <p class="lab-banner" aria-live="polite"></p>
+            <div class="lab-readout readout"></div>
+          </div>
+        </article>
+
+        <article id="lab-pipe" class="lab">
+          <div class="lab-canvas"></div>
+          <div class="lab-text">
+            <h3>Choke the pipe</h3>
+            <p>Water flows through a venturi. Narrow the throat or open the valve: the water speeds up where the pipe narrows and the pressure columns fall. Push too far and the model predicts pressure below the vapour pressure, where real water would boil into bubbles.</p>
+            <div class="controls">
+              <label><span>Flow rate, L/s</span><input name="pipe-q" type="range" min="1" max="60" step="1" value="15" /></label>
+              <label><span>Throat, mm</span><input name="pipe-d" type="range" min="25" max="95" step="1" value="60" /></label>
+              <label class="check-row"><input name="pipe-friction" type="checkbox" checked /> <span>Include pipe friction (Darcy-Weisbach)</span></label>
+            </div>
+            <p class="lab-banner" aria-live="polite"></p>
+            <div class="lab-readout readout"></div>
+          </div>
+        </article>
+
+        <div class="live-labs">
+          <a class="live" href="https://andreolf.github.io/coconut-lab/" rel="noopener">
+            <h3>The coconut that never escapes</h3>
+            <p>A coconut trapped in the eddy behind a boulder in a Bali river: separation and recirculation you can watch. Used in phases 11 and 17.</p>
+            <span class="live-cta">Open the live lab</span>
+          </a>
+          <a class="live" href="https://andreolf.github.io/subak-lab/" rel="noopener">
+            <h3>Subak rice terraces</h3>
+            <p>Weir hydraulics in Bali’s terrace irrigation, and how the water is shared step by step down the hillside. Used in phases 11 and 17.</p>
+            <span class="live-cta">Open the live lab</span>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <section id="curriculum" class="band">
+      <div class="wrap">
+        <h2>The course</h2>
+        <p class="lede">Twenty phases that follow the ETH Zurich mechanical engineering bachelor, plus practice. Open a phase to see its lessons; full lessons are marked, the rest are detailed outlines while they’re being written.</p>
+        <div id="phase-map"></div>
+      </div>
+    </section>
+
+    <section id="certify" class="band">
+      <div class="wrap certify">
+        <div>
+          <h2>Finish a phase, earn a certificate</h2>
+          <p class="lede">Pass a phase test with 80% or more and your browser generates a certificate of completion with your name, the date and a verification code. Lessons and quizzes earn XP, and a daily streak keeps you coming back.</p>
+          <p class="small muted">It’s a free certificate of completion, not an accredited qualification, and it isn’t affiliated with or endorsed by ETH Zurich.</p>
+          <a class="btn" href="learn.html#/progress">See your progress</a>
+        </div>
+        <div class="tutor">
+          <h3>Learn with an AI tutor</h3>
+          <p class="muted">Planned: a skill that turns Claude, Cursor or Codex into a tutor for this course, with a placement quiz.</p>
+          <div class="cmd"><code id="install-cmd" translate="no">npx skills add andreolf/mechanical-engineering-from-scratch</code><button type="button" class="btn-small" data-copy="#install-cmd">Copy</button></div>
+          <p class="tbd small">Not published yet: this command won’t work until the tutor ships.</p>
+        </div>
+      </div>
     </section>
   </main>
+  <footer id="site-footer"></footer>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

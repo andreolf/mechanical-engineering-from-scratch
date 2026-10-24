@@ -1,0 +1,31 @@
+/* Phase map */
+.map-tools { display: grid; gap: 10px; margin: 28px 0 6px; }
+.map-stats { margin: 0; }
+.phases { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+.phase { border-bottom: 1px solid var(--rule); }
+.phase-head { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'num title chev' 'num meta chev'; gap: 2px 14px; align-items: center; padding: 14px 0; border: 0; background: none; color: var(--paper); text-align: left; cursor: pointer; min-height: 64px; touch-action: manipulation; }
+.phase-head:hover .phase-title strong { color: var(--lime); }
+.phase-num { grid-area: num; font-size: var(--t2); font-weight: 700; font-stretch: 112%; color: var(--graphite); min-width: 1.6em; }
+.phase-title { grid-area: title; display: flex; flex-direction: column; min-width: 0; }
+.phase-title strong { font-weight: 650; transition: color 0.15s; }
+.phase-sub { font-size: var(--t-1); color: var(--graphite); }
+.phase-meta { grid-area: meta; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--t-2); color: var(--graphite); }
+.pill { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--rule); font-size: var(--t-2); color: var(--graphite); }
+.pill-on { border-color: var(--lime); color: var(--lime); }
+.pill-part { border-color: rgba(238, 255, 65, 0.4); color: #d9e78a; }
+.chev { grid-area: chev; width: 12px; height: 12px; border-right: 2px solid var(--graphite); border-bottom: 2px solid var(--graphite); transform: rotate(45deg); transition: transform 0.2s; margin-right: 6px; }
+.phase.open .chev { transform: rotate(225deg); }
+.phase-body { padding: 0 0 18px; }
+.phase-summary { color: #d0d1c9; max-width: 40em; }
+.lesson-list { list-style: none; margin: 8px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+.lesson-item a { display: grid; grid-template-columns: 3.1em minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 48px; padding: 6px 0; border-bottom: 1px solid var(--rule); text-decoration: none; }
+.lesson-item a:hover .lt { color: var(--lime); }
+.lid { color: var(--graphite); font-size: var(--t-1); }
+.lt { min-width: 0; }
+.tag-full { font-size: var(--t-2); color: var(--lime); white-space: nowrap; }
+.tag-outline { font-size: var(--t-2); color: var(--dim); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.dot-done { background: var(--lime); }
+.phase-actions { margin-top: 14px; }
+
+@media (min-width: 760px) {   .map-tools { grid-template-columns: minmax(0, 28rem) auto; align-items: center; justify-content: space-between; } }

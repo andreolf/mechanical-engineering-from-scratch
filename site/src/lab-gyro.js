@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createStage, fmt, makeGrid } from './stage.js';
+import { createStage, fmt, paintRange, REDUCED_MOTION } from './stage.js';
 import { gyroStep } from './physics.js';
 
 // Heavy symmetric gyroscope: 2 kg disc, r = 0.15 m, centre 0.20 m from a frictionless pivot.
@@ -15,6 +15,7 @@ export function initGyro(root) {
   const bRelease = root.querySelector('[data-action=gyro-release]');
   const bStop = root.querySelector('[data-action=gyro-stop]');
   const st = { spin: +sSpin.value, s: null, psi: 0, phiRate: 0, tilt: 0, t: 0, prevPhi: null, steps: 0 };
+  root.querySelectorAll('input[type=range]').forEach(paintRange);
   window.__mefs = window.__mefs || {};
   window.__mefs.gyro = { state: st, params: p };
 
@@ -73,8 +74,9 @@ export function initGyro(root) {
   stage.canvas.dataset.testid = 'gyro-canvas';
   stage.canvas.setAttribute('aria-label', '3D gyroscope precessing on a pivot');
   const { scene, camera } = stage;
-  scene.add(makeGrid(6, 30));
-  const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a6, metalness: 0.7, roughness: 0.3 });
+  stage.addFloor(0, 8, 0.6);
+  const sc = stage.key.shadow.camera; sc.left = -1.5; sc.right = 1.5; sc.top = 1.5; sc.bottom = -1.5; sc.updateProjectionMatrix();
+  const steel = new THREE.MeshPhysicalMaterial({ color: 0x9aa0a6, metalness: 0.9, roughness: 0.28 });
   const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.05, 1.0, 16), steel);
   tower.position.y = 0.5; scene.add(tower);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.25, 0.04, 32), new THREE.MeshStandardMaterial({ color: 0x1a1d16 }));
@@ -84,7 +86,7 @@ export function initGyro(root) {
   const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, p.l + 0.05, 10), steel);
   axle.rotation.z = -Math.PI / 2; axle.position.x = (p.l + 0.05) / 2; body.add(axle);
   const wheel = new THREE.Group(); wheel.position.x = p.l; body.add(wheel);
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r, 0.03, 48), new THREE.MeshStandardMaterial({ color: 0x2a2f22, metalness: 0.5, roughness: 0.35 }));
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r, 0.03, 48), new THREE.MeshPhysicalMaterial({ color: 0x5b6066, metalness: 0.9, roughness: 0.25, clearcoat: 0.4 }));
   disc.rotation.z = -Math.PI / 2; wheel.add(disc);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(p.r, 0.012, 10, 64), new THREE.MeshStandardMaterial({ color: 0xeeff41, emissive: 0x334000 }));
   rim.rotation.y = Math.PI / 2; wheel.add(rim);
@@ -92,6 +94,7 @@ export function initGyro(root) {
     const sp = new THREE.Mesh(new THREE.BoxGeometry(0.035, 2 * p.r * 0.95, 0.012), new THREE.MeshStandardMaterial({ color: 0xeeff41 }));
     sp.rotation.x = (k * Math.PI) / 3; wheel.add(sp);
   }
+  scene.traverse((o) => { if (o.isMesh) { o.castShadow = true; } });
   const Larrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 0.4, 0xeeff41, 0.06, 0.04);
   const Tarrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 0.2, 0xff5a3c, 0.05, 0.035);
   pivot.add(Larrow, Tarrow);
@@ -120,8 +123,7 @@ export function initGyro(root) {
     trailPos.set([tip.x, tip.y, tip.z], (trailI % trailN) * 3); trailI++;
     trailGeo.setDrawRange(0, Math.min(trailI, trailN)); trailGeo.attributes.position.needsUpdate = true;
     const dist = stage.fitDistance(0.85, 0.8, 1.1);
-    const a = t * 0.1;
-    camera.position.set(Math.sin(a + 0.6) * dist, 0.92 + 0.35 * dist, Math.cos(a + 0.6) * dist);
-    camera.lookAt(stage.target);
+    const a = REDUCED_MOTION ? 0 : t * 0.1;
+    if (!stage.orbiting) { camera.position.set(Math.sin(a + 0.6) * dist, 0.92 + 0.35 * dist, Math.cos(a + 0.6) * dist); camera.lookAt(stage.target); }
   });
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createStage, fmt, makeGrid } from './stage.js';
+import { createStage, fmt, paintRange, REDUCED_MOTION } from './stage.js';
 import { solveTruss } from './physics.js';
 
 // 12 m steel truss bridge, 6 panels x 2 m, 2 m deep, cross-braced inner panels (4 redundant members).
@@ -30,6 +30,7 @@ export function initTruss(root) {
   const bAuto = root.querySelector('[data-action=truss-autofail]');
   let { nodes, members } = buildBridge();
   const st = { load: +sLoad.value * 1000, pos: +sPos.value, res: null, removed: 0, failedCount: 0, mechanism: false, autoFail: true, collapse: 0, maxUtil: 0, solves: 0 };
+  root.querySelectorAll('input[type=range]').forEach(paintRange);
   window.__mefs = window.__mefs || {};
   const api = (window.__mefs.truss = { state: st, members: () => members.map((m, i) => ({ i, alive: m.alive, kind: m.kind })) });
 
@@ -86,11 +87,13 @@ export function initTruss(root) {
   stage.canvas.dataset.testid = 'truss-canvas';
   stage.canvas.setAttribute('aria-label', '3D truss bridge: click members to delete them');
   const { scene, camera } = stage;
-  scene.add(makeGrid(40, 40).translateY(-2.2));
+  stage.addFloor(-2.2, 44, 0.5);
+  stage.key.position.set(8, 14, 9); stage.key.target.position.set(6, 0, 0);
+  { const sc = stage.key.shadow.camera; sc.left = -12; sc.right = 12; sc.top = 12; sc.bottom = -12; sc.far = 60; sc.updateProjectionMatrix(); }
   // abutments
   for (const x of [-0.6, 12.6]) {
     const ab = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 3), new THREE.MeshStandardMaterial({ color: 0x23261f, roughness: 1 }));
-    ab.position.set(x, -1.1 - 0.05, 0); scene.add(ab);
+    ab.position.set(x, -1.1 - 0.05, 0); ab.castShadow = ab.receiveShadow = true; scene.add(ab);
   }
   // river
   const water = new THREE.Mesh(new THREE.PlaneGeometry(11.4, 6), new THREE.MeshStandardMaterial({ color: 0x0a2a33, roughness: 0.2, metalness: 0.3, transparent: true, opacity: 0.85 }));
@@ -99,7 +102,7 @@ export function initTruss(root) {
   scene.add(deck);
   const truck = new THREE.Group();
   const tb = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.7, 0.9), new THREE.MeshStandardMaterial({ color: 0xeeff41, roughness: 0.5 }));
-  tb.position.y = 0.45; truck.add(tb);
+  tb.position.y = 0.45; tb.castShadow = true; truck.add(tb);
   const cab = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.9), new THREE.MeshStandardMaterial({ color: 0xc8d636 }));
   cab.position.set(0.95, 0.35, 0); truck.add(cab);
   scene.add(truck);
@@ -114,8 +117,8 @@ export function initTruss(root) {
     memberMeshes = []; nodeMeshes = []; planeMeshes = [];
     for (const z of [-0.75, 0.75]) {
       members.forEach((m, i) => {
-        const mesh = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.45, metalness: 0.2 }));
-        mesh.userData = { i, z }; scene.add(mesh); memberMeshes.push(mesh);
+        const mesh = new THREE.Mesh(unit, new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.38, metalness: 0.45 }));
+        mesh.userData = { i, z }; mesh.castShadow = true; scene.add(mesh); memberMeshes.push(mesh);
       });
       nodes.forEach((n, i) => { const s = new THREE.Mesh(sph, nodeMat); s.userData = { i, z }; scene.add(s); nodeMeshes.push(s); });
     }
@@ -196,8 +199,7 @@ export function initTruss(root) {
     truck.position.set(xp - 0.5, ya + 0.03, 0);
     deck.position.set(6, (pos(3, 0).y + 0) / 2 - 0.03, 0);
     const dist = stage.fitDistance(15, 6, 1.05);
-    const ang = Math.sin(t * 0.12) * 0.3;
-    camera.position.set(6 + Math.sin(ang) * dist, 0.8 + 0.22 * dist, Math.cos(ang) * dist);
-    camera.lookAt(stage.target);
+    const ang = REDUCED_MOTION ? 0.15 : Math.sin(t * 0.12) * 0.3;
+    if (!stage.orbiting) { camera.position.set(6 + Math.sin(ang) * dist, 0.8 + 0.22 * dist, Math.cos(ang) * dist); camera.lookAt(stage.target); }
   });
 }

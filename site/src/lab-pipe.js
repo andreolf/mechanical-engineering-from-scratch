@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createStage, fmt, utilColor } from './stage.js';
+import { createStage, fmt, utilColor, paintRange, REDUCED_MOTION } from './stage.js';
 import { pipeState, venturiRadius, WATER } from './physics.js';
 
 // Horizontal venturi: D = 100 mm pipe, 2 m long, variable throat. Drawn at 3 units per metre.
@@ -14,6 +14,7 @@ export function initPipe(root) {
   const sD = root.querySelector('[name=pipe-d]');
   const cF = root.querySelector('[name=pipe-friction]');
   const st = { Q: +sQ.value / 1000, d: +sD.value / 1000, friction: cF.checked, res: null };
+  root.querySelectorAll('input[type=range]').forEach(paintRange);
   window.__mefs = window.__mefs || {};
   window.__mefs.pipe = { state: st };
   let geomDirty = true;
@@ -32,7 +33,7 @@ export function initPipe(root) {
   cF.addEventListener('change', () => { st.friction = cF.checked; compute(); });
   compute();
 
-  const stage = createStage(host, { fov: 38, camPos: [3, 2.2, 5.6], target: [3, 0.9, 0] });
+  const stage = createStage(host, { fov: 38, camPos: [3, 2.2, 5.6], target: [3, 0.9, 0], shadows: false });
   if (!stage.ok) return;
   stage.canvas.dataset.testid = 'pipe-canvas';
   stage.canvas.setAttribute('aria-label', '3D venturi pipe with flowing particles and pressure gauges');
@@ -120,8 +121,7 @@ export function initPipe(root) {
       tb.col.material.color.set(r.p[idx] < WATER.pv ? 0xff3b2f : 0x41d9ff);
     });
     const dist = stage.fitDistance(6.6, 3.2, 1.05);
-    const a = Math.sin(t * 0.13) * 0.3;
-    camera.position.set(3 + Math.sin(a) * dist, 0.6 + 0.3 * dist, Math.cos(a) * dist);
-    camera.lookAt(stage.target);
+    const a = REDUCED_MOTION ? 0 : Math.sin(t * 0.13) * 0.3;
+    if (!stage.orbiting) { camera.position.set(3 + Math.sin(a) * dist, 0.6 + 0.3 * dist, Math.cos(a) * dist); camera.lookAt(stage.target); }
   });
 }

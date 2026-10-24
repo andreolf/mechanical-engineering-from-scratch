@@ -1,20 +1,24 @@
 import * as THREE from 'three';
-import { createStage, utilColor, fmt, makeGrid } from './stage.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { createStage, utilColor, fmt, paintRange, REDUCED_MOTION } from './stage.js';
 import { cantilever, BEAM_MATERIALS } from './physics.js';
 
 // Physical beam: 2 m cantilever, rectangular 40 x 80 mm section. Drawn at 2 units per metre.
 const L = 2.0, b = 0.04, h = 0.08, I = (b * h ** 3) / 12, c = h / 2;
-const S = 2.0;           // world units per metre
-const SEC = 2.0;         // section drawn x2 for visibility
+const S = 2.0, SEC = 2.0; // world units per metre; section drawn x2 for visibility
+const PMAX = 8000;
 
 export function initHero(root) {
   const host = root.querySelector('.hero-canvas');
-  const out = root.querySelector('#hero-readout');
   const sliderP = root.querySelector('#hero-load');
+  const sliderA = root.querySelector('#hero-pos');
   const selMat = root.querySelector('#hero-material');
-  const state = { P: 2500, a: L, mat: 'steel', demo: true, tip: 0, sigma: 0, util: 0, k: 1, interactions: 0 };
+  const cells = Object.fromEntries([...root.querySelectorAll('[data-k]')].map((e) => [e.dataset.k, e]));
+  const note = root.querySelector('#hero-note');
+  const state = { P: 2500, a: 1.7, mat: 'steel', demo: !REDUCED_MOTION, tip: 0, sigma: 0, util: 0, k: 1, interactions: 0 };
   window.__mefs = window.__mefs || {};
   window.__mefs.hero = { state };
+  const fillP = paintRange(sliderP), fillA = paintRange(sliderA);
 
   const compute = () => {
     const m = BEAM_MATERIALS[state.mat];
@@ -22,36 +26,54 @@ export function initHero(root) {
     state.tip = cantilever(state.P, state.a, L, EI).w;
     state.sigma = (state.P * state.a * c) / I;
     state.util = state.sigma / m.sy;
-    state.k = state.tip > 0 ? Math.min(5, (0.25 * L) / state.tip) : 5;
-    const warn = state.util >= 1 ? '<b class="bad">Yield exceeded: linear-elastic model no longer valid</b>'
-      : state.tip / L > 0.05 ? '<b class="warn">Large deflection: small-deflection theory becomes inaccurate</b>'
-      : `Safety factor vs yield: <b>${fmt(1 / Math.max(state.util, 1e-9), 2)}</b>`;
-    out.innerHTML = `<span>Load <b data-k="P">${fmt(state.P / 1000, 2)} kN</b> at <b data-k="a">${fmt(state.a, 2)} m</b></span>
-      <span>Tip deflection <b data-k="tip">${fmt(state.tip * 1000, 1)} mm</b></span>
-      <span>Max bending stress <b data-k="sigma">${fmt(state.sigma / 1e6, 0)} MPa</b></span>
-      <span>${warn}</span>
-      <span class="fine">${m.name}, 40×80 mm section, 2 m span. Euler-Bernoulli, educational model. Deflection drawn ×${fmt(state.k, 1)}, section ×${SEC}.</span>`;
+    state.k = state.tip > 0 ? Math.min(5, (0.22 * L) / state.tip) : 5;
+    cells.P.textContent = `${fmt(state.P / 1000, 2)} kN`;
+    cells.a.textContent = `${fmt(state.a, 2)} m`;
+    cells.tip.textContent = `${fmt(state.tip * 1000, 1)} mm`;
+    cells.sigma.textContent = `${fmt(state.sigma / 1e6, 0)} MPa`;
+    cells.sf.textContent = state.util >= 1 ? 'Yielded' : fmt(1 / Math.max(state.util, 1e-9), 2);
+    cells.sf.dataset.state = state.util >= 1 ? 'bad' : state.util > 0.67 ? 'warn' : 'ok';
+    cells.mat.textContent = m.name;
+    note.textContent = state.util >= 1 ? 'The beam has yielded, so the linear-elastic model no longer applies.'
+      : state.tip / L > 0.05 ? 'Deflection is over 5% of the span, so small-deflection theory loses accuracy.'
+      : `Euler-Bernoulli beam, 40 × 80 mm section. Deflection drawn ×${fmt(state.k, 1)}.`;
   };
-  sliderP.addEventListener('input', () => { state.P = +sliderP.value; state.demo = false; state.interactions++; compute(); });
-  selMat.addEventListener('change', () => { state.mat = selMat.value; state.interactions++; compute(); });
+  const stopDemo = () => { if (state.demo) { state.demo = false; } state.interactions++; };
+  sliderP.addEventListener('input', () => { state.P = +sliderP.value; stopDemo(); compute(); });
+  sliderA.addEventListener('input', () => { state.a = +sliderA.value; stopDemo(); compute(); });
+  selMat.addEventListener('change', () => { state.mat = selMat.value; stopDemo(); compute(); });
   compute();
 
-  const stage = createStage(host, { fov: 38, camPos: [2.6, 1.5, 5.4], target: [1.9, -0.25, 0] });
+  const stage = createStage(host, { fov: 30, camPos: [3.4, 1.6, 6], target: [2.0, -0.15, 0], orbit: true });
   if (!stage.ok) return state;
-  stage.canvas.setAttribute('aria-label', 'Interactive 3D cantilever beam: drag to move the load');
+  stage.canvas.setAttribute('aria-label', '3D cantilever beam. Drag across it, or use the sliders, to move the load.');
   stage.canvas.dataset.testid = 'hero-canvas';
   const { scene, camera } = stage;
-  scene.add(makeGrid(24, 48).translateY(-1.6));
+  stage.addFloor(-1.15, 24, 0.6);
+  stage.key.position.set(3, 7, 4.5);
+  stage.key.target.position.set(2, -0.5, 0);
+  const sc = stage.key.shadow.camera; sc.left = -4; sc.right = 4; sc.top = 4; sc.bottom = -4; sc.updateProjectionMatrix();
 
-  // Wall
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.6, 1.4), new THREE.MeshStandardMaterial({ color: 0x1b1f17, roughness: 0.9 }));
-  wall.position.set(-0.15, -0.3, 0);
-  scene.add(wall);
-  const wallEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wall.geometry), new THREE.LineBasicMaterial({ color: 0xeeff41, transparent: true, opacity: 0.35 }));
-  wallEdges.position.copy(wall.position);
-  scene.add(wallEdges);
+  const steel = new THREE.MeshPhysicalMaterial({ color: 0x8d9297, metalness: 0.85, roughness: 0.32, clearcoat: 0.2 });
+  const darkSteel = new THREE.MeshPhysicalMaterial({ color: 0x3a3d40, metalness: 0.8, roughness: 0.42 });
+  // Clamp: base plate, upright, two jaws and bolt heads
+  const plate = new THREE.Mesh(new RoundedBoxGeometry(1.1, 0.12, 1.3, 3, 0.03), darkSteel);
+  plate.position.set(-0.3, -1.09, 0);
+  const upright = new THREE.Mesh(new RoundedBoxGeometry(0.42, 1.0, 0.9, 3, 0.04), darkSteel);
+  upright.position.set(-0.27, -0.55, 0);
+  const jawGeo = new RoundedBoxGeometry(0.62, 0.2, 0.62, 3, 0.03);
+  const jawTop = new THREE.Mesh(jawGeo, steel); jawTop.position.set(-0.08, 0.1 + 0.08 * SEC, 0);
+  const jawBot = new THREE.Mesh(jawGeo, steel); jawBot.position.set(-0.08, -0.1 - 0.08 * SEC, 0);
+  const clamp = new THREE.Group();
+  clamp.add(plate, upright, jawTop, jawBot);
+  const boltGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.05, 6);
+  for (const x of [-0.28, 0.12]) for (const z of [-0.2, 0.2]) {
+    const bolt = new THREE.Mesh(boltGeo, darkSteel); bolt.position.set(x, jawTop.position.y + 0.12, z); clamp.add(bolt);
+  }
+  clamp.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  scene.add(clamp);
 
-  // Beam
+  // Beam with per-vertex stress colours
   const LU = L * S, HU = h * S * SEC, BU = b * S * SEC;
   const geo = new THREE.BoxGeometry(LU, HU, BU, 160, 8, 4);
   geo.translate(LU / 2, 0, 0);
@@ -59,114 +81,88 @@ export function initHero(root) {
   const base = Float32Array.from(pos.array);
   const colors = new Float32Array(pos.count * 3);
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const beam = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.15 }));
+  const beam = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ vertexColors: true, metalness: 0.35, roughness: 0.3, clearcoat: 0.5, clearcoatRoughness: 0.25 }));
+  beam.castShadow = true;
   scene.add(beam);
-  const ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(LU, HU, BU).translate(LU / 2, 0, 0)), new THREE.LineBasicMaterial({ color: 0x55602a, transparent: true, opacity: 0.5 }));
+  // undeformed outline (dashed) for comparison
+  const ghostPts = [new THREE.Vector3(0, HU / 2, BU / 2), new THREE.Vector3(LU, HU / 2, BU / 2), new THREE.Vector3(LU, -HU / 2, BU / 2), new THREE.Vector3(0, -HU / 2, BU / 2)];
+  const ghost = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ghostPts), new THREE.LineDashedMaterial({ color: 0x9a9d93, dashSize: 0.06, gapSize: 0.05, transparent: true, opacity: 0.6 }));
+  ghost.computeLineDistances();
   scene.add(ghost);
-
-  // Bending-moment diagram drawn on the floor-side plane
-  const NM = 80;
-  const mGeo = new THREE.BufferGeometry();
-  mGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((NM + 1) * 2 * 3), 3));
-  const mIdx = [];
-  for (let i = 0; i < NM; i++) { const a0 = 2 * i; mIdx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2); }
-  mGeo.setIndex(mIdx);
-  const mMesh = new THREE.Mesh(mGeo, new THREE.MeshBasicMaterial({ color: 0xeeff41, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false }));
-  scene.add(mMesh);
+  // deflection dimension line at the tip (lime), drawn in front of the beam
+  const dimMat = new THREE.LineBasicMaterial({ color: 0xeeff41 });
+  const dimGeo = new THREE.BufferGeometry();
+  dimGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6 * 3), 3));
+  const dim = new THREE.LineSegments(dimGeo, dimMat);
+  scene.add(dim);
 
   // Load arrow
   const arrow = new THREE.Group();
-  const arrowMat = new THREE.MeshStandardMaterial({ color: 0xeeff41, emissive: 0x556010, roughness: 0.4 });
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1, 12), arrowMat);
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.2, 18), arrowMat);
+  const arrowMat = new THREE.MeshStandardMaterial({ color: 0xeeff41, emissive: 0x6b7a00, emissiveIntensity: 0.35, roughness: 0.35 });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1, 16), arrowMat);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.065, 0.18, 24), arrowMat);
   head.rotation.x = Math.PI;
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.09, 20, 14), arrowMat);
-  arrow.add(shaft, head, knob);
+  const grip = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.018, 12, 32), arrowMat);
+  arrow.add(shaft, head, grip);
+  arrow.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   scene.add(arrow);
 
-  // Interaction: drag horizontally to move the load; mouse vertical drag also scales the load.
+  // Drag across the canvas to move the load. Horizontal only, so vertical swipes still scroll the page on phones.
   const ray = new THREE.Raycaster();
   const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-  let dragging = false, lastY = 0;
+  let dragging = false;
   const setFromEvent = (ev) => {
     ray.setFromCamera(stage.ndc(ev), camera);
     const hit = new THREE.Vector3();
-    if (ray.ray.intersectPlane(plane, hit)) state.a = Math.min(L, Math.max(0.1, hit.x / S));
+    if (ray.ray.intersectPlane(plane, hit)) { state.a = Math.min(L, Math.max(0.1, hit.x / S)); sliderA.value = state.a; fillA(); }
   };
-  stage.canvas.addEventListener('pointerdown', (ev) => {
-    dragging = true; state.demo = false; state.interactions++; lastY = ev.clientY;
-    stage.canvas.setPointerCapture?.(ev.pointerId);
-    setFromEvent(ev); compute();
-  });
-  stage.canvas.addEventListener('pointermove', (ev) => {
-    if (!dragging) return;
-    setFromEvent(ev);
-    if (ev.pointerType === 'mouse') {
-      state.P = Math.min(8000, Math.max(0, state.P + (ev.clientY - lastY) * 25));
-      sliderP.value = state.P;
-    }
-    lastY = ev.clientY;
-    compute();
-  });
+  stage.canvas.addEventListener('pointerdown', (ev) => { if (stage.orbiting) return; dragging = true; stopDemo(); setFromEvent(ev); compute(); });
+  stage.canvas.addEventListener('pointermove', (ev) => { if (!dragging || stage.orbiting) return; setFromEvent(ev); compute(); });
   const end = () => { dragging = false; };
-  stage.canvas.addEventListener('pointerup', end);
-  stage.canvas.addEventListener('pointercancel', end);
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => stage.canvas.addEventListener(t, end));
 
   const col = new THREE.Color();
+  let lastText = 0;
   stage.onFrame({
     update(dt, t) {
       if (state.demo) {
-        state.a = 1.15 + 0.85 * Math.sin(t * 0.6);
-        state.P = 2600 + 1800 * Math.sin(t * 0.37 + 1);
-        sliderP.value = state.P;
-        if (Math.round(t * 10) % 3 === 0) compute();
+        state.a = 1.2 + 0.75 * Math.sin(t * 0.55);
+        state.P = 2800 + 1700 * Math.sin(t * 0.33 + 1);
+        if (t - lastText > 0.12) { sliderP.value = state.P; sliderA.value = state.a; fillP(); fillA(); compute(); lastText = t; }
       }
       const m = BEAM_MATERIALS[state.mat];
-      const EI = m.E * I;
-      const k = state.k;
+      const EI = m.E * I, k = state.k;
       for (let i = 0; i < pos.count; i++) {
         const xu = base[3 * i], yu = base[3 * i + 1], zu = base[3 * i + 2];
         const x = xu / S;
         const r = cantilever(state.P, state.a, x, EI);
-        // slope for plane-section rotation
-        const dx = 1e-3, r2 = cantilever(state.P, state.a, Math.min(L, x + dx), EI);
-        const slope = (r2.w - r.w) / dx;
+        const r2 = cantilever(state.P, state.a, Math.min(L, x + 1e-3), EI);
+        const slope = (r2.w - r.w) / 1e-3;
         pos.array[3 * i] = xu + yu * slope * k;
         pos.array[3 * i + 1] = yu - r.w * S * k;
         pos.array[3 * i + 2] = zu;
-        const yPhys = (yu / HU) * h;
-        const sigma = (r.M * yPhys) / I;
+        const sigma = (r.M * ((yu / HU) * h)) / I;
         utilColor(Math.abs(sigma) / m.sy, col);
         colors[3 * i] = col.r; colors[3 * i + 1] = col.g; colors[3 * i + 2] = col.b;
       }
       pos.needsUpdate = true; geo.attributes.color.needsUpdate = true;
       geo.computeVertexNormals();
-      // moment diagram below beam
-      const mp = mGeo.attributes.position.array;
-      const Mmax = 8000 * L;
-      for (let i = 0; i <= NM; i++) {
-        const x = (i / NM) * L, M = cantilever(state.P, state.a, x, EI).M;
-        const y0 = -0.75, y1 = y0 - (M / Mmax) * 0.8;
-        mp.set([x * S, y0, -0.25, x * S, y1, -0.25], i * 6);
+      // dimension line: vertical between undeformed and deformed tip, with end ticks
+      const tipY = HU / 2 - state.tip * S * k, x0 = LU + 0.18, z0 = BU / 2;
+      dimGeo.attributes.position.array.set([x0, HU / 2, z0, x0, tipY, z0, x0 - 0.06, HU / 2, z0, x0 + 0.06, HU / 2, z0, x0 - 0.06, tipY, z0, x0 + 0.06, tipY, z0]);
+      dimGeo.attributes.position.needsUpdate = true; dimGeo.computeBoundingSphere();
+      // arrow sits on the deflected beam
+      const len = 0.3 + 0.8 * (state.P / PMAX);
+      const ya = HU / 2 - cantilever(state.P, state.a, state.a, EI).w * S * k;
+      shaft.scale.y = len; shaft.position.y = 0.18 + len / 2; head.position.y = 0.09; grip.position.y = 0.2 + len;
+      arrow.position.set(state.a * S, ya, 0);
+      if (!stage.orbiting) {
+        const dist = stage.fitDistance(5.6, 2.9, 1.0);
+        const ang = (REDUCED_MOTION ? 0 : Math.sin(t * 0.12) * 0.18) + 0.38;
+        stage.target.set(1.85, -0.25, 0);
+        camera.position.set(stage.target.x + Math.sin(ang) * dist, stage.target.y + 0.32 * dist, Math.cos(ang) * dist);
+        camera.lookAt(stage.target);
       }
-      mGeo.attributes.position.needsUpdate = true;
-      mGeo.computeBoundingSphere();
-      // arrow
-      const len = 0.35 + 0.9 * (state.P / 8000);
-      const xa = state.a * S, ya = HU / 2 - cantilever(state.P, state.a, state.a, EI).w * S * k;
-      shaft.scale.y = len; shaft.position.y = 0.2 + len / 2; head.position.y = 0.1; knob.position.y = 0.2 + len;
-      arrow.position.set(xa, ya, 0);
-      // camera: gentle sway; pull back on narrow screens
-      const wide = window.innerWidth > 900;
-      stage.target.set(1.9, wide ? -0.75 : -0.3, 0);
-      const dist = wide ? 10.5 : stage.fitDistance(5.0, 2.4, 1.05);
-      const ang = Math.sin(t * 0.15) * 0.25 + 0.2;
-      camera.position.set(stage.target.x + Math.sin(ang) * dist, stage.target.y + 0.28 * dist, Math.cos(ang) * dist);
-      // on wide screens shift the image right so the beam sits beside the headline, not under it
-      const W = stage.canvas.width, H = stage.canvas.height;
-      if (wide && W) { if (!camera.view || camera.view.offsetX !== -0.16 * W) camera.setViewOffset(W, H, -0.16 * W, 0, W, H); }
-      else if (camera.view && camera.view.enabled) camera.clearViewOffset();
-      camera.lookAt(stage.target);
     },
   });
   window.__mefs.hero.stage = stage;
