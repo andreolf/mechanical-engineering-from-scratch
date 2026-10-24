@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Stokes-layer thickness δ₉₉ (mm) in water (ν = 1e-6 m²/s) after 16 s. 3 decimals.",
+  "answer": 14.572,
+  "tol": 0.0005,
+  "py": "3.643*math.sqrt(1e-6*16)*1000",
+  "explain": "$3.643\\sqrt{\\nu t}$."
+ },
+ {
+  "type": "num",
+  "q": "Stokes settling speed (mm/s) of a 30 µm quartz grain (ρp = 2650) in water (μ = 1e-3). 4 decimals.",
+  "answer": 0.8093,
+  "tol": 0.0005,
+  "py": "1650*9.81*(30e-6)**2/(18e-3)*1000",
+  "explain": "$(\\rho_p - \\rho) g d^2/(18\\mu)$."
+ },
+ {
+  "type": "num",
+  "q": "Blasius skin-friction coefficient at Re_x = 4×10⁵. 6 decimals.",
+  "answer": 0.00105,
+  "tol": 0.0005,
+  "py": "0.664/math.sqrt(4e5)",
+  "explain": "$0.664/\\sqrt{Re_x}$."
+ },
+ {
+  "type": "num",
+  "q": "Aerodynamic power (W) at 12 m/s with C_D A = 0.28 m², ρ = 1.17. 2 decimals.",
+  "answer": 283.02,
+  "tol": 0.0005,
+  "py": "0.5*1.17*0.28*12**3",
+  "explain": "$\\tfrac12\\rho C_D A v^3$."
+ },
+ {
+  "type": "num",
+  "q": "Thin-airfoil lift coefficient at α = 6° with α_L0 = −2°. 4 decimals.",
+  "answer": 0.8773,
+  "tol": 0.0005,
+  "py": "2*math.pi*math.radians(8)",
+  "explain": "$2\\pi(\\alpha - \\alpha_{L0})$."
+ },
+ {
+  "type": "num",
+  "q": "Kolmogorov length (mm) in water for ε = 0.01 W/kg. 4 decimals.",
+  "answer": 0.1,
+  "tol": 0.0005,
+  "py": "(1e-18/0.01)**0.25*1000",
+  "explain": "$(\\nu^3/\\varepsilon)^{1/4}$."
+ },
+ {
+  "type": "num",
+  "q": "Laminar Darcy friction factor at Re = 1280.",
+  "answer": 0.05,
+  "tol": 0.0005,
+  "py": "64/1280",
+  "explain": "$64/Re$."
+ },
+ {
+  "type": "num",
+  "q": "Head loss (m): f = 0.02, L = 800 m, D = 0.25 m, V = 1.2 m/s. 4 decimals.",
+  "answer": 4.6972,
+  "tol": 0.0005,
+  "py": "0.02*800/0.25*1.2**2/(2*9.81)",
+  "explain": "$f (L/D) V^2/(2g)$."
+ },
+ {
+  "type": "num",
+  "q": "Pump power ratio when the speed drops from 1450 to 1160 rpm. 3 decimals.",
+  "answer": 0.512,
+  "tol": 0.0005,
+  "py": "(1160/1450)**3",
+  "explain": "Affinity: $P \\propto N^3$."
+ },
+ {
+  "type": "num",
+  "q": "Stagnation temperature (K) of air at 250 K moving at Mach 1.5.",
+  "answer": 362.5,
+  "tol": 0.0005,
+  "py": "250*(1+0.2*1.5**2)",
+  "explain": "$T(1 + \\tfrac{k-1}{2}M^2)$."
+ },
+ {
+  "type": "num",
+  "q": "Choked mass flow (kg/s) of air: A* = 10 cm², p₀ = 500 kPa, T₀ = 400 K. 4 decimals.",
+  "answer": 1.0104,
+  "tol": 0.0005,
+  "py": "0.040415*10e-4*500000/math.sqrt(400)",
+  "explain": "$0.040415\\,A^* p_0/\\sqrt{T_0}$."
+ },
+ {
+  "type": "num",
+  "q": "Pressure ratio across a normal shock at M₁ = 2.5 in air. 3 decimals.",
+  "answer": 7.125,
+  "tol": 0.0005,
+  "py": "1+2*1.4/2.4*(2.5**2-1)",
+  "explain": "$1 + \\tfrac{2k}{k+1}(M_1^2 - 1)$."
+ },
+ {
+  "type": "num",
+  "q": "Vortex-shedding frequency (Hz) of a 25 mm rod in a 6 m/s wind (St = 0.2).",
+  "answer": 48,
+  "tol": 0.0005,
+  "py": "0.2*6/0.025",
+  "explain": "$St\\,U/D$."
+ },
+ {
+  "type": "num",
+  "q": "Peak dye concentration (µg/L) 3600 s after a 5 kg release: A = 80 m², D = 60 m²/s. 2 decimals.",
+  "answer": 37.94,
+  "tol": 0.0005,
+  "py": "5/(80*math.sqrt(4*math.pi*60*3600))*1e6",
+  "explain": "$M/(A\\sqrt{4\\pi D t})$."
+ }
+]
