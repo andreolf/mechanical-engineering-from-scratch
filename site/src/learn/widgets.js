@@ -2485,6 +2485,53 @@ def('leverrule', {
   },
 });
 
+// 09.07 Fe-C steel corner: microstructure from the lever rule
+def('ironcarbon', {
+  controls: [{ k: 'c', label: 'Carbon content (wt%)', min: 0.02, max: 1.6, step: 0.01, v: 0.45, f: 2 }],
+  draw(p, v, out) {
+    const ce = 0.76, ca = 0.022, cc = 6.7, c = v.c;
+    p.frame({ x: [0, 1.6], y: [500, 1000], xlabel: 'carbon, wt%', ylabel: 'temperature, °C' });
+    p.line([0, ce], [912, 727], C.cyan, 2).line([ce, 1.6], [727, 727 + (1148 - 727) * (1.6 - ce) / (2.11 - ce)], C.amber, 2).line([ca, 1.6], [727, 727], C.grey, 1.5).line([0.022, 0.008, 0], [727, 600, 500], C.grey, 1);
+    p.text('austenite γ', 0.3, 940, C.paper).text('γ + α', 0.08, 770, C.cyan).text('γ + Fe₃C', 1.1, 790, C.amber).text('α + pearlite', 0.12, 640, C.cyan).text('pearlite + Fe₃C', 0.95, 640, C.amber);
+    const A = c <= ce ? 912 - (912 - 727) * c / ce : 727 + (1148 - 727) * (c - ce) / (2.11 - ce);
+    p.line([c, c], [500, 1000], C.lime, 2, [5, 4]).dots([c], [A], C.red, 5).dots([c], [727], C.red, 5);
+    const pro = c <= ce ? (ce - c) / (ce - ca) : (c - ce) / (cc - ce), pe = 1 - pro;
+    // bar along the bottom showing proeutectoid vs pearlite
+    p.rect(0.05, 0.05 + 1.5 * pro, 515, 545, c <= ce ? C.cyan : C.amber).rect(0.05 + 1.5 * pro, 1.55, 515, 545, C.lime);
+    out(`${nf(2).format(c)} % C. Cooling slowly, ${c <= ce ? 'ferrite' : 'cementite'} starts to form at ${nf(0).format(A)} °C (upper red dot). At 727 °C the remaining austenite, now at 0.76 % C, turns into pearlite. Room temperature: ${nf(1).format(pro * 100)} % proeutectoid ${c <= ce ? 'ferrite' : 'cementite'} and ${nf(1).format(pe * 100)} % pearlite (lime bar). ${c < 0.3 ? 'Mild steel: soft, weldable.' : c <= 0.6 ? 'Medium carbon: shafts, gears; heat treatable.' : 'High carbon: springs, tools, knives.'}`);
+  },
+});
+
+// 09.08 carburising: erf profile against depth
+def('carburise', {
+  controls: [{ k: 'T', label: 'Temperature (°C)', min: 850, max: 1050, step: 5, v: 927, f: 0 }, { k: 'h', label: 'Time (h)', min: 0.5, max: 16, step: 0.5, v: 4, f: 1 }],
+  draw(p, v, out) {
+    const erf = (x) => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+    const D = (T) => 2.3e-5 * Math.exp(-148000 / (8.314 * (T + 273.15))), d = D(v.T), t = v.h * 3600, L = 2 * Math.sqrt(d * t);
+    const xs = linspace(0, 2.5, 200), prof = (x) => 1 - 0.8 * erf(x * 1e-3 / L);
+    p.frame({ x: [0, 2.5], y: [0, 1.1], xlabel: 'depth, mm', ylabel: 'carbon, wt%' });
+    p.line(xs, xs.map((x) => 1 - 0.8 * erf(x * 1e-3 / (2 * Math.sqrt(D(927) * 4 * 3600)))), C.grey, 1, [4, 4]).line(xs, xs.map(prof), C.lime, 2.5).line([0, 2.5], [0.4, 0.4], C.amber, 1, [3, 3]);
+    const xc = 0.8134 * L * 1e3; p.dots([xc], [0.4], C.red, 5);
+    out(`D = ${d.toExponential(2)} m²/s. Case depth to 0.4 % C: ${nf(2).format(xc)} mm. Depth grows with √(Dt): double the depth needs four times the time. A hotter furnace is far quicker, since D rises exponentially with temperature. Grey dashed: 4 h at 927 °C.`);
+  },
+});
+
+// 09.09 viscoelastic models
+def('creeprelax', {
+  controls: [{ type: 'select', k: 'm', label: 'Test', options: ['Maxwell: hold strain (relaxation)', 'Kelvin-Voigt: hold stress (creep)', 'Standard linear solid: creep', 'Maxwell: hold stress (creep)'], v: 0 }, { k: 'tau', label: 'Time constant τ = η/E (s)', min: 100, max: 3000, step: 50, v: 1000, f: 0 }],
+  draw(p, v, out) {
+    const ts = linspace(0, 5000, 300), tau = v.tau, m = +v.m;
+    let ys, yl, msg;
+    if (m === 0) { ys = ts.map((t) => 20 * Math.exp(-t / tau)); yl = 'stress, MPa'; msg = `Held at 1 % strain, the stress decays as e^(−t/τ): ${nf(1).format(20 * Math.exp(-1))} MPa after τ, ${nf(2).format(20 * Math.exp(-3))} after 3τ. This is why plastic snap fits and bolted gaskets lose their grip.`; }
+    else if (m === 1) { ys = ts.map((t) => 0.5 * (1 - Math.exp(-t / tau))); yl = 'strain, %'; msg = 'Under 10 MPa the strain creeps up to σ/E = 0.5 % but there is no instant stretch: the dashpot holds the spring back.'; }
+    else if (m === 2) { ys = ts.map((t) => 0.5 + 0.25 * (1 - Math.exp(-t / tau))); yl = 'strain, %'; msg = 'Instant elastic strain (0.5 %), then delayed creep towards 0.75 %. This is the simplest model that looks like a real polymer.'; }
+    else { ys = ts.map((t) => 0.5 + 0.5 * t / tau); yl = 'strain, %'; msg = 'A Maxwell model under constant stress flows forever, like a liquid: instant 0.5 %, then a steady creep rate.'; }
+    p.frame({ x: [0, 5000], y: [0, Math.max(...ys) * 1.15], xlabel: 'time, s', ylabel: yl });
+    p.line(ts, ys, C.lime, 2.5).line([tau, tau], [0, Math.max(...ys) * 1.15], C.grey, 1, [4, 4]);
+    out(msg + ` (τ = ${nf(0).format(tau)} s marked.)`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
