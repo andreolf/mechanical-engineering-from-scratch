@@ -112,8 +112,17 @@ test.describe('Home page', () => {
     const fast = await page.evaluate(() => ({ ...window.__mefs.gyro.state, s: null }));
     expect(Math.abs(fast.tilt)).toBeLessThan(15);
     expect(Math.abs(fast.phiRate)).toBeGreaterThan(0.2);
+    // Wait on simulated time, not wall-clock time: under load the browser renders fewer frames, so the fall takes longer in real seconds.
+    // A frame-by-frame watcher records the lowest tilt, so a fast swing cannot slip between two polls.
     await page.locator('[data-action=gyro-stop]').click();
-    await expect.poll(() => page.evaluate(() => window.__mefs.gyro.state.tilt), { timeout: 8000 }).toBeLessThan(-45);
+    await page.evaluate(() => {
+      const st = window.__mefs.gyro.state;
+      window.__gyroWatch = { t0: st.t, minTilt: st.tilt };
+      const tick = () => { const w = window.__gyroWatch; w.minTilt = Math.min(w.minTilt, st.tilt); if (st.t - w.t0 < 3) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
+    await page.waitForFunction(() => window.__mefs.gyro.state.t - window.__gyroWatch.t0 >= 3 || window.__gyroWatch.minTilt < -45, null, { timeout: 60000 });
+    expect(await page.evaluate(() => window.__gyroWatch.minTilt)).toBeLessThan(-45);
     await expect(page.locator('#lab-flywheel .lab-banner')).toContainText('falls');
   });
 
