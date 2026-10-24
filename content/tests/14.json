@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Isometric foreshortening factor of each axis. 6 decimals.",
+  "answer": 0.816497,
+  "tol": 0.0005,
+  "py": "math.sqrt(2/3)",
+  "explain": "$\\sqrt{2/3}$."
+ },
+ {
+  "type": "num",
+  "q": "y-coordinate of (100, 0, 0) after rotating 90° about z and then translating by (50, 0, 0).",
+  "answer": 100,
+  "tol": 0.0005,
+  "py": "100",
+  "explain": "Rotate to (0, 100, 0), then shift x."
+ },
+ {
+  "type": "num",
+  "q": "Bernstein weight of P₂ in a cubic Bezier at t = 0.25. 6 decimals.",
+  "answer": 0.140625,
+  "tol": 0.0005,
+  "py": "3*0.25**2*0.75",
+  "explain": "$3t^2(1-t)$."
+ },
+ {
+  "type": "num",
+  "q": "Weight of the middle control point that makes a rational quadratic arc a 90° circular arc. 5 decimals.",
+  "answer": 0.70711,
+  "tol": 0.0005,
+  "py": "math.cos(math.radians(45))",
+  "explain": "$\\cos 45°$."
+ },
+ {
+  "type": "num",
+  "q": "Height of a bicubic patch centre when only its four inner control points are raised by 8 mm.",
+  "answer": 4.5,
+  "tol": 0.0005,
+  "py": "8*9/16",
+  "explain": "Inner points carry $9/16$ of the weight."
+ },
+ {
+  "type": "num",
+  "q": "Lens volume (mm³) of two spheres of radius 10 mm with centres 10 mm apart. 3 decimals.",
+  "answer": 1308.997,
+  "tol": 0.0005,
+  "py": "math.pi*(4*10+10)*(2*10-10)**2/12",
+  "explain": "$\\pi(4r+d)(2r-d)^2/12$."
+ },
+ {
+  "type": "num",
+  "q": "Binary STL size (bytes) for 1000 triangles.",
+  "answer": 50084,
+  "tol": 0.0005,
+  "py": "84+50*1000",
+  "explain": "84 + 50 per triangle."
+ },
+ {
+  "type": "num",
+  "q": "Edges of a closed triangle mesh with 500 faces.",
+  "answer": 750,
+  "tol": 0.0005,
+  "py": "500*3/2",
+  "explain": "Each edge is shared by two faces."
+ },
+ {
+  "type": "num",
+  "q": "Remaining DOF of a sketch with 5 points and Jacobian rank 8.",
+  "answer": 2,
+  "tol": 0.0005,
+  "py": "2*5-8",
+  "explain": "$2N - \\text{rank}\\,J$."
+ },
+ {
+  "type": "num",
+  "q": "Mass (g) of a 2000 mm² dropout, 5 mm thick, aluminium 2.70 g/cm³.",
+  "answer": 27,
+  "tol": 0.0005,
+  "py": "2000*5/1000*2.70",
+  "explain": "Area × thickness × density."
+ },
+ {
+  "type": "num",
+  "q": "Grübler mobility of a planar linkage with 5 links (including ground) and 5 pin joints.",
+  "answer": 2,
+  "tol": 0.0005,
+  "py": "3*(5-1)-2*5",
+  "explain": "$3(n-1) - 2j$."
+ },
+ {
+  "type": "num",
+  "q": "Pitch diameter (mm) of a 48-tooth gear of module 0.2.",
+  "answer": 9.6,
+  "tol": 0.0005,
+  "py": "0.2*48",
+  "explain": "$d = mz$."
+ },
+ {
+  "type": "num",
+  "q": "Base-circle diameter (mm) of that gear at 20° pressure angle. 4 decimals.",
+  "answer": 9.021,
+  "tol": 0.0005,
+  "py": "9.6*math.cos(math.radians(20))",
+  "explain": "$d\\cos\\alpha$."
+ },
+ {
+  "type": "num",
+  "q": "Allowed position tolerance (mm) for an 8.0 +0.15/0 hole measuring 8.10 with Ø0.12 at MMC.",
+  "answer": 0.22,
+  "tol": 0.0005,
+  "py": "0.12+0.10",
+  "explain": "Stated + (actual − MMC)."
+ }
+]
