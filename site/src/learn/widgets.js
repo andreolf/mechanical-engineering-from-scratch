@@ -4190,6 +4190,43 @@ def('battthermal', {
   },
 });
 
+// 14.01 orthographic views of a stepped block
+def('orthoviews', {
+  controls: [{ type: 'select', k: 'vw', label: 'View', options: ['Rotated (use the sliders)', 'Front', 'Top', 'Right side', 'Isometric'], v: 'Rotated (use the sliders)' }, { k: 'yaw', label: 'Turn about the vertical axis (°)', min: -180, max: 180, step: 1, v: 30, f: 0 }, { k: 'pit', label: 'Tilt towards you (°)', min: -90, max: 90, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const P0 = [[0, 0, 0], [60, 0, 0], [60, 0, 15], [35, 0, 15], [35, 0, 30], [0, 0, 30]], V = P0.concat(P0.map((q) => [q[0], 40, q[2]])).map((q) => [q[0] - 30, q[1] - 20, q[2] - 15]);
+    const E = []; for (let i = 0; i < 6; i++) E.push([i, (i + 1) % 6], [i + 6, ((i + 1) % 6) + 6], [i, i + 6]);
+    const d = Math.PI / 180;
+    let yaw = v.yaw, pit = v.pit, name = v.vw;
+    if (name === 'Front') { yaw = 0; pit = 0; } else if (name === 'Top') { yaw = 0; pit = 90; } else if (name === 'Right side') { yaw = -90; pit = 0; } else if (name === 'Isometric') { yaw = -45; pit = Math.atan(1 / Math.SQRT2) / d; }
+    const cy = Math.cos(yaw * d), sy = Math.sin(yaw * d), cp = Math.cos(pit * d), sp = Math.sin(pit * d);
+    const proj = (q) => { const x = cy * q[0] - sy * q[1], y = sy * q[0] + cy * q[1], z = q[2]; return [x, sp * y + cp * z]; };
+    sqframe(p, 45, 'screen x, mm', 'screen y, mm');
+    const Q = V.map(proj);
+    for (const [a, b] of E) p.line([Q[a][0], Q[b][0]], [Q[a][1], Q[b][1]], C.lime, 2);
+    const ax = [[[0, 0, 0], [20, 0, 0], 'x'], [[0, 0, 0], [0, 20, 0], 'y'], [[0, 0, 0], [0, 0, 20], 'z']];
+    for (const [o, e, l] of ax) { const a = proj([o[0] - 40, o[1] - 30, o[2] - 25]), b = proj([e[0] - 40, e[1] - 30, e[2] - 25]); p.line([a[0], b[0]], [a[1], b[1]], C.cyan, 1.5); if (Math.hypot(b[0] - a[0], b[1] - a[1]) > 3) p.text(l, b[0] + 1, b[1] + 1, C.cyan); }
+    out(`${name}: turn ${nf(0).format(yaw)}°, tilt ${nf(1).format(pit)}°. Screen coordinates are a linear map of (x, y, z): [cos θ, −sin θ, 0] and [sin φ sin θ, sin φ cos θ, cos φ]. Edges that coincide in a principal view collapse onto one line; that is why a drawing needs several views. Wireframe: hidden edges are drawn too.`);
+  },
+});
+
+// 14.02 composition order of 2D transforms
+def('xform2d', {
+  controls: [{ k: 'a', label: 'Rotation (°)', min: -180, max: 180, step: 5, v: 90, f: 0 }, { k: 'tx', label: 'Translation x', min: -4, max: 4, step: 0.5, v: 3, f: 1 }, { k: 'ty', label: 'Translation y', min: -4, max: 4, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const sh = [[0, 0], [2, 0], [2, 1], [1, 1.8], [0, 1], [0, 0]], t = v.a * Math.PI / 180, c = Math.cos(t), s = Math.sin(t);
+    const R = (q) => [c * q[0] - s * q[1], s * q[0] + c * q[1]], T = (q) => [q[0] + v.tx, q[1] + v.ty];
+    const rt = sh.map((q) => T(R(q))), tr = sh.map((q) => R(T(q)));
+    sqframe(p, 7, 'x', 'y');
+    p.line([-7, 7], [0, 0], C.rule, 1).line([0, 0], [-7, 7], C.rule, 1);
+    p.line(sh.map((q) => q[0]), sh.map((q) => q[1]), C.grey, 2);
+    p.line(tr.map((q) => q[0]), tr.map((q) => q[1]), C.cyan, 2, [6, 4]);
+    p.line(rt.map((q) => q[0]), rt.map((q) => q[1]), C.lime, 2.5);
+    p.dots([0], [0], C.paper, 4);
+    out(`Grey: the original shape. Lime: rotate ${v.a}° about the origin, then translate by (${v.tx}, ${v.ty}), matrix T·R. Cyan dashed: translate first, then rotate, matrix R·T; the translation itself gets rotated. ${Math.abs(v.a % 360) < 1e-9 || (v.tx === 0 && v.ty === 0) ? 'With no rotation or no translation the two orders agree.' : 'The two results differ: matrix products do not commute.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
