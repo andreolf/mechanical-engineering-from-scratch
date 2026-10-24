@@ -1718,6 +1718,83 @@ def('hook', {
   },
 });
 
+// 06.19 Euler buckling: compress a column until it snaps sideways
+def('buckle', {
+  controls: [{ type: 'select', k: 'ends', label: 'End conditions', options: ['pinned-pinned', 'fixed-free', 'fixed-fixed', 'fixed-pinned'], v: 'pinned-pinned' }, { k: 'P', label: 'Axial load P (kN)', min: 0, max: 120, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const E = 210e3, D = 48.3, t = 3.2, L = 3000, I = Math.PI * (D ** 4 - (D - 2 * t) ** 4) / 64, A = Math.PI * (D * D - (D - 2 * t) ** 2) / 4;
+    const K = { 'pinned-pinned': 1, 'fixed-free': 2, 'fixed-fixed': 0.5, 'fixed-pinned': 0.6992 }[v.ends], Pcr = Math.PI ** 2 * E * I / (K * L) ** 2 / 1e3;
+    const k = 4.4934 / L, tk = Math.tan(4.4934);
+    const shape = { 'pinned-pinned': (x) => Math.sin(Math.PI * x / L), 'fixed-free': (x) => 1 - Math.cos(Math.PI * x / (2 * L)), 'fixed-fixed': (x) => (1 - Math.cos(2 * Math.PI * x / L)) / 2, 'fixed-pinned': (x) => (Math.sin(k * x) - tk * Math.cos(k * x) - k * x + tk) / 1.2 }[v.ends];
+    const ys = linspace(0, L, 121), buckled = v.P >= Pcr, amp = buckled ? 450 : 0;
+    fitAt(p, 0, L / 2, 900, L / 2 + 250, 'sideways, mm', 'height, mm');
+    p.line([0, 0], [0, L], C.grey, 1, [4, 4]);
+    p.line(ys.map((y) => amp * shape(y)), ys, buckled ? C.red : C.cyan, 4);
+    const fixedBase = v.ends !== 'pinned-pinned', fixedTop = v.ends === 'fixed-fixed';
+    if (fixedBase) p.rect(-250, 250, -120, 0, 'rgba(154,157,147,0.6)'); else poly(p, [[0, 0], [-90, -160], [90, -160]], C.paper, null, 1.5);
+    const topX = amp * shape(L);
+    if (fixedTop) p.rect(-250, 250, L, L + 120, 'rgba(154,157,147,0.6)'); else if (v.ends !== 'fixed-free') poly(p, [[topX, L], [topX - 90, L + 160], [topX + 90, L + 160]], C.paper, null, 1.5);
+    arrow(p, topX, L + 480, topX, L + 30, C.amber);
+    out(`Scaffold tube 48.3 × 3.2 mm, 3 m. ${v.ends}: K = ${K}, P_cr = π²EI/(KL)² = ${nf(2).format(Pcr)} kN (squash load ${nf(1).format(0.235 * A)} kN). ${buckled ? 'P ≥ P_cr: the straight column is no longer stable and it bows out sideways (red, amplitude not to scale).' : `Straight and stable, at ${nf(0).format(100 * v.P / Pcr)} % of P_cr.`}`);
+  },
+});
+
+// 06.20 imperfect column: load against mid-span bow
+def('imperfect', {
+  controls: [{ k: 'e', label: 'Initial bow e₀ (mm)', min: 0, max: 15, step: 0.5, v: 3, f: 1 }, { k: 'r', label: 'Load P / P_cr', min: 0, max: 0.98, step: 0.01, v: 0.6, f: 2 }],
+  draw(p, v, out) {
+    const E = 210e3, D = 48.3, t = 3.2, L = 3000, I = Math.PI * (D ** 4 - (D - 2 * t) ** 4) / 64, A = Math.PI * (D * D - (D - 2 * t) ** 2) / 4, Pcr = Math.PI ** 2 * E * I / L ** 2;
+    const rs = linspace(0, 0.995, 200);
+    p.frame({ x: [0, 60], y: [0, 1.05], xlabel: 'total mid-span bow, mm', ylabel: 'P / P_cr' });
+    p.line([0, 0, 60], [0, 1, 1], C.grey, 1.5, [5, 4]);
+    [1, 3, 6, 10].forEach((e) => p.line(rs.map((r) => e / (1 - r)), rs, C.rule, 1.5));
+    p.line(rs.map((r) => v.e / (1 - r)), rs, C.lime, 2.5);
+    // first yield: P/A + P w c / I = 235
+    const fy = 235, sig = (r) => r * Pcr / A + r * Pcr * (v.e / (1 - r)) * (D / 2) / I;
+    let lo = 0, hi = 0.9999; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (sig(m) < fy) lo = m; else hi = m; }
+    p.dots([v.e / (1 - lo)], [lo], C.red, 5);
+    const w = v.e / (1 - v.r);
+    p.dots([w], [v.r], C.cyan, 6);
+    out(`Bow ${nf(2).format(w)} mm = e₀ × ${nf(2).format(1 / (1 - v.r))}. Peak stress P/A + Pwc/I = ${nf(0).format(sig(v.r))} MPa${sig(v.r) > fy ? ', past yield' : ''}. First yield (red dot) at ${nf(3).format(lo)} P_cr = ${nf(1).format(lo * Pcr / 1e3)} kN. Grey curves: e₀ = 1, 3, 6, 10 mm; dashed: a perfect column.`);
+  },
+});
+
+// 06.21 penstock wall: hoop and axial stress
+def('penstock', {
+  controls: [{ k: 'H', label: 'Head below the intake (m)', min: 0, max: 800, step: 10, v: 650, f: 0 }, { k: 'D', label: 'Pipe diameter (m)', min: 0.5, max: 2.5, step: 0.1, v: 1.2, f: 1 }, { k: 't', label: 'Wall thickness (mm)', min: 5, max: 60, step: 1, v: 36, f: 0 }],
+  draw(p, v, out) {
+    const pr = (H) => 1000 * 9.81 * H * 1.25 / 1e6, need = (H) => pr(H) * v.D * 500 / (160 * 0.9) + 2;
+    const Hs = linspace(0, 800, 81), top = Math.max(60, need(800) * 1.1);
+    p.frame({ x: [0, 800], y: [0, top], xlabel: 'head, m', ylabel: 'wall needed, mm' });
+    p.line(Hs, Hs.map(need), C.lime, 2.5).line([0, 800], [v.t, v.t], C.cyan, 1.5, [5, 4]);
+    const ok = v.t >= need(v.H); p.dots([v.H], [need(v.H)], ok ? C.lime : C.red, 6);
+    const P = pr(v.H), r = v.D * 500, tc = Math.max(v.t - 2, 0.1), hoop = P * r / tc;
+    out(`Design pressure ${nf(2).format(P)} MPa (static head × 1.25 for water hammer). With 2 mm corrosion allowance: hoop pr/t = ${nf(1).format(hoop)} MPa, axial pr/2t = ${nf(1).format(hoop / 2)} MPa (exactly half). Needs ${nf(1).format(need(v.H))} mm against a 144 MPa limit (160 MPa × 0.9 weld efficiency): ${ok ? 'OK' : 'too thin'}.`);
+  },
+});
+
+// 06.22 Kirsch: stress round a hole in a plate under tension
+def('kirsch', {
+  controls: [{ type: 'select', k: 'c', label: 'Stress shown', options: ['σx (along the load)', 'σy (across the load)'], v: 'σx (along the load)' }, { k: 's', label: 'Remote tension σ (MPa)', min: 10, max: 200, step: 5, v: 100, f: 0 }],
+  draw(p, v, out) {
+    const a = 5, s = v.s;
+    const f = (x, y) => {
+      const r = Math.hypot(x, y); if (r < a) return NaN;
+      const th = Math.atan2(y, x), q = (a / r) ** 2, c2 = Math.cos(2 * th), s2 = Math.sin(2 * th);
+      const srr = s / 2 * (1 - q) + s / 2 * (1 - 4 * q + 3 * q * q) * c2, stt = s / 2 * (1 + q) - s / 2 * (1 + 3 * q * q) * c2, trt = -s / 2 * (1 + 2 * q - 3 * q * q) * s2;
+      const c = Math.cos(th), sn = Math.sin(th);
+      return v.c.startsWith('σx') ? srr * c * c + stt * sn * sn - 2 * trt * sn * c : srr * sn * sn + stt * c * c + 2 * trt * sn * c;
+    };
+    fitAt(p, 0, 0, 20, 20, 'x, mm (load along x)', 'y, mm');
+    bands(p, (x, y) => { const z = f(x, y); return isNaN(z) ? -1e9 : z; }, v.c.startsWith('σx') ? 0 : -s, 3 * s, 14, 140);
+    const ring = linspace(0, 2 * Math.PI, 97); p.line(ring.map((q) => a * Math.cos(q)), ring.map((q) => a * Math.sin(q)), C.paper, 1.5);
+    const px = v.c.startsWith('σx') ? [0, 0] : [a, -a], py = v.c.startsWith('σx') ? [a, -a] : [0, 0];
+    p.dots(px, py, v.c.startsWith('σx') ? C.red : C.cyan, 5);
+    arrow(p, 15, 0, 19.5, 0, C.amber); arrow(p, -15, 0, -19.5, 0, C.amber);
+    out(v.c.startsWith('σx') ? `σx peaks at ${nf(0).format(3 * s)} MPa = 3σ on the hole edge at the top and bottom (red), and fades to σ within a couple of radii: ${nf(1).format(s * (1 + 1 / 8 + 3 / 32))} MPa at y = 2a.` : `σy is −σ = ${nf(0).format(-s)} MPa (compression) at the hole edge on the load axis (cyan), even though the plate is only pulled.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
