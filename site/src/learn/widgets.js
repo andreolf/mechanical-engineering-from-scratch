@@ -3425,6 +3425,52 @@ def('froudemodel', {
   },
 });
 
+// 11.13 Navier-Stokes term explorer (x-momentum)
+def('nsterms', {
+  controls: [{ type: 'select', k: 'k', label: 'Flow', options: ['Plane Poiseuille', 'Taylor-Green vortex', 'Taylor-Green with p = 0 (wrong)'], v: 'Taylor-Green vortex' }, { k: 'x', label: 'Position x (along y = 0.5)', min: 0, max: 6.28, step: 0.02, v: 0.6, f: 2 }, { k: 't', label: 'Time t', min: 0, max: 10, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Plane Poiseuille', 'Taylor-Green vortex', 'Taylor-Green with p = 0 (wrong)'].indexOf(v.k), rho = 1, mu = 0.1, U = 1, y = 0.5, x = v.x;
+    let T;
+    if (sel === 0) { const G = 1; T = [0, 0, -G, G]; }
+    else { const F = Math.exp(-2 * mu / rho * v.t), u = U * Math.sin(x) * Math.cos(y) * F; const half = 0.5 * rho * U * U * F * F * Math.sin(2 * x); T = [-2 * mu * u, half, sel === 1 ? -half : 0, 2 * mu * u]; }
+    const S = T.reduce((a, b) => a + b, 0), names = ['ρ ∂u/∂t', 'ρ(u·∇)u', '∂p/∂x', '−μ∇²u', 'sum'], vals = T.concat([S]);
+    const L = Math.max(0.2, ...vals.map(Math.abs)) * 1.3;
+    p.frame({ x: [0, 5], y: [-L, L], xlabel: '', ylabel: 'term (x-momentum)' });
+    vals.forEach((val, i) => { p.rect(i + 0.15, i + 0.85, 0, val, i === 4 ? (Math.abs(S) < 1e-9 ? C.lime : C.red) : C.cyan); p.text(names[i], i + 0.1, (val >= 0 ? -0.12 : 0.06) * L, C.paper); });
+    p.line([0, 5], [0, 0], C.grey, 1);
+    out(`${['Steady parallel flow: no acceleration at all. The pressure gradient is balanced entirely by viscous friction.', 'Every term changes with x and t, yet they always sum to zero: an exact solution. Convection is balanced by the pressure gradient, and the decay in time by viscosity.', 'Without its pressure field the vortex fails: the convective term is left unbalanced, so this is not a solution.'][sel]} Sum = ${nf(4).format(S)}.`);
+  },
+});
+
+// 11.14 Hagen-Poiseuille profile
+def('pipeprofile', {
+  controls: [{ k: 'dp', label: 'Pressure drop per metre (Pa/m)', min: 10, max: 2000, step: 10, v: 400, f: 0 }, { k: 'D', label: 'Pipe diameter (mm)', min: 2, max: 40, step: 1, v: 20, f: 0 }, { type: 'select', k: 'k', label: 'Fluid', options: ['Olive oil (84 mPa s)', 'Glycerol (1.4 Pa s)', 'Water (1.0 mPa s)'], v: 'Olive oil (84 mPa s)' }],
+  draw(p, v, out) {
+    const sel = ['Olive oil (84 mPa s)', 'Glycerol (1.4 Pa s)', 'Water (1.0 mPa s)'].indexOf(v.k), mu = [0.084, 1.4, 1e-3][sel], rho = [910, 1260, 998][sel], R = v.D / 2000;
+    const umax = v.dp * R * R / (4 * mu), Q = Math.PI * R ** 4 * v.dp / (8 * mu), um = umax / 2, Re = rho * um * 2 * R / mu;
+    const rs = linspace(-R, R, 81);
+    p.frame({ x: [0, umax * 1.25], y: [-R * 1e3 * 1.2, R * 1e3 * 1.2], xlabel: 'u, m/s', ylabel: 'r, mm' });
+    p.line([0, umax * 1.25], [R * 1e3, R * 1e3], C.paper, 2).line([0, umax * 1.25], [-R * 1e3, -R * 1e3], C.paper, 2);
+    for (let i = 4; i <= 76; i += 8) arrow(p, 0, rs[i] * 1e3, v.dp * (R * R - rs[i] ** 2) / (4 * mu), rs[i] * 1e3, C.cyan, 1.4);
+    p.line(rs.map((r) => v.dp * (R * R - r * r) / (4 * mu)), rs.map((r) => r * 1e3), C.lime, 2.5).line([um, um], [-R * 1e3, R * 1e3], C.amber, 1.5, [5, 4]);
+    out(`Centre speed ${umax < 0.01 ? umax.toExponential(2) : nf(3).format(umax)} m/s, mean (dashed) exactly half. Q = πR⁴Δp/(8μL) = ${nf(2).format(Q * 1e6)} mL/s. Re = ${nf(0).format(Re)}: ${Re < 2300 ? 'laminar, the parabola holds.' : 'too high, the real flow would be turbulent and this profile is invalid.'}`);
+  },
+});
+
+// 11.15 Rankine vortex with a coconut
+def('rankinevortex', {
+  controls: [{ k: 'G', label: 'Circulation Γ (m²/s)', min: 0.2, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'a', label: 'Core radius (m)', min: 0.1, max: 1, step: 0.05, v: 0.4, f: 2 }, { k: 'r', label: 'Coconut radius (m)', min: 0.05, max: 1.5, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const ut = (r) => (r < v.a ? v.G * r / (2 * Math.PI * v.a * v.a) : v.G / (2 * Math.PI * r));
+    const rs = linspace(0, 1.6, 161), umax = v.G / (2 * Math.PI * v.a);
+    p.frame({ x: [0, 1.6], y: [0, umax * 1.25], xlabel: 'radius r, m', ylabel: 'swirl speed, m/s' });
+    p.rect(0, v.a, 0, umax * 1.25, 'rgba(255,90,54,0.15)').text('core: vorticity 2Ω', 0.02, umax * 1.17, C.red).text('outside: irrotational', Math.min(v.a + 0.05, 1.0), umax * 1.05, C.cyan);
+    p.line(rs, rs.map(ut), C.cyan, 2.5).dots([v.r], [ut(v.r)], C.amber, 8).text('coconut', v.r + 0.03, ut(v.r) + umax * 0.06, C.amber);
+    const T = 2 * Math.PI * v.r / ut(v.r);
+    out(`Coconut at r = ${nf(2).format(v.r)} m moves at ${nf(3).format(ut(v.r))} m/s and circles once every ${nf(1).format(T)} s. ${v.r < v.a ? 'Inside the core it turns like a solid body: the same period at every radius.' : 'Outside the core, speed falls as 1/r; the fluid parcels orbit without spinning about their own axes.'} Circulation around any loop enclosing the core is Γ = ${nf(1).format(v.G)} m²/s.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
