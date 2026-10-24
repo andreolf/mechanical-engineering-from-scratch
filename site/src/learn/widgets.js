@@ -3921,6 +3921,54 @@ def('shocktube', {
   },
 });
 
+// 12.16 Karman vortex street behind a cable
+def('karmanstreet', {
+  controls: [{ k: 'U', label: 'Wind speed (m/s)', min: 1, max: 25, step: 0.5, v: 10, f: 1 }, { k: 'D', label: 'Cable diameter (mm)', min: 10, max: 80, step: 1, v: 40, f: 0 }, { k: 't', label: 'Time (ms)', min: 0, max: 100, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const D = v.D / 1000, f = 0.2 * v.U / D, Uc = 0.85 * v.U, lam = Uc / f, hs = 0.281 * lam;   // street spacing ratio h/l = 0.281 (von Karman)
+    const R = 1;                                                   // plot in units of the cable diameter
+    p.frame({ x: [-2, 30], y: [-6, 6], xlabel: 'distance downstream / D', ylabel: '' , noy: true });
+    poly(p, linspace(0, 2 * Math.PI, 40).map((a) => [0.5 * Math.cos(a), 0.5 * Math.sin(a)]), C.paper, 'rgba(200,200,200,0.4)', 2);
+    const shift = (Uc * v.t / 1000) / D, L = lam / D, H = hs / D;
+    for (let n = -1; n < 12; n++) {
+      [0, 1].forEach((side) => { const x = 1.5 + (n + side / 2) * L + (shift % L); if (x < 1 || x > 30) return; const y = side ? -H / 2 : H / 2, r = 0.45 + 0.02 * x;
+        const th = linspace(0, 4 * Math.PI, 50); p.line(th.map((a) => x + r * (a / (4 * Math.PI)) * Math.cos(side ? -a : a)), th.map((a) => y + r * (a / (4 * Math.PI)) * Math.sin(side ? -a : a)), side ? C.cyan : C.amber, 1.6); });
+    }
+    arrow(p, -1.8, 4.8, 0.4, 4.8, C.grey, 1.5);
+    out(`Strouhal 0.2: the cable sheds ${nf(1).format(f)} Hz (one vortex from each side per cycle), Re = ${nf(0).format(v.U * D / 1.5e-5)}. Vortices drift at about 0.85 U and sit ${nf(2).format(lam)} m apart, rows ${nf(2).format(hs)} m apart. ${f > 20 && f < 20000 ? 'Audible: this is the cable singing.' : 'Below the audible range, but it can still shake a structure whose natural frequency matches.'}`);
+  },
+});
+
+// 12.17 wind load on a signboard
+def('signwind', {
+  controls: [{ k: 'V', label: 'Mean wind speed at the sign (m/s)', min: 5, max: 40, step: 0.5, v: 22, f: 1 }, { k: 'b', label: 'Sign width (m)', min: 1, max: 6, step: 0.5, v: 3, f: 1 }, { type: 'select', k: 'k', label: 'Terrain', options: ['Open coast (z₀ = 0.01 m)', 'Village (z₀ = 0.3 m)', 'Lakeside (z₀ = 0.05 m)'], v: 'Village (z₀ = 0.3 m)' }],
+  draw(p, v, out) {
+    const z0 = [0.01, 0.3, 0.05][['Open coast (z₀ = 0.01 m)', 'Village (z₀ = 0.3 m)', 'Lakeside (z₀ = 0.05 m)'].indexOf(v.k)], Iv = 1 / Math.log(4 / z0), A = v.b * 1.5;
+    const Fz = (V) => 1.8 * (1 + 7 * Iv) * 0.6 * V * V * A, Vs = linspace(0, 40, 100), W = 139.1e-6;
+    p.frame({ x: [0, 40], y: [0, Fz(40) / 1000 * 1.05], xlabel: 'mean wind speed, m/s', ylabel: 'force on the sign, kN' });
+    p.line(Vs, Vs.map((V) => Fz(V) / 1000), C.lime, 2.5);
+    const Vy = Math.sqrt(355e6 * W / 4 / (1.8 * (1 + 7 * Iv) * 0.6 * A));
+    if (Vy < 40) p.line([Vy, Vy], [0, Fz(40) / 1000], C.red, 1.5, [5, 4]).text('post yields', Vy + 0.5, Fz(40) / 1000 * 0.9, C.red);
+    const F = Fz(v.V); p.dots([v.V], [F / 1000], C.amber, 7);
+    out(`Peak pressure ${nf(0).format((1 + 7 * Iv) * 0.6 * v.V * v.V)} Pa (gust factor 1 + 7I = ${nf(2).format(1 + 7 * Iv)}, a labelled simplification). Force ${nf(2).format(F / 1000)} kN on ${nf(1).format(A)} m², base moment ${nf(1).format(F * 4 / 1000)} kN m, stress ${nf(0).format(F * 4 / W / 1e6)} MPa in a 168.3 × 7.1 mm post. Double the wind and the load is four times bigger.`);
+  },
+});
+
+// 12.18 dye release in the Limmat
+def('dyerelease', {
+  controls: [{ k: 't', label: 'Time since release (min)', min: 2, max: 180, step: 1, v: 30, f: 0 }, { k: 'D', label: 'Longitudinal dispersion D (m²/s)', min: 10, max: 300, step: 5, v: 88, f: 0 }, { k: 'U', label: 'Mean velocity U (m/s)', min: 0.3, max: 2, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const A = 100, M = 10, t = v.t * 60, xs = linspace(0, 15000, 400);
+    const c = (x, tt) => M / (A * Math.sqrt(4 * Math.PI * v.D * tt)) * Math.exp(-((x - v.U * tt) ** 2) / (4 * v.D * tt)) * 1e6;
+    const top = c(v.U * 240, 240) * 1.1;
+    p.frame({ x: [0, 15], y: [0, top], xlabel: 'distance downstream, km', ylabel: 'dye concentration, µg/L' });
+    [600, 3600, 7200].forEach((tt) => p.line(xs.map((x) => x / 1000), xs.map((x) => c(x, tt)), C.grey, 1, [4, 3]));
+    p.line(xs.map((x) => x / 1000), xs.map((x) => c(x, t)), C.lime, 2.5);
+    const dx = xs[1] - xs[0], mass = xs.reduce((s, x) => s + c(x, t), 0) * dx * A / 1e6;
+    out(`After ${v.t} min the cloud is centred ${nf(1).format(v.U * t / 1000)} km downstream with a peak of ${nf(1).format(c(v.U * t, t))} µg/L and a width (4σ) of ${nf(0).format(4 * Math.sqrt(2 * v.D * t))} m. Area under the curve × cross-section = ${nf(2).format(mass)} kg${v.U * t + 3 * Math.sqrt(2 * v.D * t) > 15000 ? ' within the plotted reach (some dye has already passed 15 km)' : ' of the 10 kg released: the mass is conserved while the peak falls as 1/√t'}.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
