@@ -4121,6 +4121,42 @@ def('roofbalance', {
   },
 });
 
+// 13.11 sun path for Bali and Zurich
+def('sunpath', {
+  controls: [{ k: 'n', label: 'Day of the year', min: 1, max: 365, step: 1, v: 172, f: 0 }, { type: 'select', k: 'pl', label: 'Place', options: ['Bali (8.65° S)', 'Zürich (47.37° N)'], v: 'Bali (8.65° S)' }],
+  draw(p, v, out) {
+    const lats = [-8.65, 47.37], i = ['Bali (8.65° S)', 'Zürich (47.37° N)'].indexOf(v.pl), d2r = Math.PI / 180;
+    const dec = (n) => 23.45 * Math.sin(d2r * 360 * (284 + n) / 365);
+    const el = (lat, n, hr) => Math.asin(Math.sin(lat * d2r) * Math.sin(dec(n) * d2r) + Math.cos(lat * d2r) * Math.cos(dec(n) * d2r) * Math.cos(15 * (hr - 12) * d2r)) / d2r;
+    const day = (lat, n) => { let s = 0; for (let k = 0; k < 288; k++) { const a = el(lat, n, (k + 0.5) / 12); if (a > 0) { const sn = Math.sin(a * d2r); s += 1.1 * 1353 * 0.7 ** ((1 / sn) ** 0.678) * sn; } } return s / 12 / 1000; };
+    const hs = linspace(0, 24, 241);
+    p.frame({ x: [0, 24], y: [-10, 90], xlabel: 'solar time, h', ylabel: 'sun elevation, °' });
+    p.line([0, 24], [0, 0], C.grey, 1);
+    p.line(hs, hs.map((h) => el(lats[1 - i], v.n, h)), C.grey, 1.5, [5, 4]);
+    p.line(hs, hs.map((h) => el(lats[i], v.n, h)), C.lime, 2.5);
+    const noon = 90 - Math.abs(lats[i] - dec(v.n));
+    p.dots([12], [noon], C.paper, 6);
+    out(`${v.pl}, day ${v.n}: declination ${nf(2).format(dec(v.n))}°, noon elevation 90 − |lat − decl| = ${nf(1).format(noon)}°. Clear-sky energy on a flat panel: ${nf(2).format(day(lats[i], v.n))} kWh/m² (the other city, dashed grey: ${nf(2).format(day(lats[1 - i], v.n))}).`);
+  },
+});
+
+// 13.12 parallel flow versus counterflow profiles
+def('hxprofile', {
+  controls: [{ k: 'UA', label: 'UA (W/K)', min: 20, max: 1500, step: 10, v: 300, f: 0 }, { type: 'select', k: 'ar', label: 'Arrangement', options: ['Counterflow', 'Parallel flow'], v: 'Counterflow' }],
+  draw(p, v, out) {
+    const Thi = 110, Tci = 25, Ch = 420, Cc = 418, cnt = v.ar === 'Counterflow', xs = linspace(0, 1, 101);
+    let Th, Tc;
+    if (!cnt) { const k = v.UA * (1 / Ch + 1 / Cc), dT = (x) => (Thi - Tci) * Math.exp(-k * x), Tm = (Ch * Thi + Cc * Tci) / (Ch + Cc); Th = xs.map((x) => Tm + Cc / (Ch + Cc) * dT(x)); Tc = xs.map((x) => Tm - Ch / (Ch + Cc) * dT(x)); }
+    else { const k = v.UA * (1 / Ch - 1 / Cc), cr = Ch / Cc, e = Math.abs(k) < 1e-9 ? v.UA / Ch / (1 + v.UA / Ch) : (1 - Math.exp(-k)) / (1 - cr * Math.exp(-k)), Q = e * Ch * (Thi - Tci), Tco = Tci + Q / Cc;
+      const dT0 = Thi - Tco, I = (x) => (Math.abs(k) < 1e-9 ? x : (1 - Math.exp(-k * x)) / k); Th = xs.map((x) => Thi - v.UA / Ch * dT0 * I(x)); Tc = xs.map((x, j) => Th[j] - dT0 * Math.exp(-k * x)); }
+    p.frame({ x: [0, 1], y: [20, 115], xlabel: 'position along the exchanger, fraction of length', ylabel: 'temperature, °C' });
+    p.line(xs, Th, C.red, 2.5).line(xs, Tc, C.cyan, 2.5);
+    p.text(cnt ? 'water flows ←' : 'water flows →', 0.62, cnt ? Tc[62] + 6 : Tc[62] - 7, C.cyan).text('oil flows →', 0.05, Th[5] + 5, C.red);
+    const Q = Ch * (Thi - Th[100]), Tco = cnt ? Tc[0] : Tc[100];
+    out(`${v.ar}: oil 110 → ${nf(1).format(Th[100])} °C, water 25 → ${nf(1).format(Tco)} °C, Q = ${nf(2).format(Q / 1000)} kW. ${cnt ? (Tco > Th[100] ? 'The water leaves hotter than the oil leaves: only counterflow can do that.' : 'Push UA up: counterflow can heat the water above the oil outlet temperature.') : 'In parallel flow the water can never get hotter than the oil outlet.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
