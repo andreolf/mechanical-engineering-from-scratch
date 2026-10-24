@@ -2318,6 +2318,73 @@ def('chladni', {
   },
 });
 
+// 08.13 hammer test FRF of a 3-storey frame
+def('frfhammer', {
+  controls: [{ type: 'select', k: 'tap', label: 'Tap at floor', options: ['1', '2', '3'], v: '3' }, { type: 'select', k: 'meas', label: 'Measure at floor', options: ['1', '2', '3'], v: '3' }, { k: 'z', label: 'Damping ratio ζ (%)', min: 0.2, max: 10, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const n = 3, m = 2, k = 8000, z = v.z / 100, i = +v.tap, j = +v.meas, modes = [];
+    for (let r = 1; r <= n; r++) { const w = 2 * Math.sqrt(k / m) * Math.sin((2 * r - 1) * Math.PI / (2 * (2 * n + 1))), sh = range(1, n).map((q) => Math.sin((2 * r - 1) * q * Math.PI / (2 * n + 1))), nm = Math.sqrt(m * sh.reduce((a, b) => a + b * b, 0)); modes.push({ w, ph: sh.map((s) => s / nm) }); }
+    const fs = linspace(0.5, 25, 1200), H = (f) => { const w = 2 * Math.PI * f; let re = 0, im = 0; for (const md of modes) { const a = md.ph[i - 1] * md.ph[j - 1], dr = md.w * md.w - w * w, di = 2 * z * md.w * w, d = dr * dr + di * di; re += a * dr / d; im -= a * di / d; } return Math.hypot(re, im); };
+    p.frame({ x: [0.5, 25], y: [1e-6, 1e-1], ylog: true, xlabel: 'frequency, Hz', ylabel: '|H|, m/N' });
+    p.line(fs, fs.map((f) => Math.max(1e-6, H(f))), C.lime, 2);
+    modes.forEach((md) => p.line([md.w / 2 / Math.PI, md.w / 2 / Math.PI], [1e-6, 1e-1], C.grey, 1, [3, 4]));
+    const weak = modes.map((md, r) => Math.abs(md.ph[i - 1] * md.ph[j - 1]) < 0.15 * Math.max(...modes.map((q) => Math.abs(q.ph[i - 1] * q.ph[j - 1]))) ? r + 1 : 0).filter(Boolean);
+    out(`Modes at ${modes.map((md) => nf(2).format(md.w / 2 / Math.PI)).join(', ')} Hz (dashed). Each peak's height is set by the mode shape at the tap and sensor points times 1/(2ζω²). ${weak.length ? `Mode ${weak.join(' and ')} is weak here: tap or sensor sits near its node, so test at more than one point.` : ''} Half-power width of each peak ≈ 2ζf.`);
+  },
+});
+
+// 08.14 Duffing response curve and jumps
+def('duffjump', {
+  controls: [{ k: 'F', label: 'Forcing amplitude F', min: 0.01, max: 0.2, step: 0.005, v: 0.1, f: 3 }, { k: 'b', label: 'Hardening β', min: -0.2, max: 2, step: 0.05, v: 1, f: 2 }, { type: 'select', k: 'dir', label: 'Sweep', options: ['up', 'down'], v: 'up' }],
+  draw(p, v, out) {
+    const z = 0.02, F = v.F, b = v.b, ws = linspace(0.5, 2.2, 400);
+    const G = (A, w) => ((1 - w * w) * A + 0.75 * b * A ** 3) ** 2 + (2 * z * w * A) ** 2 - F * F;
+    const roots = (w) => { const r = []; const N = 900, Amax = 4; let a0 = 1e-6, g0 = G(a0, w); for (let s = 1; s <= N; s++) { const a1 = Amax * s / N, g1 = G(a1, w); if (g0 * g1 < 0) { let lo = a0, hi = a1; for (let it = 0; it < 50; it++) { const mid = 0.5 * (lo + hi); if (G(lo, w) * G(mid, w) <= 0) hi = mid; else lo = mid; } r.push(0.5 * (lo + hi)); } a0 = a1; g0 = g1; } return r; };
+    const R = ws.map(roots);
+    p.frame({ x: [0.5, 2.2], y: [0, 3], xlabel: 'forcing frequency ω / ω_n', ylabel: 'amplitude' });
+    const lo = [], hi = [], mid = [];
+    R.forEach((r, q) => { if (r.length === 1) { lo.push([ws[q], r[0]]); hi.push([ws[q], r[0]]); } else if (r.length >= 3) { lo.push([ws[q], r[0]]); mid.push([ws[q], r[1]]); hi.push([ws[q], r[2]]); } });
+    p.dots(mid.map((a) => a[0]), mid.map((a) => a[1]), C.grey, 1.2);
+    // sweep path: up follows the highest stable branch until it ends; down follows the lowest
+    const path = []; let jump = null;
+    if (v.dir === 'up') { let on = 'hi'; ws.forEach((w, q) => { const r = R[q]; if (!r.length) return; let a = r.length === 1 ? r[0] : on === 'hi' ? r[r.length - 1] : r[0]; if (r.length === 1 && path.length && path[path.length - 1][1] - a > 0.3) { jump = [w, path[path.length - 1][1], a]; on = 'lo'; } path.push([w, a]); }); }
+    else { for (let q = ws.length - 1; q >= 0; q--) { const r = R[q]; if (!r.length) continue; const a = r[0]; if (path.length && a - path[path.length - 1][1] > 0.3) jump = [ws[q], path[path.length - 1][1], a]; path.push([ws[q], a]); } }
+    p.dots(lo.map((a) => a[0]), lo.map((a) => a[1]), C.cyan, 1.2).dots(hi.map((a) => a[0]), hi.map((a) => a[1]), C.cyan, 1.2);
+    p.line(path.map((a) => a[0]), path.map((a) => a[1]), C.lime, 2.5);
+    if (jump) arrow(p, jump[0], jump[1], jump[0], jump[2], C.red, 2);
+    out(`${jump ? `Sweeping ${v.dir}, the amplitude jumps ${v.dir === 'up' ? 'down' : 'up'} at ω ≈ ${nf(2).format(jump[0])} (red arrow). Between the two jump frequencies there are three solutions; the middle one (grey) is unstable, so up and down sweeps follow different branches: hysteresis.` : 'No jump at this forcing: the curve is single-valued, as for a linear system. Increase F or |β|.'} ${b < 0 ? 'Negative β softens the spring and bends the peak to the left.' : ''}`);
+  },
+});
+
+// 08.15 Van der Pol phase plane
+def('vdpplane', {
+  controls: [{ k: 'mu', label: 'Nonlinear damping μ', min: 0.05, max: 5, step: 0.05, v: 1, f: 2 }, { k: 'T', label: 'Time simulated', min: 2, max: 40, step: 1, v: 25, f: 0 }],
+  draw(p, v, out) {
+    const mu = v.mu, dt = 0.005, f = ([x, y]) => [y, mu * (1 - x * x) * y - x], starts = [[0.05, 0], [3.5, 0], [-3, 3], [0, -4]], cols = [C.lime, C.cyan, C.amber, C.red];
+    fitAt(p, 0, 0, 4.2, Math.max(4.5, 2.2 * mu + 2.5), 'x', 'dx/dt');
+    let A = 0, Tp = NaN;
+    starts.forEach((s0, q) => { let s = s0.slice(); const xs = [s[0]], ys = [s[1]]; const cr = []; let px = s[0]; for (let i = 1; i <= v.T / dt; i++) { const k1 = f(s), k2 = f([s[0] + dt / 2 * k1[0], s[1] + dt / 2 * k1[1]]), k3 = f([s[0] + dt / 2 * k2[0], s[1] + dt / 2 * k2[1]]), k4 = f([s[0] + dt * k3[0], s[1] + dt * k3[1]]); const xn = s[0] + dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]); s = [xn, s[1] + dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])]; if (i % 2 === 0) { xs.push(s[0]); ys.push(s[1]); } if (q === 0 && i * dt > v.T / 2) { A = Math.max(A, s[0]); if (px < 0 && s[0] >= 0) cr.push(i * dt); } px = s[0]; }
+      p.line(xs, ys, cols[q], 1.5).dots([s0[0]], [s0[1]], cols[q], 4); if (q === 0 && cr.length > 1) Tp = (cr[cr.length - 1] - cr[0]) / (cr.length - 1); });
+    out(`Four starts, inside and outside. All spiral onto the same closed loop, the limit cycle${A ? `: amplitude ≈ ${nf(2).format(A)}` : ''}${isNaN(Tp) ? '' : `, period ≈ ${nf(2).format(Tp)}`}. Inside |x| < 1 the damping is negative and pumps energy in; outside it removes energy. ${mu > 2.5 ? 'Large μ: a relaxation oscillation, slow creeps and fast snaps, like brake squeal or a squeaky door.' : ''}`);
+  },
+});
+
+// 08.16 striker hits a bar: stress waves
+def('rodimpact', {
+  controls: [{ k: 't', label: 'Time (ms)', min: 0, max: 1.2, step: 0.01, v: 0.25, f: 2 }, { k: 'L1', label: 'Striker length (m)', min: 0.2, max: 1.5, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const c = Math.sqrt(210e9 / 7850), Z = 7850 * c, v0 = 5, npm = 100, dx = 1 / npm, dt = dx / c, n1 = Math.round(v.L1 * npm), n2 = 2 * npm, N = n1 + n2;
+    let f = new Float64Array(N), g = new Float64Array(N); for (let q = 0; q < n1; q++) { f[q] = g[q] = v0 / 2; } let contact = true;
+    const steps = Math.round(v.t * 1e-3 / dt);
+    for (let s = 0; s < steps; s++) { if (contact && Z * (g[n1] - f[n1 - 1]) > 0) contact = false; const fn = new Float64Array(N), gn = new Float64Array(N); for (let q = 1; q < N; q++) fn[q] = f[q - 1]; for (let q = 0; q < N - 1; q++) gn[q] = g[q + 1]; fn[0] = g[0]; gn[N - 1] = f[N - 1]; if (!contact) { gn[n1 - 1] = f[n1 - 1]; fn[n1] = g[n1]; } f = fn; g = gn; }
+    const xs = [], ss = []; for (let q = 0; q < N; q++) { xs.push(-v.L1 + (q + 0.5) * dx); ss.push(Z * (g[q] - f[q]) / 1e6); }
+    p.frame({ x: [-1.5, 2], y: [-130, 130], xlabel: 'position, m (striker left of 0, bar right)', ylabel: 'stress, MPa (tension +)' });
+    p.rect(-v.L1, 0, -130, 130, 'rgba(154,157,147,0.12)').line([-1.5, 2], [0, 0], C.grey, 1);
+    p.line(xs.slice(0, n1), ss.slice(0, n1), C.cyan, 2).line(xs.slice(n1), ss.slice(n1), C.lime, 2.5);
+    out(`t = ${nf(2).format(v.t)} ms. Impact at 5 m/s sends a −${nf(1).format(Z * v0 / 2 / 1e6)} MPa compression pulse (ρcv/2) into each rod. The striker's pulse reflects from its free end and unloads it after 2L₁/c = ${nf(3).format(2 * v.L1 / c * 1e3)} ms, so the bar carries a pulse 2L₁ long. At the bar's free end the compression reflects as tension. ${contact ? '' : 'The rods have separated.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
