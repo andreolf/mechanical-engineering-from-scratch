@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Hall-Petch yield strength (MPa) for σ₀ = 70 MPa, k = 0.74 MPa√m, d = 10 µm. 1 decimal.",
+  "answer": 304.0,
+  "tol": 0.0005,
+  "py": "70+0.74/math.sqrt(10e-6)",
+  "explain": "$\\sigma_0 + k/\\sqrt d$."
+ },
+ {
+  "type": "num",
+  "q": "Lever rule: liquid fraction for x₀ = 40 %, x_L = 35 %, x_S = 45 %. 2 decimals.",
+  "answer": 0.5,
+  "tol": 0.002,
+  "py": "(45-40)/(45-35)",
+  "explain": "$(x_S - x_0)/(x_S - x_L)$."
+ },
+ {
+  "type": "num",
+  "q": "Proeutectoid ferrite (%) in a 0.40 % C steel after slow cooling. 1 decimal.",
+  "answer": 48.8,
+  "tol": 0.002,
+  "py": "(0.76-0.40)/(0.76-0.022)*100",
+  "explain": "$(0.76 - c)/(0.76 - 0.022)$."
+ },
+ {
+  "type": "num",
+  "q": "Carburising: hours at the same temperature for a 1.2 mm case if 4 h gives 0.6 mm.",
+  "answer": 16,
+  "tol": 0.001,
+  "py": "4*(1.2/0.6)**2",
+  "explain": "Depth ∝ √t."
+ },
+ {
+  "type": "num",
+  "q": "E₁ (GPa) of a ply with E_f = 72 GPa, E_m = 3 GPa, V_f = 0.6. 1 decimal.",
+  "answer": 44.4,
+  "tol": 0.001,
+  "py": "0.6*72+0.4*3",
+  "explain": "Rule of mixtures."
+ },
+ {
+  "type": "num",
+  "q": "Critical edge-crack depth (mm) for K_IC = 40 MPa√m at 250 MPa (Y = 1.12). 3 decimals.",
+  "answer": 6.496,
+  "tol": 0.002,
+  "py": "(40/(1.12*250))**2/math.pi*1000",
+  "explain": "$(K_{IC}/Y\\sigma)^2/\\pi$."
+ },
+ {
+  "type": "num",
+  "q": "Goodman equivalent amplitude (MPa) for σ_a = 150, σ_m = 250, σ_u = 600. 2 decimals.",
+  "answer": 257.14,
+  "tol": 0.0005,
+  "py": "150/(1-250/600)",
+  "explain": "$\\sigma_a/(1 - \\sigma_m/\\sigma_u)$."
+ },
+ {
+  "type": "num",
+  "q": "Beam mass ratio aluminium/spruce for a light stiff beam (E 70 vs 12 GPa, ρ 2700 vs 450). 3 decimals.",
+  "answer": 2.484,
+  "tol": 0.002,
+  "py": "(2700/450)*math.sqrt(12/70)",
+  "explain": "$(\\rho_a/\\rho_s)\\sqrt{E_s/E_a}$."
+ },
+ {
+  "type": "num",
+  "q": "Merchant shear angle (degrees) for α = 15° and μ = 0.6. 2 decimals.",
+  "answer": 37.02,
+  "tol": 0.002,
+  "py": "45+7.5-math.degrees(math.atan(0.6))/2",
+  "explain": "45° + α/2 − β/2."
+ },
+ {
+  "type": "num",
+  "q": "Taylor: tool life (min) at 300 m/min for n = 0.25, C = 400 m/min. 2 decimals.",
+  "answer": 3.16,
+  "tol": 0.003,
+  "py": "(400/300)**4",
+  "explain": "$(C/V)^{1/n}$."
+ },
+ {
+  "type": "num",
+  "q": "Theoretical Ra (µm) for feed 0.25 mm/rev and nose radius 0.8 mm. 3 decimals.",
+  "answer": 2.441,
+  "tol": 0.002,
+  "py": "0.25**2/(32*0.8)*1000",
+  "explain": "f²/(32r)."
+ },
+ {
+  "type": "num",
+  "q": "Chvorinov: freezing time (min) for modulus 1.5 cm with B = 3 min/cm². 2 decimals.",
+  "answer": 6.75,
+  "tol": 0.001,
+  "py": "3*1.5**2",
+  "explain": "$B M^2$."
+ },
+ {
+  "type": "num",
+  "q": "Cpk for mean 50.02 mm, σ = 0.01 mm, tolerance 50.00 ± 0.05 mm. 2 decimals.",
+  "answer": 1.0,
+  "tol": 0.003,
+  "py": "min(50.05-50.02,50.02-49.95)/(3*0.01)",
+  "explain": "Nearest limit over 3σ."
+ },
+ {
+  "type": "num",
+  "q": "Characteristic strength (MPa) from 20 culms: mean 50 MPa, s = 7.5 MPa. 2 decimals.",
+  "answer": 34.25,
+  "tol": 0.002,
+  "py": "(50-1.645*7.5)*(1-2.7*0.15/math.sqrt(20))",
+  "explain": "(m − 1.645s)(1 − 2.7 CoV/√n)."
+ }
+]
