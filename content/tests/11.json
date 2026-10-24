@@ -1,0 +1,118 @@
+[
+ {
+  "type": "num",
+  "q": "Shear stress (Pa) in Couette flow: μ = 0.29 Pa s, plate speed 2 m/s, gap 4 mm.",
+  "answer": 145,
+  "tol": 0.0005,
+  "py": "0.29*2/0.004",
+  "explain": "$\\tau = \\mu U/h$."
+ },
+ {
+  "type": "num",
+  "q": "Gauge pressure (kPa) 12 m below the surface of fresh water. 2 decimals.",
+  "answer": 117.72,
+  "tol": 0.0005,
+  "py": "1000*9.81*12/1000",
+  "explain": "$\\rho g h$."
+ },
+ {
+  "type": "num",
+  "q": "Buoyant force (N) on a fully submerged 0.05 m³ log in sea water (ρ = 1025). 2 decimals.",
+  "answer": 502.76,
+  "tol": 0.0005,
+  "py": "1025*9.81*0.05",
+  "explain": "Weight of displaced fluid."
+ },
+ {
+  "type": "num",
+  "q": "Speed (m/s) in a 50 mm pipe fed by a 100 mm pipe at 1.5 m/s.",
+  "answer": 6,
+  "tol": 0.0005,
+  "py": "1.5*(100/50)**2",
+  "explain": "Continuity: $V_2 = V_1 (D_1/D_2)^2$."
+ },
+ {
+  "type": "num",
+  "q": "Torricelli outflow speed (m/s) under 3.2 m of head. 3 decimals.",
+  "answer": 7.923,
+  "tol": 0.0005,
+  "py": "math.sqrt(2*9.81*3.2)",
+  "explain": "$\\sqrt{2gh}$."
+ },
+ {
+  "type": "num",
+  "q": "Force (N) of a 1000 kg/m³ jet, 0.002 m², 20 m/s, turned through 180° by a fixed vane.",
+  "answer": 1600,
+  "tol": 0.0005,
+  "py": "1000*0.002*20*20*2",
+  "explain": "$2\\rho A V^2$."
+ },
+ {
+  "type": "num",
+  "q": "Model speed (m/s) for a 1:25 Froude-scaled spillway when the prototype flows at 10 m/s.",
+  "answer": 2,
+  "tol": 0.0005,
+  "py": "10/math.sqrt(25)",
+  "explain": "$V \\propto \\sqrt{L}$."
+ },
+ {
+  "type": "num",
+  "q": "Hagen-Poiseuille flow (mL/s): R = 5 mm, Δp/L = 400 Pa/m, μ = 0.084 Pa s. 4 decimals.",
+  "answer": 1.1687,
+  "tol": 0.0005,
+  "py": "math.pi*0.005**4*400/(8*0.084)*1e6",
+  "explain": "$\\pi R^4 \\Delta p/(8\\mu L)$."
+ },
+ {
+  "type": "num",
+  "q": "Lift (N/m) on a cylinder with |Γ| = 10 m²/s in air (ρ = 1.2) at 15 m/s.",
+  "answer": 180,
+  "tol": 0.0005,
+  "py": "1.2*15*10",
+  "explain": "Kutta-Joukowski $\\rho U \\Gamma$."
+ },
+ {
+  "type": "num",
+  "q": "Critical depth (m) in a rectangular channel with q = 3 m²/s. 4 decimals.",
+  "answer": 0.9717,
+  "tol": 0.0005,
+  "py": "(9/9.81)**(1/3)",
+  "explain": "$(q^2/g)^{1/3}$."
+ },
+ {
+  "type": "num",
+  "q": "Broad-crested weir discharge (m³/s): b = 2 m, H = 0.4 m, Cd = 1. 4 decimals.",
+  "answer": 0.8626,
+  "tol": 0.0005,
+  "py": "2*(2/3)**1.5*math.sqrt(9.81)*0.4**1.5",
+  "explain": "$b (2/3)^{3/2}\\sqrt{g} H^{3/2}$."
+ },
+ {
+  "type": "num",
+  "q": "Conjugate depth ratio of a hydraulic jump with Fr₁ = 4. 4 decimals.",
+  "answer": 5.1789,
+  "tol": 0.0005,
+  "py": "(math.sqrt(1+8*16)-1)/2",
+  "explain": "Belanger equation."
+ },
+ {
+  "type": "num",
+  "q": "Joukowsky pressure rise (bar) stopping water at 3 m/s with a = 1100 m/s.",
+  "answer": 33,
+  "tol": 0.0005,
+  "py": "1000*1100*3/1e5",
+  "explain": "$\\rho a \\Delta v$."
+ },
+ {
+  "type": "mc",
+  "q": "Outside the core of a Rankine vortex the flow is:",
+  "options": [
+   "Solid-body rotation",
+   "Irrotational, speed falling as 1/r",
+   "At rest",
+   "Uniform"
+  ],
+  "answer": 1,
+  "explain": "Free vortex, zero vorticity."
+ }
+]
