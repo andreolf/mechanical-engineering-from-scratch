@@ -2056,6 +2056,88 @@ def('racket', {
   },
 });
 
+// 07.16 gyroscope precession: simulation against m g l / (I3 w)
+def('gyro', {
+  controls: [{ k: 'w', label: 'Spin (rad/s)', min: 60, max: 2000, step: 10, v: 300, f: 0 }, { k: 'l', label: 'Pivot to centre of mass (mm)', min: 10, max: 80, step: 1, v: 40, f: 0 }],
+  draw(p, v, out) {
+    const m = 0.15, g = 9.81, l = v.l / 1000, I1 = 4e-5 * (l / 0.04) ** 2 + 1e-5, I3 = 6e-5, w3 = v.w, th0 = Math.PI / 2, pphi = I3 * w3 * Math.cos(th0), dt = 2e-4, T = 3;
+    const f = (s) => { const [th, thd] = s, sn = Math.sin(th), phd = (pphi - I3 * w3 * Math.cos(th)) / (I1 * sn * sn); return [thd, (phd * phd * sn * Math.cos(th) * I1 - I3 * w3 * phd * sn + m * g * l * sn) / I1, phd]; };
+    let s = [th0, 0, 0]; const ts = [0], ph = [0], tl = [0];
+    for (let i = 1; i <= T / dt; i++) { const k1 = f(s), k2 = f(s.map((q, j) => q + dt / 2 * k1[j])), k3 = f(s.map((q, j) => q + dt / 2 * k2[j])), k4 = f(s.map((q, j) => q + dt * k3[j])); s = s.map((q, j) => q + dt / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); if (i % 25 === 0) { ts.push(i * dt); ph.push(s[2] * 180 / Math.PI); tl.push((s[0] - th0) * 180 / Math.PI); } }
+    const Om = m * g * l / (I3 * w3), top = Math.max(30, ph[ph.length - 1] * 1.1);
+    p.frame({ x: [0, T], y: [0, top], xlabel: 'time, s', ylabel: 'precession angle, degrees' });
+    p.line([0, T], [0, Om * T * 180 / Math.PI], C.grey, 1.5, [5, 4]).line(ts, ph, C.lime, 2.5);
+    out(`Simulated precession ${nf(3).format(s[2] / T)} rad/s; fast-top formula Ω = mgl/(I₃ω) = ${nf(3).format(Om)} rad/s (dashed), one turn every ${nf(1).format(2 * Math.PI / Om)} s. The axis dips and wobbles (nutation) by ${nf(2).format(Math.max(...tl.map(Math.abs)))}°. Spin faster: slower precession, smaller wobble, closer to the formula.`);
+  },
+});
+
+// 07.17 flywheel spin-up with burst warning
+def('flyburst', {
+  controls: [{ k: 'rpm', label: 'Speed (rpm)', min: 0, max: 40000, step: 500, v: 15000, f: 0 }, { k: 'R', label: 'Rim mean radius (m)', min: 0.1, max: 1, step: 0.05, v: 0.25, f: 2 }, { type: 'select', k: 'mat', label: 'Rim material', options: ['steel (800 MPa)', 'carbon fibre (1500 MPa)'], v: 'carbon fibre (1500 MPa)' }],
+  draw(p, v, out) {
+    const steel = v.mat.startsWith('steel'), rho = steel ? 7850 : 1600, sl = steel ? 800 : 1500, m = 60;
+    const rpms = linspace(0, 40000, 200), sig = (n) => rho * (n * Math.PI / 30 * v.R) ** 2 / 1e6;
+    p.frame({ x: [0, 40000], y: [0, 2500], xlabel: 'speed, rpm', ylabel: 'rim hoop stress, MPa' });
+    p.line([0, 40000], [sl, sl], C.red, 1.5, [5, 4]).line([0, 40000], [sl / 1.5, sl / 1.5], C.amber, 1, [2, 4]);
+    p.line(rpms, rpms.map(sig), C.lime, 2.5);
+    const s = sig(v.rpm), w = v.rpm * Math.PI / 30, E = 0.5 * m * v.R * v.R * w * w / 3.6e6, burst = Math.sqrt(sl * 1e6 / rho) / v.R * 30 / Math.PI;
+    p.dots([v.rpm], [s], s > sl ? C.red : s > sl / 1.5 ? C.amber : C.cyan, 6);
+    out(`${s > sl ? 'BURST: the rim stress exceeds the material strength. ' : s > sl / 1.5 ? 'Warning: inside the 1.5 safety margin. ' : ''}Rim speed ${nf(0).format(w * v.R)} m/s, hoop stress ρv² = ${nf(0).format(s)} MPa. A 60 kg rim stores ${nf(3).format(E)} kWh. Burst at ${nf(0).format(burst)} rpm, which is ρv² = σ at v = ${nf(0).format(Math.sqrt(sl * 1e6 / rho))} m/s, the same rim speed for any radius.`);
+  },
+});
+
+// 07.18 double pendulum chaos
+def('dpend', {
+  controls: [{ k: 'a', label: 'Upper arm start angle (°)', min: 0, max: 170, step: 1, v: 115, f: 0 }, { k: 'b', label: 'Lower arm start angle (°)', min: 0, max: 170, step: 1, v: 143, f: 0 }, { k: 't', label: 'Time (s)', min: 0, max: 20, step: 0.1, v: 8, f: 1 }],
+  draw(p, v, out) {
+    const g = 9.81, d2r = Math.PI / 180, dt = 0.002;
+    const f = ([a, b, wa, wb]) => { const d = a - b, den = 3 - Math.cos(2 * d); return [wa, wb, (-3 * g * Math.sin(a) - g * Math.sin(a - 2 * b) - 2 * Math.sin(d) * (wb * wb + wa * wa * Math.cos(d))) / den, (2 * Math.sin(d) * (2 * wa * wa + 2 * g * Math.cos(a) + wb * wb * Math.cos(d))) / den]; };
+    const E = ([a, b, wa, wb]) => wa * wa + 0.5 * wb * wb + wa * wb * Math.cos(a - b) - 2 * g * Math.cos(a) - g * Math.cos(b);
+    const run = (s) => { const tr = [[], []]; const n = Math.round(v.t / dt); for (let i = 0; i < n; i++) { const k1 = f(s), k2 = f(s.map((q, j) => q + dt / 2 * k1[j])), k3 = f(s.map((q, j) => q + dt / 2 * k2[j])), k4 = f(s.map((q, j) => q + dt * k3[j])); s = s.map((q, j) => q + dt / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); if (i % 5 === 0 && i > n - 1500) { tr[0].push(Math.sin(s[0]) + Math.sin(s[1])); tr[1].push(-Math.cos(s[0]) - Math.cos(s[1])); } } return { s, tr }; };
+    const s0 = [v.a * d2r, v.b * d2r, 0, 0], A = run(s0), B = run([s0[0] + 1e-6, s0[1], 0, 0]);
+    fitAt(p, 0, 0, 2.2, 2.2, 'x, m', 'y, m');
+    p.line(B.tr[0], B.tr[1], 'rgba(255,90,54,0.45)', 1).line(A.tr[0], A.tr[1], 'rgba(238,255,65,0.6)', 1.2);
+    const draw = (s, col) => { const x1 = Math.sin(s[0]), y1 = -Math.cos(s[0]), x2 = x1 + Math.sin(s[1]), y2 = y1 - Math.cos(s[1]); p.line([0, x1, x2], [0, y1, y2], col, 3).dots([x1, x2], [y1, y2], col, 5); };
+    draw(B.s, C.red); draw(A.s, C.paper);
+    out(`Two 1 kg, 1 m pendulums from Lagrange's equations, RK4. The red one started 0.000001 rad different. Energy drift ${nf(1).format(Math.abs(E(A.s) / E(s0) - 1) * 1e6)} ppm. Small starting angles: they stay together. Large ones: within seconds they swing completely differently. That is chaos.`);
+  },
+});
+
+// 07.19 train on a canted curve
+def('railcant', {
+  controls: [{ k: 'kmh', label: 'Speed (km/h)', min: 0, max: 250, step: 5, v: 160, f: 0 }, { k: 'R', label: 'Curve radius (m)', min: 300, max: 4000, step: 50, v: 1200, f: 0 }, { k: 'c', label: 'Cant (mm)', min: 0, max: 180, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const g = 9.81, S = 1.5, phi = Math.asin(v.c / 1000 / S), vv = v.kmh / 3.6, an = vv * vv / v.R, a = an * Math.cos(phi) - g * Math.sin(phi), vb = Math.sqrt(g * v.R * Math.tan(phi)) * 3.6;
+    fitAt(p, 0, 1.4, 2.2, 1.9, 'm (looking along the track, curve centre to the left)', '');
+    const rot = ([x, y]) => [x * Math.cos(phi) - y * Math.sin(phi), x * Math.sin(phi) + y * Math.cos(phi)];
+    poly(p, [[-1.6, -0.15], [1.6, -0.15], [1.6, 0], [-1.6, 0]].map(rot), C.grey, 'rgba(154,157,147,0.4)', 1);
+    poly(p, [[-1.4, 0.3], [1.4, 0.3], [1.4, 3.2], [-1.4, 3.2]].map(rot), C.paper, 'rgba(242,243,236,0.08)', 1.5);
+    const cg = rot([0, 1.7]), k = 0.12;
+    // resultant of gravity and the inertial (centrifugal) load, as felt by the coach
+    const Fx = an, Fy = -g;
+    arrow(p, cg[0], cg[1], cg[0] + k * Fx, cg[1] + k * Fy, C.amber);
+    const nrm = rot([0, -1]); p.line([cg[0], cg[0] + 1.3 * nrm[0]], [cg[1], cg[1] + 1.3 * nrm[1]], C.grey, 1, [4, 4]);
+    out(`Tilt ${nf(2).format(phi * 180 / Math.PI)}°. Balance speed ${nf(1).format(vb)} km/h. At ${v.kmh} km/h: lateral acceleration along the floor ${nf(3).format(a)} m/s² (${a > 0 ? 'outwards' : 'inwards'}), cant deficiency ${nf(0).format(S * 1000 * an / g - v.c)} mm. The amber arrow (gravity plus the centrifugal load) lines up with the dashed floor normal only at the balance speed. Comfort limit about 1.0 m/s², tilting trains 2.0.`);
+  },
+});
+
+// 07.20 slider-crank: piston motion and the constraint forces
+def('engine', {
+  controls: [{ k: 'th', label: 'Crank angle (°)', min: 0, max: 360, step: 2, v: 60, f: 0 }, { k: 'rpm', label: 'Engine speed (rpm)', min: 600, max: 7000, step: 100, v: 3000, f: 0 }],
+  draw(p, v, out) {
+    const r = 0.05, l = 0.15, m3 = 0.5, w = v.rpm * Math.PI / 30;
+    const kin = (t) => { const s = r * Math.sin(t), c = Math.sqrt(l * l - s * s), x = r * Math.cos(t) + c, xd = -r * w * Math.sin(t) - r * r * w * Math.sin(t) * Math.cos(t) / c;
+      const xdd = -r * w * w * Math.cos(t) - (r * r * w * w * (Math.cos(t) ** 2 - Math.sin(t) ** 2) * c * c + (r * r * Math.sin(t) * Math.cos(t)) ** 2 * w * w) / (c ** 3); return { x, xd, xdd, s, c }; };
+    const ths = linspace(0, 2 * Math.PI, 181), acc = ths.map((t) => kin(t).xdd);
+    const top = Math.max(...acc.map(Math.abs)) * 1.1;
+    p.frame({ x: [0, 360], y: [-top, top], xlabel: 'crank angle, degrees', ylabel: 'piston acceleration, m/s²' });
+    p.line(ths.map((t) => t * 180 / Math.PI), acc, C.lime, 2).line(ths.map((t) => t * 180 / Math.PI), ths.map((t) => -r * w * w * Math.cos(t)), C.grey, 1, [4, 4]);
+    const K = kin(v.th * Math.PI / 180); p.dots([v.th], [K.xdd], C.cyan, 6);
+    const rodF = m3 * K.xdd / (K.c / l);
+    out(`Piston at ${nf(1).format(K.x * 1000)} mm, velocity ${nf(2).format(K.xd)} m/s, acceleration ${nf(0).format(K.xdd)} m/s² (${nf(0).format(K.xdd / 9.81)} g). The rod (a constraint) pushes on the 0.5 kg piston with ${nf(0).format(Math.abs(rodF))} N: in a multibody solver this force is the Lagrange multiplier. Dashed: pure r ω² cos θ; the rod's angle adds the second harmonic.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
