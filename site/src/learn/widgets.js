@@ -2968,6 +2968,50 @@ def('tvdiagram', {
   },
 });
 
+// 10.07 pumped storage reservoirs
+def('pumpstore', {
+  controls: [{ k: 'f', label: 'Upper reservoir level (fraction full)', min: 0, max: 1, step: 0.01, v: 0.7, f: 2 }, { k: 'h', label: 'Head (m)', min: 50, max: 1000, step: 10, v: 300, f: 0 }, { k: 'V', label: 'Upper reservoir capacity (million m³)', min: 1, max: 50, step: 1, v: 25, f: 0 }],
+  draw(p, v, out) {
+    const E = 1000 * 9.81 * v.h * v.V * 1e6 * v.f, Eh = E / 3.6e12, rt = 0.791, Pmw = 900;
+    p.frame({ x: [0, 10], y: [0, 12], xlabel: '', ylabel: 'height (schematic)' });
+    const top = 2 + 8 * v.h / 1000;
+    poly(p, [[0.5, top], [3.5, top], [3.5, top + 1.6], [0.5, top + 1.6]], C.paper, null, 1.5); p.rect(0.55, 3.45, top, top + 1.6 * v.f, 'rgba(90,200,250,0.7)');
+    poly(p, [[6.5, 0.4], [9.5, 0.4], [9.5, 2], [6.5, 2]], C.paper, null, 1.5); p.rect(6.55, 9.45, 0.4, 0.4 + 1.6 * (1 - v.f), 'rgba(90,200,250,0.7)');
+    p.line([3.5, 5, 6.5], [top + 0.2, top * 0.5, 1.2], C.grey, 3).dots([5], [top * 0.5], C.amber, 7).text('turbine / pump', 5.3, top * 0.5, C.amber);
+    p.line([4, 4], [1.2, top], C.lime, 1, [3, 3]).text(`h = ${v.h} m`, 1.0, (top + 1.2) / 2, C.lime);
+    out(`Stored: ρghV = ${nf(2).format(Eh)} GWh in ${nf(1).format(v.V * v.f)} million m³. Generating at 89.4 % returns ${nf(2).format(Eh * 0.894)} GWh, ${nf(1).format(Eh * 0.894 * 1000 / Pmw)} h at 900 MW, and pumping at 88.5 % took ${nf(2).format(Eh / 0.885)} GWh: a 79 % round trip. Energy scales linearly with both head and volume, so high Alpine heads make compact stores.`);
+  },
+});
+
+// 10.08 heat engine between two reservoirs
+def('carnotengine', {
+  controls: [{ k: 'Th', label: 'Hot reservoir (K)', min: 350, max: 2500, step: 10, v: 900, f: 0 }, { k: 'Tc', label: 'Cold reservoir (K)', min: 250, max: 400, step: 5, v: 300, f: 0 }, { k: 'eta', label: 'Claimed efficiency (%)', min: 5, max: 95, step: 1, v: 50, f: 0 }],
+  draw(p, v, out) {
+    const ec = 1 - v.Tc / v.Th, e = v.eta / 100, ok = e <= ec + 1e-12;
+    p.frame({ x: [0, 10], y: [0, 10], xlabel: '', ylabel: '' });
+    p.rect(1, 9, 8.6, 9.6, 'rgba(255,90,54,0.6)').text(`hot reservoir ${v.Th} K`, 3.2, 9.0, C.paper);
+    p.rect(1, 9, 0.4, 1.4, 'rgba(90,200,250,0.6)').text(`cold reservoir ${v.Tc} K`, 3.2, 0.8, C.paper);
+    const th = linspace(0, 2 * Math.PI, 60); p.line(th.map((a) => 5 + 1.2 * Math.cos(a)), th.map((a) => 5 + 1.2 * Math.sin(a)), ok ? C.lime : C.red, 2.5).text('engine', 4.3, 4.9, ok ? C.lime : C.red);
+    const w = (x) => 1 + 5 * x;
+    p.line([5, 5], [8.6, 6.2], C.red, w(1)); p.line([5, 5], [3.8, 1.4], C.cyan, w(1 - e)); p.line([6.2, 9.2], [5, 5], C.amber, w(e));
+    p.text('Q_h = 100', 5.3, 7.4, C.red).text(`Q_c = ${nf(0).format(100 * (1 - e))}`, 5.3, 2.6, C.cyan).text(`W = ${nf(0).format(100 * e)}`, 7.2, 5.6, C.amber);
+    out(`Carnot limit 1 − T_c/T_h = ${nf(1).format(ec * 100)} %. ${ok ? 'The claim is allowed by the second law.' : `The claim of ${v.eta} % is impossible: combined with a reversed Carnot engine it would turn heat from one reservoir entirely into work (Kelvin-Planck violation).`} Raise T_h or lower T_c to push the limit up.`);
+  },
+});
+
+// 10.09 mixing water streams
+def('mixlab', {
+  controls: [{ k: 'm1', label: 'Hot flow (kg/min)', min: 0.5, max: 10, step: 0.1, v: 4.8, f: 1 }, { k: 'T1', label: 'Hot temperature (°C)', min: 20, max: 95, step: 1, v: 60, f: 0 }, { k: 'm2', label: 'Cold flow (kg/min)', min: 0.5, max: 10, step: 0.1, v: 2.4, f: 1 }, { k: 'T2', label: 'Cold temperature (°C)', min: 2, max: 40, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const c = 4186, m1 = v.m1 / 60, m2 = v.m2 / 60, T1 = v.T1 + 273.15, T2 = v.T2 + 273.15, T3 = (m1 * T1 + m2 * T2) / (m1 + m2);
+    const s1 = m1 * c * Math.log(T3 / T1), s2 = m2 * c * Math.log(T3 / T2), Sg = s1 + s2;
+    const L = Math.max(0.5, Math.abs(s1), s2) * 1.25; p.frame({ x: [0, 4], y: [-L, L], xlabel: '', ylabel: 'entropy change rate, W/K' });
+    p.rect(0.3, 1.1, 0, s1, C.red).rect(1.5, 2.3, 0, s2, C.cyan).rect(2.7, 3.5, 0, Sg, C.lime).line([0, 4], [0, 0], C.grey, 1);
+    p.text('hot', 0.45, s1 - 0.08 * L, C.paper).text('cold', 1.6, s2 + 0.05 * L, C.paper).text('total', 2.8, Sg + 0.05 * L, C.paper);
+    out(`Mixed at ${nf(2).format(T3 - 273.15)} °C. The hot stream loses ${nf(3).format(-s1)} W/K, the cold gains ${nf(3).format(s2)} W/K: net generation S_gen = ${nf(4).format(Sg)} W/K ≥ 0. Lost work potential T₀S_gen = ${nf(1).format(288.15 * Sg)} W. Mixing at different temperatures is irreversible; S_gen is zero only when they are equal.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
