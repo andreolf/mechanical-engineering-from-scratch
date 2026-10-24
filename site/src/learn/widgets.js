@@ -1320,6 +1320,86 @@ def('ramp', {
   },
 });
 
+// 05.16 rope round a bollard: exponential in the wrap angle
+def('bollard', {
+  controls: [{ k: 't', label: 'Wrap (turns)', min: 0, max: 4, step: 0.05, v: 1.5, f: 2 }, { k: 'mu', label: 'Friction μ', min: 0.1, max: 0.6, step: 0.01, v: 0.3, f: 2 }],
+  draw(p, v, out) {
+    const r = Math.exp(v.mu * 2 * Math.PI * v.t), xs = linspace(0, 4, 161);
+    p.frame({ x: [0, 4], y: [1, 1e6], ylog: true, xlabel: 'wrap, turns', ylabel: 'holding ratio T₂/T₁' });
+    p.line(xs, xs.map((t) => Math.exp(v.mu * 2 * Math.PI * t)), C.lime, 2).dots([v.t], [r], C.amber, 5);
+    [0.1, 0.3, 0.6].forEach((m) => { if (Math.abs(m - v.mu) > 0.02) p.line(xs, xs.map((t) => Math.exp(m * 2 * Math.PI * t)), C.rule, 1, [4, 4]); });
+    out(`T₂/T₁ = e^(μβ) = e^(${nf(2).format(v.mu)} · ${nf(2).format(2 * Math.PI * v.t)}) = ${r < 1e4 ? nf(2).format(r) : r.toExponential(2)}. A deckhand holding 200 N controls ${r * 0.2 < 1e4 ? nf(1).format(r * 0.2) : (r * 0.2).toExponential(2)} kN. A straight line on the log scale: each extra turn multiplies the ratio by e^(2πμ) = ${nf(2).format(Math.exp(2 * Math.PI * v.mu))}.`);
+  },
+});
+
+// 05.17 composite centroid
+def('composite', {
+  controls: [{ type: 'check', k: 'blk', label: 'Add a 100 × 120 mm block on top', v: 1 }, { k: 'bx', label: 'Block position x (mm)', min: 0, max: 200, step: 5, v: 200, f: 0 }, { k: 'd', label: 'Hole diameter (mm)', min: 0, max: 140, step: 5, v: 80, f: 0 }, { k: 'hx', label: 'Hole centre x (mm)', min: 70, max: 230, step: 5, v: 90, f: 0 }],
+  draw(p, v, out) {
+    const parts = [[300 * 200, 150, 100]];
+    if (v.blk) parts.push([100 * 120, v.bx + 50, 260]);
+    const ah = Math.PI * v.d * v.d / 4; if (v.d > 0) parts.push([-ah, v.hx, 100]);
+    const A = parts.reduce((s, q) => s + q[0], 0), xb = parts.reduce((s, q) => s + q[0] * q[1], 0) / A, yb = parts.reduce((s, q) => s + q[0] * q[2], 0) / A;
+    fitAt(p, 150, 160, 170, 170, 'x, mm', 'y, mm');
+    poly(p, [[0, 0], [300, 0], [300, 200], [0, 200]], C.grey, 'rgba(154,157,147,0.2)');
+    if (v.blk) poly(p, [[v.bx, 200], [v.bx + 100, 200], [v.bx + 100, 320], [v.bx, 320]], C.grey, 'rgba(154,157,147,0.2)');
+    if (v.d > 0) { const t = linspace(0, 2 * Math.PI, 73); poly(p, t.map((a) => [v.hx + v.d / 2 * Math.cos(a), 100 + v.d / 2 * Math.sin(a)]), C.red, 'rgba(10,10,10,0.9)'); }
+    p.line([xb - 14, xb + 14], [yb, yb], C.lime, 2).line([xb, xb], [yb - 14, yb + 14], C.lime, 2).dots([xb], [yb], C.lime, 3);
+    out(`A = ${nf(0).format(A)} mm², centroid (${nf(1).format(xb)}, ${nf(1).format(yb)}) mm: Σ Aᵢxᵢ / Σ Aᵢ with the hole counted as negative area. Added material pulls the centroid towards it; a hole pushes it away.`);
+  },
+});
+
+// 05.18 water pressure on a dam
+def('dam', {
+  controls: [{ k: 'h', label: 'Reservoir level (m)', min: 0, max: 60, step: 0.5, v: 45, f: 1 }],
+  draw(p, v, out) {
+    const H = 60, h = v.h, F = 1000 * 9.81 * h * h / 2 / 1e6;
+    fitAt(p, 15, 32, 50, 34, 'x, m', 'height, m');
+    poly(p, [[0, 0], [0, 64], [6, 64], [45, 0]], C.grey, 'rgba(154,157,147,0.25)');
+    if (h > 0) {
+      poly(p, [[-60, 0], [0, 0], [0, h], [-60, h]], C.cyan, 'rgba(92,200,255,0.18)', 1);
+      const s = 30 / (1000 * 9.81 * H);   // pressure diagram, 30 m wide at full depth
+      poly(p, [[0, h], [0, 0], [-1000 * 9.81 * h * s, 0]], C.amber, 'rgba(255,170,60,0.2)', 1.5);
+      for (let y = 0; y < h - 1e-9; y += Math.max(3, h / 8)) arrow(p, -1000 * 9.81 * (h - y) * s, y, -0.4, y, C.amber, 1);
+      arrow(p, -26, h / 3, -0.3, h / 3, C.lime, 3.5);
+      p.text(`F = ${nf(1).format(F)} MN/m`, -25, h / 3 + 3, C.lime);
+    }
+    out(`Pressure grows linearly with depth, p = ρgh = ${nf(0).format(9.81 * h)} kPa at the base. Resultant per metre of dam: ρgh²/2 = ${nf(2).format(F)} MN, acting h/3 = ${nf(1).format(h / 3)} m above the base (2h/3 below the surface). Overturning moment ${nf(0).format(F * h / 3)} MN m per metre: it grows with h³.`);
+  },
+});
+
+// 05.19 scissor lift: virtual work
+def('scissor', {
+  controls: [{ k: 'th', label: 'Link angle θ (°)', min: 8, max: 75, step: 1, v: 35, f: 0 }, { type: 'select', k: 'n', label: 'Stages', options: ['1', '2', '3', '4'], v: '2' }, { k: 'W', label: 'Platform load W (kN)', min: 0, max: 10, step: 0.5, v: 4, f: 1 }],
+  draw(p, v, out) {
+    const n = +v.n, L = 1.2, th = v.th * Math.PI / 180, c = L * Math.cos(th), s = L * Math.sin(th), P = n * v.W / Math.tan(th), ytop = n * s;
+    fitAt(p, 0.6, ytop / 2 + 0.25, 1.0, Math.max(0.9, ytop / 2 + 0.6), 'x, m', 'y, m');
+    p.line([-0.3, 1.5], [0, 0], C.grey, 2);
+    for (let i = 0; i < n; i++) { p.line([0, c], [i * s, (i + 1) * s], C.paper, 3).line([c, 0], [i * s, (i + 1) * s], C.paper, 3); p.dots([c / 2], [(i + 0.5) * s], C.grey, 3); }
+    p.rect(-0.1, c + 0.15, ytop, ytop + 0.08, 'rgba(242,243,236,0.35)');
+    if (v.W > 0) arrow(p, c / 2, ytop + 0.5, c / 2, ytop + 0.1, C.lime, 3);
+    p.dots([0, c], [0, 0], C.paper, 4);
+    arrow(p, c + 0.4, 0.06, c + 0.02, 0.06, C.amber, 3);
+    out(`Height y = n L sin θ = ${nf(2).format(ytop)} m, actuator span x = L cos θ = ${nf(2).format(c)} m. Virtual work: W δy = P δx, so P = n W cot θ = ${nf(2).format(P)} kN. Fold the lift (small θ) or add stages and the actuator force soars.`);
+  },
+});
+
+// 05.20 energy landscape of a hinged bar with a rotational spring
+def('energy', {
+  controls: [{ k: 'P', label: 'Load P on top of the bar (kN)', min: 0, max: 20, step: 0.1, v: 8, f: 1 }],
+  draw(p, v, out) {
+    const k = 20, L = 2, Vf = (t) => 0.5 * k * t * t + v.P * L * Math.cos(t), ts = linspace(-2.2, 2.2, 441);
+    const Vs = ts.map(Vf), lo = Math.min(...Vs), hi = Math.max(...Vs);
+    p.frame({ x: [-2.2, 2.2], y: [lo - 0.08 * (hi - lo) - 0.5, hi + 0.08 * (hi - lo) + 0.5], xlabel: 'lean angle θ, rad', ylabel: 'V(θ), kJ' });
+    p.line(ts, Vs, C.cyan, 2);
+    const eq = [0]; if (v.P * L > k) { let a = 1e-9, b = Math.PI - 1e-9; for (let i = 0; i < 100; i++) { const m = 0.5 * (a + b); if (k * m - v.P * L * Math.sin(m) < 0) a = m; else b = m; } eq.push(a, -a); }
+    eq.forEach((t) => { const st = k - v.P * L * Math.cos(t) > 0; p.dots([t], [Vf(t)], st ? C.lime : C.red, 6); });
+    const ball = eq.length > 1 ? eq[1] : 0; p.dots([ball], [Vf(ball) + 0.03 * (hi - lo) + 0.25], C.amber, 7);
+    const c0 = k - v.P * L;
+    out(`P_cr = k/L = 10 kN. At θ = 0, V'' = k − PL = ${nf(1).format(c0)} kN m: ${c0 > 0 ? 'a valley, so upright is stable.' : c0 < 0 ? `a hilltop, so upright is unstable and the bar settles at θ = ±${nf(1).format(eq[1] * 180 / Math.PI)}° (lime valleys).` : 'flat: the critical load, neutral equilibrium.'} Lime dots are stable, red unstable; the ball rests in a valley.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
