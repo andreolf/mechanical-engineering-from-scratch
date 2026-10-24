@@ -1480,6 +1480,91 @@ def('fixedbar', {
   },
 });
 
+// diverging colour: -1 cyan (compression) .. 0 dark .. +1 amber (tension)
+function divCol(t) { t = Math.max(-1, Math.min(1, t)); const a = Math.abs(t); const [r, g, b] = t < 0 ? [92, 200, 255] : [255, 170, 60]; return `rgba(${r},${g},${b},${0.08 + 0.85 * a})`; }
+
+// 06.06 continuous welded rail on a hot or cold day
+def('railtemp', {
+  controls: [{ k: 'T', label: 'Rail temperature (°C)', min: -30, max: 65, step: 1, v: 55, f: 0 }, { k: 'Tn', label: 'Stress-free (neutral) temperature (°C)', min: 10, max: 35, step: 1, v: 25, f: 0 }],
+  draw(p, v, out) {
+    const E = 210e3, a = 11.5e-6, A = 7686, s = (T) => -E * a * (T - v.Tn), sig = s(v.T), F = sig * A / 1e3, risk = v.T - v.Tn >= 30;
+    p.frame({ x: [-30, 65], y: [-120, 160], xlabel: 'rail temperature, °C', ylabel: 'stress, MPa (+ tension)' });
+    p.rect(v.Tn + 30, 65, -120, 160, 'rgba(255,90,90,0.12)');
+    p.line([-30, 65], [s(-30), s(65)], C.lime, 2).line([-30, 65], [0, 0], C.grey, 1).dots([v.T], [sig], risk ? C.red : C.amber, 6);
+    p.text('buckling risk', 64, 140, C.red, 'right');
+    out(`σ = −Eα(T − T₀) = ${nf(1).format(sig)} MPa, a rail force of ${nf(0).format(Math.abs(F))} kN in ${sig < 0 ? 'compression' : 'tension'}. ${risk ? 'More than 30 K above neutral: the track can buckle sideways unless the ballast holds it. Track engineers lay rail at a high neutral temperature for this reason.' : sig > 0 ? 'Cold rail pulls in tension: the risk is a broken weld, not buckling.' : 'Within the normal range.'}`);
+  },
+});
+
+// 06.07 Mohr's circle
+def('mohr', {
+  controls: [{ k: 'sx', label: 'σx (MPa)', min: -100, max: 100, step: 1, v: 80, f: 0 }, { k: 'sy', label: 'σy (MPa)', min: -100, max: 100, step: 1, v: -20, f: 0 }, { k: 't', label: 'τxy (MPa)', min: -60, max: 60, step: 1, v: 30, f: 0 }, { k: 'th', label: 'Element rotation θ (°)', min: 0, max: 180, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const C0 = (v.sx + v.sy) / 2, d = (v.sx - v.sy) / 2, R = Math.hypot(d, v.t), th = v.th * Math.PI / 180, c2 = Math.cos(2 * th), s2 = Math.sin(2 * th);
+    const a = C0 + d * c2 + v.t * s2, b = C0 - d * c2 - v.t * s2, tt = -d * s2 + v.t * c2;
+    sqAt(p, C0, 0, Math.max(30, R * 1.25), 'σ, MPa', 'τ, MPa (down positive)');
+    const ang = linspace(0, 2 * Math.PI, 145); p.line(ang.map((q) => C0 + R * Math.cos(q)), ang.map((q) => R * Math.sin(q)), C.cyan, 2);
+    p.line([C0 - R * 1.3, C0 + R * 1.3], [0, 0], C.grey, 1);
+    // plot tau downward-positive so the rotation sense on the circle matches the element (2θ counter-clockwise)
+    p.line([a, b], [-tt, tt], C.paper, 1.5).dots([a], [-tt], C.lime, 6).dots([b], [tt], C.amber, 5).dots([C0 + R, C0 - R], [0, 0], C.paper, 4);
+    const tp = 0.5 * Math.atan2(2 * v.t, v.sx - v.sy) * 180 / Math.PI;
+    out(`Centre ${nf(1).format(C0)}, radius ${nf(2).format(R)} MPa. σ₁ = ${nf(2).format(C0 + R)}, σ₂ = ${nf(2).format(C0 - R)} MPa at θp = ${nf(1).format(tp)}°. Rotated face x′ (lime): σ = ${nf(2).format(a)}, τ = ${nf(2).format(tt)} MPa. Turning the element by θ moves the point 2θ round the circle.`);
+  },
+});
+
+// 06.08 yield surfaces in the σ1-σ2 plane
+def('yieldsurf', {
+  controls: [{ k: 's', label: 'Bending stress σ (MPa)', min: -300, max: 300, step: 5, v: 120, f: 0 }, { k: 't', label: 'Torsional shear τ (MPa)', min: 0, max: 250, step: 5, v: 70, f: 0 }],
+  draw(p, v, out) {
+    const fy = 355, C0 = v.s / 2, R = Math.hypot(v.s / 2, v.t), s1 = C0 + R, s2 = C0 - R;
+    sqAt(p, 0, 0, 470, 'σ₁, MPa', 'σ₂, MPa');
+    const ang = linspace(0, 2 * Math.PI, 241);
+    // von Mises ellipse s1^2 - s1 s2 + s2^2 = fy^2, parametrised along its axes
+    p.line(ang.map((q) => fy * Math.sqrt(2) * (Math.cos(q) / Math.sqrt(2) - Math.sin(q) / Math.sqrt(6))), ang.map((q) => fy * Math.sqrt(2) * (Math.cos(q) / Math.sqrt(2) + Math.sin(q) / Math.sqrt(6))), C.cyan, 2);
+    poly(p, [[fy, 0], [fy, fy], [0, fy], [-fy, 0], [-fy, -fy], [0, -fy]], C.amber, null, 1.5);
+    p.line([-470, 470], [0, 0], C.rule, 1).line([0, 0], [-470, 470], C.rule, 1);
+    const vm = Math.sqrt(v.s * v.s + 3 * v.t * v.t), tr = Math.sqrt(v.s * v.s + 4 * v.t * v.t);
+    p.dots([s1], [s2], vm > fy ? C.red : C.lime, 6);
+    out(`Principal stresses σ₁ = ${nf(1).format(s1)}, σ₂ = ${nf(1).format(s2)} MPa. von Mises √(σ² + 3τ²) = ${nf(1).format(vm)} MPa (cyan ellipse), Tresca √(σ² + 4τ²) = ${nf(1).format(tr)} MPa (amber hexagon), against fy = 355 MPa for S355. Safety factor ${nf(2).format(fy / vm)} (von Mises). ${vm > fy ? 'Outside the ellipse: it yields.' : 'Inside both: elastic.'}`);
+  },
+});
+
+// 06.09 cantilever bending stress map
+def('bendstress', {
+  controls: [{ k: 'a', label: 'Load position from the wall (m)', min: 0.2, max: 2, step: 0.05, v: 2, f: 2 }, { k: 'P', label: 'Load P (kN)', min: -10, max: 10, step: 0.5, v: 5, f: 1 }],
+  draw(p, v, out) {
+    const L = 2, b = 0.08, h = 0.2, I = b * h ** 3 / 12, nx = 60, ny = 12;
+    const M = (x) => (x < v.a ? -v.P * (v.a - x) : 0);       // kN m, hogging negative for a downward load
+    fitAt(p, 1.0, 0, 1.15, 0.5, 'x, m', 'y, m');
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) {
+      const x = (i + 0.5) * L / nx, y = -h / 2 + (j + 0.5) * h / ny, s = -M(x) * 1e3 * y / I / 1e6;   // MPa
+      p.rect(i * L / nx, (i + 1) * L / nx, 2 * (-h / 2 + j * h / ny), 2 * (-h / 2 + (j + 1) * h / ny), divCol(s / 37.5));
+    }
+    p.rect(-0.08, 0, -0.35, 0.35, 'rgba(154,157,147,0.5)');
+    if (v.P !== 0) arrow(p, v.a, v.P > 0 ? 0.55 : -0.55, v.a, v.P > 0 ? 0.22 : -0.22, C.lime, 3);
+    const Mw = Math.abs(M(0)), sw = Mw * 1e3 * (h / 2) / I / 1e6;
+    out(`80 × 200 mm section (depth drawn 2× larger), I = ${nf(2).format(I * 1e12 / 1e6)}×10⁶ mm⁴. Wall moment ${nf(2).format(Mw)} kN m, so σmax = Mc/I = ${nf(2).format(sw)} MPa at the top and bottom fibres. Amber tension, cyan compression; the neutral axis in the middle carries nothing.`);
+  },
+});
+
+// 06.10 sections at equal area
+def('sectioncmp', {
+  controls: [{ type: 'select', k: 's', label: 'Section (all 2725 mm²)', options: ['square', 'round bar', 'tube 100 mm', 'I-section 200 mm', 'flat plate on edge 10 mm'], v: 'I-section 200 mm' }],
+  draw(p, v, out) {
+    const A = 2724.8, sq = Math.sqrt(A), Dr = Math.sqrt(4 * A / Math.PI), di = Math.sqrt(1e4 - 4 * A / Math.PI);
+    const I = { square: sq ** 4 / 12, 'round bar': Math.PI * Dr ** 4 / 64, 'tube 100 mm': Math.PI * (1e8 - di ** 4) / 64, 'I-section 200 mm': 1.8456e7, 'flat plate on edge 10 mm': 10 * (A / 10) ** 3 / 12 };
+    sqAt(p, 0, 0, 160, 'mm', 'mm');
+    const ang = linspace(0, 2 * Math.PI, 97), fill = 'rgba(184,255,92,0.35)';
+    if (v.s === 'square') poly(p, [[-sq / 2, -sq / 2], [sq / 2, -sq / 2], [sq / 2, sq / 2], [-sq / 2, sq / 2]], C.lime, fill);
+    if (v.s === 'round bar') poly(p, ang.map((q) => [Dr / 2 * Math.cos(q), Dr / 2 * Math.sin(q)]), C.lime, fill);
+    if (v.s === 'tube 100 mm') { poly(p, ang.map((q) => [50 * Math.cos(q), 50 * Math.sin(q)]), C.lime, fill); poly(p, ang.map((q) => [di / 2 * Math.cos(q), di / 2 * Math.sin(q)]), C.lime, 'rgba(10,10,10,1)'); }
+    if (v.s === 'I-section 200 mm') poly(p, [[-50, -100], [50, -100], [50, -91.5], [2.8, -91.5], [2.8, 91.5], [50, 91.5], [50, 100], [-50, 100], [-50, 91.5], [-2.8, 91.5], [-2.8, -91.5], [-50, -91.5]], C.lime, fill);
+    if (v.s === 'flat plate on edge 10 mm') poly(p, [[-5, -A / 20], [5, -A / 20], [5, A / 20], [-5, A / 20]], C.lime, fill);
+    p.line([-150, 150], [0, 0], C.grey, 1, [4, 4]);
+    out(`I about the horizontal axis = ${nf(2).format(I[v.s] / 1e6)}×10⁶ mm⁴, ${nf(1).format(I[v.s] / I.square)}× the square. Same material, same weight per metre: putting the area far from the neutral axis (dashed) is what makes a section stiff in bending.${v.s.startsWith('flat') ? ' A deep thin plate is stiff too, but it buckles sideways easily.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
