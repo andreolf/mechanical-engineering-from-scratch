@@ -9,7 +9,9 @@ A free, open-source mechanical engineering curriculum: **20 phases, 356 lessons*
 
 The homepage has a live 3D cantilever hero and three "Break the machine" labs (truss bridge, gyroscope, venturi), plus links to two live labs: [The coconut that never escapes](https://andreolf.github.io/coconut-lab/) and [Subak rice terraces](https://andreolf.github.io/subak-lab/).
 
-> Status: v0.1, local build. Lessons are detailed outlines (goal, derivation, code exercise, lab, test, pro tool, ETH course). Lesson notebooks and code are not written yet. The AI-tutor install command on the site is a **TBD placeholder**.
+> Live site: https://andreolf.github.io/mechanical-engineering-from-scratch/
+
+> Status: v0.1. Lessons are detailed outlines (goal, derivation, code exercise, lab, test, pro tool, ETH course). Lesson notebooks and code are not written yet. The AI-tutor install command on the site is a **coming-soon placeholder** (no skill package is published yet).
 
 ## Layout
 

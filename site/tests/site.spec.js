@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-const SHOTS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../screenshots');
+const SHOTS = process.env.SHOTS_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../screenshots');
 
 function watchConsole(page) {
   const errors = [];
@@ -28,7 +28,7 @@ async function tapOrClick(page, x, y, isMobile) {
 test.describe('Mechanical Engineering from Scratch', () => {
   test('loads with no console errors and renders the hero 3D scene', async ({ page }, info) => {
     const errors = watchConsole(page);
-    await page.goto('/');
+    await page.goto('./');
     await expect(page.locator('h1')).toContainText('Mechanical Engineering');
     await page.waitForFunction(() => window.__mefs?.hero?.stage?.frames > 10);
     const r = await canvasHasContent(page, 'hero-canvas');
@@ -41,7 +41,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
   });
 
   test('hero beam reacts to dragging and the load slider', async ({ page }, info) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.waitForFunction(() => window.__mefs?.hero?.stage?.frames > 5);
     const box = await page.locator('canvas[data-testid=hero-canvas]').boundingBox();
     // project two beam points to the screen and drag between them
@@ -70,7 +70,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
 
   test('truss lab: deleting members redistributes load, then collapses', async ({ page }, info) => {
     const errors = watchConsole(page);
-    await page.goto('/');
+    await page.goto('./');
     await page.locator('#lab-truss').scrollIntoViewIfNeeded();
     await page.waitForFunction(() => window.__mefs?.truss?.stage?.frames > 10);
     expect((await canvasHasContent(page, 'truss-canvas')).ok).toBeTruthy();
@@ -106,7 +106,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
   });
 
   test('gyroscope lab: spin precesses, stopping the spin makes it fall', async ({ page }, info) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.locator('#lab-flywheel').scrollIntoViewIfNeeded();
     await page.waitForFunction(() => window.__mefs?.gyro?.state?.steps > 1000);
     if (await page.locator('canvas[data-testid=gyro-canvas]').count()) expect((await canvasHasContent(page, 'gyro-canvas')).ok).toBeTruthy();
@@ -121,7 +121,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
   });
 
   test('pipe lab: throat squeeze raises speed, extreme flow cavitates', async ({ page }, info) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.locator('#lab-pipe').scrollIntoViewIfNeeded();
     await page.waitForFunction(() => window.__mefs?.pipe?.state?.res);
     if (await page.locator('canvas[data-testid=pipe-canvas]').count()) {
@@ -141,7 +141,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
   });
 
   test('phase map expands, search filters, progress persists across reloads', async ({ page }, info) => {
-    await page.goto('/#curriculum');
+    await page.goto('./#curriculum');
     await page.waitForFunction(() => window.__mefs?.curriculumReady);
     const phases = page.locator('.phase');
     await expect(phases).toHaveCount(20);
@@ -179,7 +179,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
 
   test('graceful fallback without WebGL', async ({ page }) => {
     const errors = watchConsole(page);
-    await page.goto('/?nowebgl');
+    await page.goto('./?nowebgl');
     await expect(page.locator('.webgl-fallback')).toHaveCount(4);
     // physics still answers controls
     await page.locator('[name=pipe-d]').fill('30');
@@ -191,7 +191,7 @@ test.describe('Mechanical Engineering from Scratch', () => {
   });
 
   test('no horizontal overflow at the device width', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('./');
     await page.waitForFunction(() => window.__mefs?.curriculumReady);
     const vw = page.viewportSize().width;
     const m = await page.evaluate(() => ({ iw: window.innerWidth, sw: document.documentElement.scrollWidth }));
