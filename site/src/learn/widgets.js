@@ -2138,6 +2138,54 @@ def('engine', {
   },
 });
 
+// ---------- Phase 08 ----------
+// 08.01 mass-spring lab
+def('springlab', {
+  controls: [{ k: 'm', label: 'Mass (kg)', min: 50, max: 1000, step: 10, v: 300, f: 0 }, { k: 'k', label: 'Spring stiffness (kN/m)', min: 5, max: 100, step: 1, v: 30, f: 0 }, { k: 'x0', label: 'Release from (mm)', min: 5, max: 100, step: 5, v: 50, f: 0 }],
+  draw(p, v, out) {
+    const m = v.m, k = v.k * 1e3, wn = Math.sqrt(k / m), T = 2 * Math.PI / wn, dt = 1e-3, n = 3000;
+    let x = v.x0 / 1000, u = 0, a = -k / m * x; const ts = [0], xs = [x * 1000]; let last = null; const cross = [];
+    for (let i = 1; i <= n; i++) { const xn = x + dt * u + 0.5 * dt * dt * a, an = -k / m * xn; u += 0.5 * dt * (a + an); if (x < 0 && xn >= 0) cross.push((i - 1) * dt - x * dt / (xn - x)); x = xn; a = an; ts.push(i * dt); xs.push(x * 1000); }
+    const Tm = cross.length > 1 ? (cross[cross.length - 1] - cross[0]) / (cross.length - 1) : NaN;
+    p.frame({ x: [0, 3], y: [-110, 110], xlabel: 'time, s', ylabel: 'displacement, mm' }).line(ts, xs, C.lime, 2);
+    cross.forEach((c) => p.line([c, c], [-110, 110], C.grey, 1, [3, 4]));
+    out(`ω_n = √(k/m) = ${nf(2).format(wn)} rad/s, f_n = ${nf(3).format(wn / 2 / Math.PI)} Hz. Measured period ${isNaN(Tm) ? 'needs two crossings' : nf(4).format(Tm) + ' s'}; 2π√(m/k) = ${nf(4).format(T)} s. Change the release height: the period stays the same.`);
+  },
+});
+
+// 08.02 free decay with envelope
+def('decay', {
+  controls: [{ k: 'z', label: 'Damping ratio ζ', min: 0, max: 1.2, step: 0.01, v: 0.1, f: 2 }, { k: 'fn', label: 'Natural frequency (Hz)', min: 0.5, max: 4, step: 0.1, v: 1.6, f: 1 }],
+  draw(p, v, out) {
+    const wn = 2 * Math.PI * v.fn, z = v.z, ts = linspace(0, 4, 800), x0 = 50;
+    let xs;
+    if (z < 1) { const wd = wn * Math.sqrt(1 - z * z); xs = ts.map((t) => x0 * Math.exp(-z * wn * t) * (Math.cos(wd * t) + z * wn / wd * Math.sin(wd * t))); }
+    else if (z === 1) xs = ts.map((t) => x0 * Math.exp(-wn * t) * (1 + wn * t));
+    else { const s = Math.sqrt(z * z - 1), r1 = -wn * (z - s), r2 = -wn * (z + s); xs = ts.map((t) => x0 * (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r2 - r1)); }
+    p.frame({ x: [0, 4], y: [-55, 55], xlabel: 'time, s', ylabel: 'displacement, mm' });
+    if (z < 1) { const env = ts.map((t) => x0 * Math.exp(-z * wn * t) / Math.sqrt(1 - z * z)); p.line(ts, env, C.amber, 1, [4, 4]).line(ts, env.map((e) => -e), C.amber, 1, [4, 4]); }
+    p.line(ts, xs, C.lime, 2);
+    if (z > 0 && z < 1) { const d = 2 * Math.PI * z / Math.sqrt(1 - z * z); out(`Underdamped. Each cycle the amplitude falls by e^(−δ) = ${nf(3).format(Math.exp(-d))}, log decrement δ = ${nf(3).format(d)}, period ${nf(3).format(2 * Math.PI / (wn * Math.sqrt(1 - z * z)))} s. Amber: envelope e^(−ζω_n t).`); }
+    else if (z === 0) out('No damping: it oscillates for ever with constant amplitude.');
+    else out(z === 1 ? 'Critically damped: the fastest return to zero without overshoot.' : 'Overdamped: no oscillation, and a slower return than critical damping.');
+  },
+});
+
+// 08.03 shaker sweep: amplitude and phase
+def('shaker', {
+  controls: [{ k: 'r', label: 'Forcing frequency / natural frequency', min: 0.05, max: 3, step: 0.01, v: 0.9, f: 2 }, { k: 'z', label: 'Damping ratio ζ', min: 0.01, max: 0.7, step: 0.01, v: 0.05, f: 2 }],
+  draw(p, v, out) {
+    const rs = linspace(0.01, 3, 600), z = v.z, amp = (r) => 1 / Math.sqrt((1 - r * r) ** 2 + (2 * z * r) ** 2), ph = (r) => Math.atan2(2 * z * r, 1 - r * r) * 180 / Math.PI;
+    p.frame({ x: [0, 3], y: [0, 12], xlabel: 'ω / ω_n', ylabel: 'amplitude / static deflection' });
+    p.line(rs, rs.map((r) => Math.min(12, amp(r))), C.lime, 2.5).line(rs, rs.map((r) => ph(r) / 15), C.cyan, 1.5, [5, 3]);
+    p.text('cyan: phase lag, 180° at top', 1.3, 8.5, C.cyan);
+    const rp = z < 0.7071 ? Math.sqrt(1 - 2 * z * z) : 0;
+    if (rp > 0) p.dots([rp], [Math.min(12, amp(rp))], C.amber, 5);
+    p.dots([v.r], [Math.min(12, amp(v.r))], C.red, 6);
+    out(`At ω/ω_n = ${nf(2).format(v.r)}: amplitude ${nf(2).format(amp(v.r))} × static, lagging the force by ${nf(1).format(ph(v.r))}°. ${rp > 0 ? `Peak ${nf(2).format(amp(rp))} × static at ω/ω_n = √(1 − 2ζ²) = ${nf(3).format(rp)} (amber).` : 'No resonant peak: ζ > 0.707.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
