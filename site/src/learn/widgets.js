@@ -3849,6 +3849,78 @@ def('pumpsystem', {
   },
 });
 
+// 12.13 isentropic ratios against Mach number
+def('machslider', {
+  controls: [{ k: 'M', label: 'Mach number', min: 0, max: 3, step: 0.01, v: 0.82, f: 2 }, { type: 'select', k: 'k', label: 'Where', options: ['Cruise at 11 km (−56.5 °C)', 'Sea level (15 °C)', 'Hot day in Bali (32 °C)'], v: 'Cruise at 11 km (−56.5 °C)' }],
+  draw(p, v, out) {
+    const sel = ['Cruise at 11 km (−56.5 °C)', 'Sea level (15 °C)', 'Hot day in Bali (32 °C)'].indexOf(v.k), T = [216.65, 288.15, 305.15][sel], P = [22.632, 101.325, 100.9][sel], k = 1.4;
+    const tr = (M) => 1 + 0.2 * M * M, Ms = linspace(0, 3, 150);
+    p.frame({ x: [0, 3], y: [0, 1.05], xlabel: 'Mach number', ylabel: 'static / stagnation' });
+    p.line(Ms, Ms.map((M) => 1 / tr(M)), C.amber, 2).line(Ms, Ms.map((M) => tr(M) ** -3.5), C.lime, 2.5).line(Ms, Ms.map((M) => tr(M) ** -2.5), C.cyan, 2);
+    p.line([v.M, v.M], [0, 1.05], C.grey, 1, [4, 3]).line([1, 1], [0, 1.05], C.red, 1, [2, 3]);
+    p.text('T/T₀', 2.4, 1 / tr(2.4) + 0.05, C.amber).text('p/p₀', 2.4, tr(2.4) ** -3.5 - 0.06, C.lime).text('ρ/ρ₀', 1.55, tr(1.55) ** -2.5 + 0.08, C.cyan);
+    const a = Math.sqrt(k * 287.05 * T), V = v.M * a, pr = tr(v.M) ** 3.5, err = v.M > 0 ? 100 * (0.7 * v.M * v.M / (pr - 1) - 1) : 0;
+    out(`a = √(kRT) = ${nf(1).format(a)} m/s, so V = ${nf(0).format(V)} m/s (${nf(0).format(V * 3.6)} km/h). Stagnation temperature ${nf(1).format(T * tr(v.M))} K (${nf(1).format(T * tr(v.M) - 273.15)} °C), stagnation pressure ${nf(2).format(P * pr)} kPa. ${v.M > 0 && v.M < 1 ? `Incompressible Bernoulli would be off by ${nf(1).format(Math.abs(err))}%.` : v.M >= 1 ? 'Supersonic: Bernoulli is meaningless here and shocks can form.' : ''}`);
+  },
+});
+
+// 12.14 converging-diverging nozzle with back pressure
+function nozzleState12(pbr) {
+  const k = 1.4, ar = (M) => (1 / M) * ((2 / (k + 1)) * (1 + 0.2 * M * M)) ** 3, pr = (M) => (1 + 0.2 * M * M) ** -3.5;
+  const mfa = (A, sup) => { let lo = sup ? 1 : 1e-9, hi = sup ? 50 : 1; for (let i = 0; i < 100; i++) { const m = (lo + hi) / 2, big = ar(m) > A; if (sup) big ? (hi = m) : (lo = m); else big ? (lo = m) : (hi = m); } return (lo + hi) / 2; };
+  const sh = (M1) => { const M2 = Math.sqrt((1 + 0.2 * M1 * M1) / (k * M1 * M1 - 0.2)), p21 = 1 + 2 * k / (k + 1) * (M1 * M1 - 1); return [M2, p21, p21 * pr(M1) / pr(M2)]; };
+  const Ae = 2, xt = 0.4, A = (x) => (x < xt ? 1 + 2 * ((x - xt) / xt) ** 2 : 1 + (Ae - 1) * ((x - xt) / (1 - xt)) ** 2);
+  const pc1 = pr(mfa(Ae, false)), Msup = mfa(Ae, true), pc2 = pr(Msup) * sh(Msup)[1], xs = linspace(0, 1, 201);
+  let ps, regime, mdot, xsh = null;
+  if (pbr >= 0.9999) { ps = xs.map(() => 1); regime = 'no flow'; mdot = 0; }
+  else if (pbr >= pc1) { const Me = Math.sqrt(5 * (pbr ** (-1 / 3.5) - 1)), As = Ae / ar(Me); ps = xs.map((x) => pr(mfa(A(x) / As, false))); regime = 'subsonic everywhere, not choked'; mdot = As; }
+  else {
+    mdot = 1;
+    const isen = (x) => pr(mfa(A(x), x > xt));
+    if (pbr >= pc2) {
+      const exitp = (as) => { const [, , p0r] = sh(mfa(as, true)), Me = mfa(Ae * p0r, false); return p0r * pr(Me); };
+      let lo = 1.0000001, hi = Ae; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; exitp(m) > pbr ? (lo = m) : (hi = m); }
+      const As = (lo + hi) / 2, p0r = sh(mfa(As, true))[2]; xsh = xt + (1 - xt) * Math.sqrt((As - 1) / (Ae - 1));
+      ps = xs.map((x) => (x <= xsh ? isen(x) : p0r * pr(mfa(A(x) * p0r, false)))); regime = 'choked, normal shock inside the nozzle';
+    } else { ps = xs.map(isen); regime = pbr > pr(Msup) + 1e-3 ? 'choked, supersonic exit, over-expanded (oblique shocks outside)' : pbr < pr(Msup) - 1e-3 ? 'choked, supersonic exit, under-expanded (expansion fans outside)' : 'choked, design condition: exit pressure matches'; }
+  }
+  return { xs, ps, A, regime, mdot, xsh, pc1, pc2, pd: pr(Msup) };
+}
+def('cdnozzle', {
+  controls: [{ k: 'pb', label: 'Back pressure p_b / p₀', min: 0, max: 1, step: 0.005, v: 0.75, f: 3 }],
+  draw(p, v, out) {
+    const s = nozzleState12(v.pb);
+    p.frame({ x: [0, 1.1], y: [0, 1.6], xlabel: 'position along the nozzle', ylabel: 'p / p₀' });
+    const sc = 0.12; p.line(s.xs, s.xs.map((x) => 1.38 + sc * Math.sqrt(s.A(x))), C.paper, 1.5).line(s.xs, s.xs.map((x) => 1.38 - sc * Math.sqrt(s.A(x))), C.paper, 1.5);
+    p.line(s.xs, s.ps, C.lime, 2.5).line([1, 1.1], [v.pb, v.pb], C.amber, 2).text('p_b', 1.02, v.pb + 0.05, C.amber);
+    if (s.xsh) { p.line([s.xsh, s.xsh], [0, 1.25], C.red, 2, [4, 3]); p.line([s.xsh, s.xsh], [1.38 - sc * Math.sqrt(s.A(s.xsh)), 1.38 + sc * Math.sqrt(s.A(s.xsh))], C.red, 3); }
+    out(`${s.regime[0].toUpperCase() + s.regime.slice(1)}. Mass flow ${nf(4).format(s.mdot)} of the choked value. Critical back pressures for this nozzle: chokes below ${nf(4).format(s.pc1)} p₀, shock reaches the exit at ${nf(4).format(s.pc2)} p₀, design exit pressure ${nf(4).format(s.pd)} p₀. Below the first, lowering p_b doesn't change the mass flow at all.`);
+  },
+});
+
+// 12.15 Sod-type shock tube, exact solution
+def('shocktube', {
+  controls: [{ k: 't', label: 'Time after the diaphragm bursts', min: 0, max: 0.25, step: 0.005, v: 0.2, f: 3 }, { k: 'pL', label: 'Left pressure (right = 0.1)', min: 0.2, max: 10, step: 0.1, v: 1, f: 1 }, { type: 'select', k: 'k', label: 'Show', options: ['Density', 'Pressure', 'Velocity'], v: 'Density' }],
+  draw(p, v, out) {
+    const k = 1.4, rL = 1, pL = v.pL, rR = 0.125, pR = 0.1, aL = Math.sqrt(k * pL / rL), aR = Math.sqrt(k * pR / rR), g = (k - 1) / (k + 1);
+    const f = (pp, r, pk, a) => (pp > pk ? (pp - pk) * Math.sqrt(2 / ((k + 1) * r) / (pp + g * pk)) : 2 * a / (k - 1) * ((pp / pk) ** ((k - 1) / (2 * k)) - 1));
+    let lo = 1e-8, hi = 10 * pL; for (let i = 0; i < 100; i++) { const m = (lo + hi) / 2; f(m, rL, pL, aL) + f(m, rR, pR, aR) < 0 ? (lo = m) : (hi = m); }
+    const ps = (lo + hi) / 2, us = 0.5 * (f(ps, rR, pR, aR) - f(ps, rL, pL, aL)), rsL = rL * (ps / pL) ** (1 / k), asL = aL * (ps / pL) ** ((k - 1) / (2 * k));
+    const r2 = rR * (ps / pR + g) / (g * ps / pR + 1), S = us * r2 / (r2 - rR);
+    const sample = (x) => { if (v.t === 0) return x < 0.5 ? [rL, 0, pL] : [rR, 0, pR]; const s = (x - 0.5) / v.t;
+      if (s < -aL) return [rL, 0, pL];
+      if (s < us - asL) { const u = 2 / (k + 1) * (aL + s), a = 2 / (k + 1) * (aL - (k - 1) / 2 * s); return [rL * (a / aL) ** (2 / (k - 1)), u, pL * (a / aL) ** (2 * k / (k - 1))]; }
+      if (s < us) return [rsL, us, ps]; if (s < S) return [r2, us, ps]; return [rR, 0, pR]; };
+    const sel = ['Density', 'Pressure', 'Velocity'].indexOf(v.k), xs = linspace(0, 1, 400), ys = xs.map((x) => sample(x)[sel]);
+    const top = [Math.max(rL, r2), pL, Math.max(0.5, us)][sel] * 1.15;
+    p.frame({ x: [0, 1], y: [0, top], xlabel: 'position in the tube', ylabel: ['density', 'pressure', 'velocity'][sel] });
+    p.line(xs, ys, C.lime, 2.5).line([0.5, 0.5], [0, top], C.grey, 1, [3, 3]);
+    if (v.t > 0) { const xS = 0.5 + S * v.t, xC = 0.5 + us * v.t; p.text('shock', Math.min(0.9, xS - 0.03), top * 0.93, C.red).text('contact', Math.max(0.02, xC - 0.08), top * 0.8, C.cyan).text('expansion', Math.max(0.02, 0.5 - aL * v.t - 0.02), top * 0.93, C.amber); }
+    const Ms = S / aR, ds = 717.6 * Math.log((ps / pR) / ((r2 / rR) ** k));
+    out(`Shock Mach ${nf(3).format(Ms)}, pressure ratio ${nf(3).format(ps / pR)} across it, gas behind moving at ${nf(3).format(us)} (units of the initial state). Entropy rises across the shock by ${nf(1).format(ds)} J/(kg K) for air, but not across the smooth expansion or the contact surface.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
