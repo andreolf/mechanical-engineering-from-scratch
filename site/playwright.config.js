@@ -17,7 +17,7 @@ export default defineConfig({
     { name: 'pixel7', ...dev, use: { ...devices['Pixel 7'] } },
     { name: 'iphone13', ...dev, use: { ...devices['iPhone 13'], launchOptions: {} } },
     { name: 'iphone14', ...dev, use: { ...devices['iPhone 14'], launchOptions: {} } },
-    { name: 'android360', ...dev, use: { browserName: 'chromium', viewport: { width: 360, height: 740 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: devices['Galaxy S9+'].userAgent } },
+    { name: 'android360', grep: /@device|@sweep/, use: { browserName: 'chromium', viewport: { width: 360, height: 740 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: devices['Galaxy S9+'].userAgent } },
     { name: 'iphone13-landscape', ...dev, use: { ...devices['iPhone 13 landscape'], launchOptions: {} } },
     { name: 'pixel7-landscape', ...dev, use: { ...devices['Pixel 7 landscape'] } },
   ],
