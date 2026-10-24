@@ -3999,6 +3999,34 @@ def('hutbuilder', {
   },
 });
 
+// 13.03 critical insulation radius
+def('critradius', {
+  controls: [{ k: 'r2', label: 'Outer radius of the insulation (mm)', min: 2, max: 60, step: 0.5, v: 10, f: 1 }, { k: 'k', label: 'Insulation k (W/(m K))', min: 0.03, max: 0.4, step: 0.01, v: 0.19, f: 2 }, { k: 'h', label: 'Surface coefficient h (W/(m² K))', min: 3, max: 50, step: 1, v: 10, f: 0 }],
+  draw(p, v, out) {
+    const r1 = 0.002, dT = 40, Q = (r2) => dT / (Math.log(r2 / r1) / (2 * Math.PI * v.k) + 1 / (2 * Math.PI * r2 * v.h)), rs = linspace(r1, 0.06, 300), rc = v.k / v.h;
+    const top = Math.max(...rs.map(Q)) * 1.15;
+    p.frame({ x: [0, 60], y: [0, top], xlabel: 'outer radius r₂, mm (wire radius 2 mm)', ylabel: 'heat loss, W per metre' });
+    p.line(rs.map((r) => r * 1000), rs.map(Q), C.lime, 2.5);
+    if (rc > r1 && rc < 0.06) p.line([rc * 1000, rc * 1000], [0, top], C.amber, 1.5, [5, 4]).text('r_c = k/h', rc * 1000 + 1, top * 0.93, C.amber);
+    const q = Q(v.r2 / 1000); p.dots([v.r2], [q], C.cyan, 7);
+    out(`Critical radius k/h = ${nf(1).format(rc * 1000)} mm. At r₂ = ${nf(1).format(v.r2)} mm the wire loses ${nf(2).format(q)} W/m (bare: ${nf(2).format(Q(r1))} W/m). ${rc <= r1 ? 'r_c is below the wire radius: any insulation reduces the loss.' : v.r2 / 1000 < rc ? 'Below r_c, adding insulation increases the loss: the extra surface area wins over the extra resistance.' : 'Beyond r_c, more insulation reduces the loss.'}`);
+  },
+});
+
+// 13.04 fin temperature profile
+def('finprofile', {
+  controls: [{ k: 'L', label: 'Fin length (mm)', min: 5, max: 150, step: 1, v: 30, f: 0 }, { k: 'h', label: 'h (W/(m² K)), fan off to fan on', min: 5, max: 150, step: 1, v: 40, f: 0 }, { type: 'select', k: 'k', label: 'Material', options: ['Aluminium (200)', 'Copper (390)', 'Stainless steel (15)'], v: 'Aluminium (200)' }],
+  draw(p, v, out) {
+    const k = [200, 390, 15][['Aluminium (200)', 'Copper (390)', 'Stainless steel (15)'].indexOf(v.k)], d = 0.003, P = Math.PI * d, A = Math.PI * d * d / 4, L = v.L / 1000, tb = 40;
+    const m = Math.sqrt(v.h * P / (k * A)), a = v.h / (k * m), den = Math.cosh(m * L) + a * Math.sinh(m * L), th = (x) => (Math.cosh(m * (L - x)) + a * Math.sinh(m * (L - x))) / den;
+    const xs = linspace(0, L, 120), M = Math.sqrt(v.h * P * k * A) * tb, q = M * (Math.sinh(m * L) + a * Math.cosh(m * L)) / den, eta = q / (v.h * (P * L + A) * tb);
+    p.frame({ x: [0, 150], y: [0, 42], xlabel: 'distance from the base, mm', ylabel: 'excess temperature T − T∞, K' });
+    p.rect(0, v.L, 0, 3, 'rgba(154,157,147,0.4)').text('the fin', Math.max(v.L / 2, 12), 5, C.grey, 'center');
+    p.line(xs.map((x) => x * 1000), xs.map((x) => th(x) * tb), C.lime, 2.5).line([0, 150], [tb, tb], C.grey, 1, [4, 3]);
+    out(`3 mm pin, base 40 K above the air: mL = ${nf(2).format(m * L)}, tip at ${nf(1).format(th(L) * tb)} K. Heat rate ${nf(3).format(q)} W, ${nf(0).format(100 * q / M)}% of the infinitely long fin's √(hPkA)θ_b = ${nf(3).format(M)} W. Fin efficiency ${nf(0).format(eta * 100)}%. ${m * L > 2.5 ? 'Past mL ≈ 2.5 extra length adds almost nothing.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
