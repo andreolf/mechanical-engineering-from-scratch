@@ -11,12 +11,12 @@ The homepage has a live 3D cantilever hero and three "Break the machine" labs (t
 
 > Live site: https://andreolf.github.io/mechanical-engineering-from-scratch/
 
-> Status: v2. **30 full lessons are written: Phase 00 (00.01–00.12) and Phase 01 (01.01–01.18).** Each one has its own page with an explanation, KaTeX math, figures or an interactive widget, a worked example with real numbers, from-scratch Python (shown and downloadable), exercises with hidden step-by-step solutions, and a graded quiz. The other 326 lessons (Phases 02–19) show their outline and are marked "Full lesson coming soon". The AI-tutor install command on the site is a **coming-soon placeholder** (no skill package is published yet).
+> Status: v2. **46 full lessons are written: Phase 00 (00.01–00.12), Phase 01 (01.01–01.18) and Phase 02 (02.01–02.16).** Each one has its own page with an explanation, KaTeX math, figures or an interactive widget, a worked example with real numbers, from-scratch Python (shown and downloadable), exercises with hidden step-by-step solutions, and a graded quiz. The other 310 lessons (Phases 03–19) show their outline and are marked "Full lesson coming soon". The AI-tutor install command on the site is a **coming-soon placeholder** (no skill package is published yet).
 
 ### Progress and certificates
 
 - Progress, XP and streaks live in your browser's `localStorage` only. There are no accounts, no backend and no data collection.
-- Each phase has a 12-question test drawn from its lesson quizzes. A score of 80% or more unlocks the phase certificate. Passing every phase unlocks the course certificate.
+- Each phase has a 12-question test drawn from its lesson quizzes plus dedicated test questions (`content/tests/NN.json`). A score of 80% or more unlocks the phase certificate. Passing every phase unlocks the course certificate.
 - Certificates are generated in the browser as PNG or PDF. Each carries a verification code (SHA-256 of scope, name, date and phases), which anyone can check on the site's verify page.
 - **This is a free certificate of completion. It is not accredited and is not affiliated with or endorsed by ETH Zurich.**
 

@@ -1,0 +1,78 @@
+[
+ {
+  "type": "num",
+  "q": "Bisection starts on an interval of length 1. How many steps until the interval is shorter than $10^{-6}$?",
+  "answer": 20,
+  "tol": 0.001,
+  "py": "math.ceil(math.log2(1e6))",
+  "explain": "$2^{-n} < 10^{-6}$ needs $n \\ge 19.93$, so 20 steps."
+ },
+ {
+  "type": "num",
+  "q": "One Newton step for $f(x) = x^3 - 2$ from $x_0 = 1$. What is $x_1$? 4 decimals.",
+  "answer": 1.3333,
+  "tol": 0.0005,
+  "py": "1-(1-2)/3",
+  "explain": "$x_1 = 1 - (1 - 2)/(3\\cdot1^2) = 4/3$."
+ },
+ {
+  "type": "mc",
+  "q": "The central difference $\\frac{f(x+h) - f(x-h)}{2h}$ has truncation error of order…",
+  "options": [
+   "$h$",
+   "$h^2$",
+   "$h^3$",
+   "$1/h$"
+  ],
+  "answer": 1,
+  "explain": "The odd Taylor terms cancel, leaving $\\tfrac{h^2}{6}f'''$."
+ },
+ {
+  "type": "num",
+  "q": "Trapezoid rule with 2 intervals for $\\int_0^2 x^2\\,dx$. Exact is $8/3$; what does the rule give?",
+  "answer": 3,
+  "tol": 0.001,
+  "py": "1/2*(0+2*1+4)",
+  "explain": "$h = 1$: $\\tfrac12(0 + 2\\cdot1 + 4) = 3$."
+ },
+ {
+  "type": "num",
+  "q": "A part cools from 90 °C to 60 °C in 10 min in a 20 °C room (Newton cooling). How many more minutes until it reaches 40 °C?",
+  "answer": 12.39,
+  "tol": 0.003,
+  "py": "10*math.log(2)/math.log(7/4)",
+  "explain": "The excess temperature falls from 70 to 40 K in 10 min, so $e^{-10/\\tau} = 4/7$. From 40 to 20 K takes $\\tau\\ln2 = 10\\ln2/\\ln(7/4) = 12.4$ min."
+ },
+ {
+  "type": "mc",
+  "q": "A mass-spring-damper has $\\zeta = 0.1$. Its free response…",
+  "options": [
+   "Decays without oscillating",
+   "Oscillates with slowly decaying amplitude",
+   "Grows",
+   "Oscillates forever with constant amplitude"
+  ],
+  "answer": 1,
+  "explain": "Underdamped: $0 < \\zeta < 1$."
+ },
+ {
+  "type": "num",
+  "q": "Natural frequency in Hz of a 2 kg mass on a 800 N/m spring.",
+  "answer": 3.183,
+  "tol": 0.002,
+  "py": "math.sqrt(800/2)/(2*math.pi)",
+  "explain": "$\\omega_n = \\sqrt{400} = 20$ rad/s, $f = 20/2\\pi$."
+ },
+ {
+  "type": "mc",
+  "q": "Kahan summation helps when…",
+  "options": [
+   "Adding a few large numbers",
+   "Adding many numbers of different sizes, where rounding errors accumulate",
+   "Multiplying matrices",
+   "Integers overflow"
+  ],
+  "answer": 1,
+  "explain": "It carries the lost low-order bits forward in a compensation term."
+ }
+]

@@ -346,6 +346,23 @@ def('iterative', {
   },
 });
 
+// 02.13 two-link arm: forward kinematics by chained rotations
+def('arm2', {
+  controls: [{ k: 't1', label: 'Shoulder θ₁ (°)', min: -90, max: 180, step: 1, v: 30, f: 0 }, { k: 't2', label: 'Elbow θ₂ (°)', min: -150, max: 150, step: 1, v: 45, f: 0 }],
+  draw(p, v, out) {
+    const L1 = 0.4, L2 = 0.3, r = Math.PI / 180, a = v.t1 * r, b = (v.t1 + v.t2) * r;
+    const e = [L1 * Math.cos(a), L1 * Math.sin(a)], t = [e[0] + L2 * Math.cos(b), e[1] + L2 * Math.sin(b)];
+    sqframe(p, 0.8, 'x, m', 'y, m');
+    const c = linspace(0, 2 * Math.PI, 121);
+    p.line(c.map((u) => 0.7 * Math.cos(u)), c.map((u) => 0.7 * Math.sin(u)), C.rule, 1, [3, 3]).line(c.map((u) => 0.1 * Math.cos(u)), c.map((u) => 0.1 * Math.sin(u)), C.rule, 1, [3, 3]);
+    p.line([0, e[0], t[0]], [0, e[1], t[1]], C.paper, 6);
+    // local frames: x axis lime, y axis cyan
+    const fr = (o, ang) => { arrow(p, o[0], o[1], o[0] + 0.12 * Math.cos(ang), o[1] + 0.12 * Math.sin(ang), C.lime, 2); arrow(p, o[0], o[1], o[0] - 0.12 * Math.sin(ang), o[1] + 0.12 * Math.cos(ang), C.cyan, 2); };
+    fr([0, 0], a); fr(e, b); p.dots([0, e[0]], [0, e[1]], C.grey, 5).dots([t[0]], [t[1]], C.lime, 5);
+    out(`Tool tip at x = ${nf(4).format(t[0])} m, y = ${nf(4).format(t[1])} m. The tip frame is rotated by θ₁ + θ₂ = ${v.t1 + v.t2}°.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
