@@ -2727,6 +2727,50 @@ def('roughprofile', {
   },
 });
 
+// 09.22 bend allowance and springback
+def('bendflat', {
+  controls: [{ k: 'R', label: 'Inside bend radius R (mm)', min: 0.5, max: 10, step: 0.5, v: 3, f: 1 }, { k: 't', label: 'Thickness t (mm)', min: 0.5, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'K', label: 'K-factor', min: 0.25, max: 0.5, step: 0.01, v: 0.33, f: 2 }, { type: 'select', k: 'm', label: 'Material', options: ['5052-H32 aluminium', 'Mild steel', 'Spring steel'], v: '5052-H32 aluminium' }],
+  draw(p, v, out) {
+    const sel = ['5052-H32 aluminium', 'Mild steel', 'Spring steel'].indexOf(v.m), Y = [193, 350, 1000][sel], E = [70000, 210000, 210000][sel];
+    const R = v.R, t = v.t, BA = Math.PI / 2 * (R + v.K * t), sb = R + t, flats = (30 - sb) + (50 - 2 * sb) + (30 - sb), L = flats + 2 * BA;
+    const x = R * Y / (E * t), ratio = 4 * x ** 3 - 3 * x + 1, thf = 90 * (R + t / 2) / (R / ratio + t / 2);
+    p.frame({ x: [-5, 60], y: [-8, 36], xlabel: 'mm', ylabel: 'mm' });
+    // U channel: draw inner and outer contours with rounded corners (outside 50 wide, 30 tall)
+    const ro = R + t, rn = R + v.K * t, arc = (cx, cy, r, a0, a1) => linspace(a0, a1, 30).map((a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    const path = (r, off) => [[off, 30], [off, ro], ...arc(ro, ro, r, Math.PI, 1.5 * Math.PI), [50 - ro, ro - r], ...arc(50 - ro, ro, r, 1.5 * Math.PI, 2 * Math.PI), [50 - off, 30]];
+    const outer = path(ro, 0), inner = path(R, t), neut = path(rn, ro - rn);
+    p.line(outer.map((q) => q[0]), outer.map((q) => q[1]), C.paper, 2).line(inner.map((q) => q[0]), inner.map((q) => q[1]), C.paper, 2).line(neut.map((q) => q[0]), neut.map((q) => q[1]), C.lime, 1.5, [4, 3]);
+    p.line([0, L * 50 / 110], [-5, -5], C.cyan, 4).text(`flat blank ${nf(2).format(L)} mm (scaled)`, 0, -2.5, C.cyan);
+    out(`Bend allowance (π/2)(R + Kt) = ${nf(3).format(BA)} mm per bend. Blank for the 30 × 50 × 30 channel: ${nf(2).format(L)} mm. Dashed lime: the neutral axis, which keeps its length. Springback (${v.m}): R_i/R_f = ${nf(4).format(ratio)}, so a 90° bend opens to ${nf(2).format(thf)}°; overbend to ${nf(2).format(8100 / thf)}°.`);
+  },
+});
+
+// 09.23 extrusion ram force against stroke
+def('extrudeforce', {
+  controls: [{ k: 'R', label: 'Extrusion ratio A₀/A', min: 5, max: 100, step: 1, v: 40, f: 0 }, { k: 's', label: 'Flow stress at temperature (MPa)', min: 20, max: 120, step: 1, v: 40, f: 0 }, { k: 'm', label: 'Container friction factor m', min: 0, max: 1, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const D0 = 0.1, Lb = 0.3, A0 = Math.PI * D0 * D0 / 4, s = v.s * 1e6, Fd = s * (0.8 + 1.5 * Math.log(v.R)) * A0 / 1e6, Ff = (L) => v.m * s / Math.sqrt(3) * Math.PI * D0 * L / 1e6;
+    const st = linspace(0, 280, 100);
+    p.frame({ x: [0, 300], y: [0, 12], xlabel: 'ram stroke, mm', ylabel: 'force, MN' });
+    p.line(st, st.map((x) => Fd + Ff(Lb - x / 1000)), C.lime, 2.5).line(st, st.map(() => Fd), C.cyan, 1.5, [4, 3]).line([0, 300], [8, 8], C.red, 1.5, [6, 4]).text('8 MN press', 200, 8.4, C.red);
+    const Fmax = Fd + Ff(Lb);
+    out(`Peak ${nf(2).format(Fmax)} MN at the start: die ${nf(2).format(Fd)} MN (cyan, Johnson p = σ(0.8 + 1.5 ln R)) plus container friction ${nf(2).format(Ff(Lb))} MN, which falls as the billet shortens. Profile area ${nf(0).format(A0 / v.R * 1e6)} mm². ${Fmax > 8 ? 'Too much for the press: heat the billet more, or use a lower ratio.' : 'Within the press capacity.'}`);
+  },
+});
+
+// 09.24 Chvorinov: freezing time against modulus
+def('chvorinov', {
+  controls: [{ k: 'D', label: 'Riser diameter = height (mm)', min: 20, max: 100, step: 1, v: 56, f: 0 }, { k: 'B', label: 'Mould constant B (min/cm²)', min: 1, max: 5, step: 0.05, v: 2.96, f: 2 }],
+  draw(p, v, out) {
+    const shapes = [['plate', 7.69], ['bar', 9.375], ['cube/sphere', 16.67]], Mr = v.D / 6, t = (M) => v.B * (M / 10) ** 2, Ms = linspace(0, 20, 100);
+    p.frame({ x: [0, 20], y: [0, 12], xlabel: 'modulus V/A, mm', ylabel: 'freezing time, min' });
+    p.line(Ms, Ms.map(t), C.grey, 1.5);
+    shapes.forEach(([n, M]) => p.dots([M], [t(M)], C.cyan, 5).text(n, M > 12 ? M - 6.2 : M + 0.4, M > 12 ? t(M) + 0.3 : t(M) - 0.5, C.cyan));
+    const ok = Mr >= 1.2 * 7.69; p.dots([Mr], [t(Mr)], ok ? C.lime : C.red, 7).text('riser', Mr - 1.5, t(Mr) + 0.6, ok ? C.lime : C.red);
+    out(`Chvorinov: t = B (V/A)². The plate (V/A = 7.69 mm) freezes in ${nf(1).format(t(7.69))} min. Riser V/A = D/6 = ${nf(2).format(Mr)} mm, freezing in ${nf(1).format(t(Mr))} min: ${ok ? 'it stays liquid long enough to feed the shrinking plate.' : 'too small; it needs V/A at least 1.2 × the casting\u2019s (D ≥ 55.4 mm).'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
