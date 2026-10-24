@@ -4489,6 +4489,39 @@ def('shaftload', {
   },
 });
 
+// 15.05 press fit stresses through shaft and hub
+def('pressfit', {
+  controls: [{ k: 'di', label: 'Diametral interference (μm)', min: 5, max: 60, step: 1, v: 20, f: 0 }, { k: 'D', label: 'Hub outer diameter (mm)', min: 26, max: 100, step: 1, v: 60, f: 0 }, { k: 'mu', label: 'Friction coefficient', min: 0.05, max: 0.3, step: 0.01, v: 0.15, f: 2 }],
+  draw(p, v, out) {
+    const E = 207e3, R = 10, ro = v.D / 2, L = 25, dr = v.di / 2000;
+    const pr = E * dr * (ro * ro - R * R) / (2 * R * ro * ro), k = R * R / (ro * ro - R * R);
+    const rs = linspace(0, R, 30), rh = linspace(R, ro, 60);
+    const hr = rh.map((r) => -pr * k * (ro * ro / (r * r) - 1)), ht = rh.map((r) => pr * k * (ro * ro / (r * r) + 1));
+    const top = Math.max(pr * 1.6, 50);
+    p.frame({ x: [0, 50], y: [-top, top * 1.4], xlabel: 'radius (mm)', ylabel: 'stress (MPa)' });
+    p.rect(0, R, -top, top * 1.4, 'rgba(154,157,147,0.15)');
+    p.line(rs, rs.map(() => -pr), C.cyan, 2.5).line(rs, rs.map(() => -pr), C.lime, 1.5, [5, 4]);
+    p.line(rh, hr, C.cyan, 2.5).line(rh, ht, C.lime, 2.5);
+    p.text('shaft', R / 2, top * 1.25, C.paper, 'center').text('hub', (R + ro) / 2, top * 1.25, C.paper, 'center');
+    const T = 2 * Math.PI * R * R * L * v.mu * pr / 1000;
+    out(`20 mm steel shaft, hub ${v.D} mm × 25 mm. Contact pressure ${nf(1).format(pr)} MPa; torque capacity ${nf(1).format(T)} N·m; hoop stress at the hub bore ${nf(1).format(ht[0])} MPa. Inside the solid shaft both stresses equal −p (dashed lime under the cyan).`);
+  },
+});
+
+// 15.06 bearing load against life
+def('bearinglife', {
+  controls: [{ k: 'C', label: 'Dynamic rating C (kN)', min: 3, max: 40, step: 0.1, v: 8.1, f: 1 }, { k: 'P', label: 'Equivalent load P (kN)', min: 0.3, max: 10, step: 0.1, v: 1.5, f: 1 }, { type: 'select', k: 'kind', label: 'Bearing type', options: ['Ball (a = 3)', 'Roller (a = 10/3)'], v: 'Ball (a = 3)' }],
+  draw(p, v, out) {
+    const a = v.kind.startsWith('Ball') ? 3 : 10 / 3, Ps = logspace(-1, 2, 80), Ls = Ps.map((P) => (v.C / P) ** a);
+    p.frame({ x: [0.1, 100], y: [1e-3, 1e7], xlog: true, ylog: true, xlabel: 'equivalent load P (kN)', ylabel: 'L10 (million revolutions)' });
+    const ok = Ps.map((P, i) => [P, Ls[i]]).filter((q) => q[1] >= 1e-3 && q[1] <= 1e7);
+    p.line(ok.map((q) => q[0]), ok.map((q) => q[1]), C.lime, 2.5);
+    const L = (v.C / v.P) ** a, L2 = (v.C / (2 * v.P)) ** a;
+    p.dots([v.P], [L], C.red, 6).dots([2 * v.P], [L2], C.amber, 5);
+    out(`L10 = (${nf(1).format(v.C)}/${nf(1).format(v.P)})^${a === 3 ? '3' : '(10/3)'} = ${L >= 100 ? Math.round(L).toLocaleString('en') : nf(2).format(L)} million revolutions (red). At twice the load (amber): ${L2 >= 100 ? Math.round(L2).toLocaleString('en') : nf(2).format(L2)}, a life ${nf(2).format(L / L2)} times shorter. Median bearing ≈ 3.5 × L10.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
