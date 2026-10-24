@@ -3012,6 +3012,53 @@ def('mixlab', {
   },
 });
 
+// 10.10 compressor on an h-s diagram
+def('hscompressor', {
+  controls: [{ k: 'rp', label: 'Pressure ratio', min: 1.5, max: 30, step: 0.5, v: 8, f: 1 }, { k: 'eta', label: 'Isentropic efficiency', min: 0.5, max: 1, step: 0.01, v: 0.85, f: 2 }, { k: 'T1', label: 'Inlet temperature (°C)', min: -20, max: 50, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const cp = 1.005, R = 0.287, k = cp / (cp - R), T1 = v.T1 + 273.15, T2s = T1 * v.rp ** ((k - 1) / k), T2 = T1 + (T2s - T1) / v.eta;
+    const s = (T, pr) => cp * Math.log(T / 273.15) - R * Math.log(pr);
+    const ym = Math.max(1200, cp * T2 * 1.1); p.frame({ x: [-1.1, 1.5], y: [0, ym], xlabel: 's, kJ/(kg K) (relative to 0 °C, 1 bar)', ylabel: 'h, kJ/kg (relative to 0 K)' });
+    const Ts = linspace(200, ym / cp, 80);
+    p.line(Ts.map((T) => s(T, 1)), Ts.map((T) => cp * T), C.cyan, 1.5).line(Ts.map((T) => s(T, v.rp)), Ts.map((T) => cp * T), C.red, 1.5);
+    p.text('p₁', s(0.9 * ym / cp, 1) + 0.04, 0.9 * ym, C.cyan).text('p₂', s(0.9 * ym / cp, v.rp) - 0.18, 0.9 * ym, C.red);
+    const s1 = s(T1, 1), s2 = s(T2, v.rp);
+    p.line([s1, s1], [cp * T1, cp * T2s], C.grey, 1, [4, 4]).line([s1, s2], [cp * T1, cp * T2], C.lime, 2.5);
+    p.dots([s1, s1, s2], [cp * T1, cp * T2s, cp * T2], C.amber, 6).text('1', s1 + 0.06, cp * T1, C.paper).text('2s', s1 - 0.2, cp * T2s, C.paper).text('2', s2 + 0.06, cp * T2, C.paper);
+    out(`T₂s = ${nf(1).format(T2s - 273.15)} °C, actual T₂ = ${nf(1).format(T2 - 273.15)} °C. Work ${nf(1).format(cp * (T2 - T1))} kJ/kg against ${nf(1).format(cp * (T2s - T1))} ideal. Entropy generated ${nf(4).format(s2 - s1)} kJ/(kg K); at η = 1 point 2 lands on 2s.`);
+  },
+});
+
+// 10.11 heat exchanger exergy bars
+def('exergybars', {
+  controls: [{ k: 'Th', label: 'Hot inlet (°C)', min: 40, max: 200, step: 1, v: 90, f: 0 }, { k: 'mc', label: 'Cold flow (kg/s), hot is 1 kg/s', min: 0.5, max: 5, step: 0.1, v: 1.5, f: 1 }, { k: 'Tc', label: 'Cold inlet (°C)', min: 5, max: 35, step: 1, v: 10, f: 0 }],
+  draw(p, v, out) {
+    const c = 4.186, T0 = 288.15, Thi = v.Th + 273.15, Tho = Thi - 40, Tci = v.Tc + 273.15, Q = c * 40, Tco = Tci + Q / (v.mc * c);
+    const psi = (T) => c * (T - T0) - T0 * c * Math.log(T / T0);
+    const dh = psi(Thi) - psi(Tho), dc = v.mc * (psi(Tco) - psi(Tci)), Sg = c * Math.log(Tho / Thi) + v.mc * c * Math.log(Tco / Tci);
+    p.frame({ x: [0, 4], y: [0, Math.max(dh, 1) * 1.2], xlabel: '', ylabel: 'exergy rate, kW' });
+    p.rect(0.3, 1.1, 0, dh, C.red).rect(1.5, 2.3, 0, dc, C.cyan).rect(2.7, 3.5, 0, dh - dc, C.grey);
+    p.text('given', 0.4, dh * 1.05, C.paper).text('gained', 1.5, dc + dh * 0.05, C.paper).text('destroyed', 2.6, (dh - dc) + dh * 0.05, C.paper);
+    out(`Hot stream cools by 40 K (${nf(1).format(Q)} kW); cold leaves at ${nf(1).format(Tco - 273.15)} °C. Exergy destroyed ${nf(2).format(dh - dc)} kW = T₀S_gen = ${nf(2).format(T0 * Sg)} kW. Second-law efficiency ${nf(0).format(100 * dc / dh)} %, though the first law counts it as 100 %. Closer temperatures destroy less.${Tco > Thi ? ' (Cold outlet above hot inlet: not achievable in a real exchanger.)' : ''}`);
+  },
+});
+
+// 10.12 Otto and Diesel p-V loops
+def('pvcycle', {
+  controls: [{ type: 'select', k: 'k', label: 'Cycle', options: ['Otto', 'Diesel'], v: 'Otto' }, { k: 'r', label: 'Compression ratio', min: 4, max: 24, step: 0.5, v: 10, f: 1 }, { k: 'rc', label: 'Diesel cutoff ratio', min: 1.2, max: 3.5, step: 0.1, v: 2, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Otto', 'Diesel'].indexOf(v.k), cv = 0.718, R = 0.287, k = (cv + R) / cv, T1 = 300, p1 = 100, v1 = R * T1 / p1, v2 = v1 / v.r;
+    const vc = linspace(v1, v2, 80), pc = vc.map((x) => p1 * (v1 / x) ** k), p2 = pc[pc.length - 1], T2 = T1 * v.r ** (k - 1);
+    let v3, p3, eta, T3;
+    if (sel === 0) { T3 = T2 + 1200 / cv; p3 = p2 * T3 / T2; v3 = v2; eta = 1 - v.r ** (1 - k); }
+    else { v3 = v.rc * v2; p3 = p2; T3 = T2 * v.rc; eta = 1 - v.r ** (1 - k) * (v.rc ** k - 1) / (k * (v.rc - 1)); }
+    const ve = linspace(v3, v1, 80), pe = ve.map((x) => p3 * (v3 / x) ** k);
+    p.frame({ x: [0, v1 * 1.05], y: [0, 15], xlabel: 'v, m³/kg', ylabel: 'p, MPa' });
+    p.line(vc, pc.map((x) => x / 1000), C.cyan, 2).line([v2, v3], [p2 / 1000, p3 / 1000], C.red, 2.5).line(ve, pe.map((x) => x / 1000), C.amber, 2).line([v1, v1], [pe[pe.length - 1] / 1000, p1 / 1000], C.grey, 2);
+    out(`${v.k}: η = ${nf(1).format(eta * 100)} %, peak ${nf(0).format(T3)} K at ${nf(2).format(p3 / 1000)} MPa${p3 > 15000 ? ' (off the chart)' : ''}. ${sel === 0 ? 'Heat added at constant volume (1200 kJ/kg); efficiency depends only on r.' : 'Heat added at constant pressure; a larger cutoff ratio lowers efficiency at the same r.'} Air-standard values; real engines reach roughly 60 % of these.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
