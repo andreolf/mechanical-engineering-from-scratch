@@ -4420,6 +4420,38 @@ def('tolzone', {
   },
 });
 
+// 15.01 weighted decision matrix for a bike drivetrain
+def('decisionmatrix', {
+  controls: [{ k: 'c', label: 'Cost importance', min: 0, max: 50, step: 1, v: 25, f: 0 }, { k: 'm', label: 'Mass importance', min: 0, max: 50, step: 1, v: 20, f: 0 }, { k: 'mt', label: 'Maintenance importance', min: 0, max: 50, step: 1, v: 30, f: 0 }, { k: 'g', label: 'Gear range importance', min: 0, max: 50, step: 1, v: 10, f: 0 }],
+  draw(p, v, out) {
+    const names = ['1x derailleur', '8-speed hub', 'belt + hub', 'single speed'];
+    const S = [[4, 5, 5, 2, 4], [3, 2, 3, 4, 3], [1, 2, 3, 5, 3], [5, 5, 5, 4, 1]];
+    const raw = [v.c, v.m, 15, v.mt, v.g], sum = raw.reduce((a, b) => a + b, 0), w = raw.map((x) => x / sum);
+    const T = S.map((r) => r.reduce((a, s, j) => a + s * w[j], 0)), best = T.indexOf(Math.max(...T));
+    p.frame({ x: [-0.5, 3.5], y: [0, 5], xlabel: 'concept (0 derailleur, 1 hub, 2 belt, 3 single speed)', ylabel: 'weighted total (1 to 5)' });
+    T.forEach((t, i) => { p.rect(i - 0.32, i + 0.32, 0, t, i === best ? C.lime : C.grey).text(nf(2).format(t), i, t + 0.25, C.paper, 'center'); });
+    out(`Weights (efficiency fixed at 15 points): cost ${nf(2).format(w[0])}, mass ${nf(2).format(w[1])}, efficiency ${nf(2).format(w[2])}, maintenance ${nf(2).format(w[3])}, gear range ${nf(2).format(w[4])}. Winner: ${names[best]} with ${nf(2).format(T[best])}. Raise gear range to see the derailleur take over.`);
+  },
+});
+
+// 15.02 stress-strength interference
+def('interference', {
+  controls: [{ k: 'mr', label: 'Mean strength (MPa)', min: 150, max: 450, step: 5, v: 300, f: 0 }, { k: 'sr', label: 'Strength scatter σ (MPa)', min: 5, max: 60, step: 1, v: 24, f: 0 }, { k: 'ms', label: 'Mean stress (MPa)', min: 50, max: 350, step: 5, v: 180, f: 0 }, { k: 'ss', label: 'Stress scatter σ (MPa)', min: 5, max: 60, step: 1, v: 27, f: 0 }],
+  draw(p, v, out) {
+    const pdf = (x, m, s) => Math.exp(-0.5 * ((x - m) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+    const erf = (x) => { const t = 1 / (1 + 0.3275911 * Math.abs(x)), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; };
+    const Phi = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
+    const xs = linspace(0, 600, 400), R = xs.map((x) => pdf(x, v.mr, v.sr)), S = xs.map((x) => pdf(x, v.ms, v.ss));
+    const ymax = Math.max(...R, ...S) * 1.1;
+    p.frame({ x: [0, 600], y: [0, ymax], xlabel: 'stress or strength (MPa)', ylabel: 'probability density' });
+    const dx = xs[1] - xs[0];
+    xs.forEach((x, i) => { const o = Math.min(R[i], S[i]); if (o > ymax * 0.002) p.rect(x - dx / 2, x + dx / 2, 0, o, 'rgba(255,90,54,0.6)'); });
+    p.line(xs, R, C.lime, 2).line(xs, S, C.red, 2);
+    const z = (v.mr - v.ms) / Math.hypot(v.sr, v.ss), pf = Phi(-z);
+    out(`Central safety factor ${nf(2).format(v.mr / v.ms)}. Reliability index z = ${nf(2).format(z)}, so P_f = Φ(−z) ≈ ${pf < 1e-2 ? pf.toExponential(2) : nf(4).format(pf)}${pf > 0 ? ` (about 1 in ${Math.round(1 / pf).toLocaleString('en')})` : ''}. Shaded: the overlap of the two curves. Try doubling both scatters at the same factor.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
