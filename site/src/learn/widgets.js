@@ -2276,6 +2276,48 @@ def('pluck', {
   },
 });
 
+// 08.10 rod modes: axial or torsional
+def('rodmode', {
+  controls: [{ k: 'n', label: 'Mode number', min: 1, max: 5, step: 1, v: 1, f: 0 }, { k: 'L', label: 'Rod length (m)', min: 0.5, max: 10, step: 0.5, v: 2, f: 1 }, { type: 'select', k: 'bc', label: 'Ends', options: ['fixed-free', 'fixed-fixed'], v: 'fixed-free' }, { type: 'select', k: 'kind', label: 'Motion (steel)', options: ['axial (c = √(E/ρ))', 'torsional (c = √(G/ρ))'], v: 'axial (c = √(E/ρ))' }],
+  draw(p, v, out) {
+    const c = v.kind.startsWith('axial') ? Math.sqrt(210e9 / 7850) : Math.sqrt(81e9 / 7850), ff = v.bc === 'fixed-free', n = v.n;
+    const k = ff ? (2 * n - 1) * Math.PI / (2 * v.L) : n * Math.PI / v.L, f = c * k / (2 * Math.PI), xs = linspace(0, v.L, 300);
+    p.frame({ x: [0, v.L], y: [-1.3, 1.3], xlabel: 'position along the rod, m', ylabel: v.kind.startsWith('axial') ? 'axial displacement' : 'twist angle' });
+    p.line(xs, xs.map((x) => Math.sin(k * x)), C.lime, 2.5).line([0, v.L], [0, 0], C.grey, 1);
+    const nodes = []; for (let j = 0; j <= 2 * n; j++) { const x = j * Math.PI / k; if (x <= v.L + 1e-9) nodes.push(x); }
+    p.dots(nodes, nodes.map(() => 0), C.amber, 5);
+    out(`${v.bc}, mode ${n}: f = ${nf(1).format(f)} Hz with c = ${nf(0).format(c)} m/s. ${ff ? `Fixed-free modes are odd multiples of c/(4L) = ${nf(1).format(c / (4 * v.L))} Hz: 1, 3, 5, …` : `Fixed-fixed modes are whole multiples of c/(2L) = ${nf(1).format(c / (2 * v.L))} Hz.`} Amber: nodes (no motion).`);
+  },
+});
+
+// 08.11 cantilever bending modes
+def('cantimode', {
+  controls: [{ k: 'n', label: 'Mode', min: 1, max: 4, step: 1, v: 1, f: 0 }, { k: 'L', label: 'Overhang (mm)', min: 100, max: 400, step: 10, v: 300, f: 0 }, { k: 't', label: 'Thickness (mm)', min: 0.5, max: 3, step: 0.1, v: 1, f: 1 }],
+  draw(p, v, out) {
+    const bl = [1.875104, 4.694091, 7.854757, 10.995541][v.n - 1], L = v.L / 1000, t = v.t / 1000, E = 200e9, rho = 7850;
+    const f = bl * bl / (2 * Math.PI) * Math.sqrt(E * t * t / 12 / (rho * L ** 4)), s = (Math.cosh(bl) + Math.cos(bl)) / (Math.sinh(bl) + Math.sin(bl));
+    const xs = linspace(0, 1, 300), ph = (x) => Math.cosh(bl * x) - Math.cos(bl * x) - s * (Math.sinh(bl * x) - Math.sin(bl * x)), tip = ph(1);
+    p.frame({ x: [-0.08, 1], y: [-1.4, 1.4], xlabel: 'x / L (clamped at 0)', ylabel: 'deflection (normalised)' });
+    p.rect(-0.08, 0, -1.4, 1.4, 'rgba(154,157,147,0.35)');
+    p.line(xs, xs.map((x) => ph(x) / tip), C.lime, 2.5).line(xs, xs.map((x) => -ph(x) / tip), C.lime, 1, [3, 4]).line([0, 1], [0, 0], C.grey, 1);
+    out(`Steel ruler, ${v.L} mm overhang, ${nf(1).format(v.t)} mm thick: mode ${v.n} at ${nf(2).format(f)} Hz (β L = ${nf(4).format(bl)}). Higher modes go as (βL)²: 1, 6.27, 17.5, 34.4 times f₁, not whole multiples. Frequency ∝ t / L²: halve the overhang and it rises 4 times.`);
+  },
+});
+
+// 08.12 Chladni patterns on a square plate (classic approximation)
+def('chladni', {
+  controls: [{ k: 'm', label: 'm', min: 1, max: 8, step: 1, v: 4, f: 0 }, { k: 'n', label: 'n', min: 0, max: 8, step: 1, v: 1, f: 0 }, { type: 'select', k: 'sg', label: 'Combination', options: ['plus', 'minus'], v: 'plus' }],
+  draw(p, v, out) {
+    const sgn = v.sg === 'plus' ? 1 : -1, F = (x, y) => Math.cos(v.n * Math.PI * x) * Math.cos(v.m * Math.PI * y) + sgn * Math.cos(v.m * Math.PI * x) * Math.cos(v.n * Math.PI * y);
+    sqAt(p, 0.5, 0.5, 0.52, '', '');
+    const e = 1e-4, dist = (x, y) => Math.abs(F(x, y)) / (Math.hypot(F(x + e, y) - F(x - e, y), F(x, y + e) - F(x, y - e)) / (2 * e) + 1e-9);
+    bands(p, (x, y) => (x < 0 || x > 1 || y < 0 || y > 1) ? 0 : Math.max(0, 1 - dist(x, y) / 0.012), 0, 1, 6, 260);
+    poly(p, [[0, 0], [1, 0], [1, 1], [0, 1]], C.grey, null, 1);
+    const zero = v.m === v.n && sgn < 0;
+    out(zero ? 'With m = n the minus combination cancels everywhere: no vibration. Pick different m and n.' : `Bright lines: where sand gathers, the nodal lines of cos(${v.n}πx)cos(${v.m}πy) ${sgn > 0 ? '+' : '−'} cos(${v.m}πx)cos(${v.n}πy). Two modes of the same frequency combine, so a square plate shows patterns neither shows alone.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
