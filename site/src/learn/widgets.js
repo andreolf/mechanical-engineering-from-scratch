@@ -3230,6 +3230,58 @@ def('swissseason', {
   },
 });
 
+// 11.01 Couette shear between plates
+def('couette', {
+  controls: [{ k: 'U', label: 'Top plate speed (m/s)', min: 0, max: 5, step: 0.1, v: 2, f: 1 }, { k: 'h', label: 'Gap (mm)', min: 0.2, max: 5, step: 0.1, v: 1, f: 1 }, { type: 'select', k: 'k', label: 'Fluid', options: ['Water (1.0 mPa s)', 'SAE 30 oil (0.29 Pa s)', 'Honey (10 Pa s)'], v: 'SAE 30 oil (0.29 Pa s)' }, { k: 'G', label: 'Pressure gradient −dp/dx (MPa/m)', min: -4, max: 4, step: 0.1, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const sel = ['Water (1.0 mPa s)', 'SAE 30 oil (0.29 Pa s)', 'Honey (10 Pa s)'].indexOf(v.k), mu = [1e-3, 0.29, 10][sel], h = v.h / 1000;
+    const u = (y) => v.U * y / h + (-v.G * 1e6) / (2 * mu) * (y * y - h * y);
+    const ys = linspace(0, h, 41), us = ys.map(u), um = Math.max(1, ...us.map(Math.abs)) * 1.15;
+    p.frame({ x: [-um * 0.3, um], y: [-0.1, 1.15], xlabel: 'u, m/s', ylabel: 'y / h' });
+    p.rect(-um * 0.3, um, -0.1, 0, C.grey).rect(-um * 0.3, um, 1, 1.06, C.amber);
+    arrow(p, um * 0.5, 1.1, um * 0.5 + Math.max(0.05, v.U / um) * um * 0.3, 1.1, C.amber, 2);
+    for (let i = 0; i <= 40; i += 4) arrow(p, 0, ys[i] / h, us[i], ys[i] / h, C.cyan, 1.5);
+    p.line(us, ys.map((y) => y / h), C.lime, 2.5);
+    const tauTop = mu * (v.U / h + (-v.G * 1e6) / (2 * mu) * h);
+    out(`Wall shear on the moving plate τ = μ du/dy = ${nf(1).format(tauTop)} Pa${v.G === 0 ? ', the same everywhere: the profile is linear, u = Uy/h.' : '. A pressure gradient adds a parabola on top of the linear Couette profile.'} Viscosity ${mu} Pa s.`);
+  },
+});
+
+// 11.02 manometer and pressure with depth
+def('manometer', {
+  controls: [{ k: 'h', label: 'Manometer reading h (mm)', min: 0, max: 400, step: 1, v: 120, f: 0 }, { type: 'select', k: 'k', label: 'Manometer fluid', options: ['Mercury (13 546 kg/m³)', 'Water (998 kg/m³)', 'Oil (850 kg/m³)'], v: 'Mercury (13 546 kg/m³)' }, { type: 'select', k: 'f', label: 'Fluid in the pipe', options: ['Water', 'Air'], v: 'Water' }],
+  draw(p, v, out) {
+    const rm = [13546, 998, 850][['Mercury (13 546 kg/m³)', 'Water (998 kg/m³)', 'Oil (850 kg/m³)'].indexOf(v.k)], rf = v.f === 'Water' ? 998 : 1.2;
+    const dp = (rm - rf) * 9.81 * v.h / 1000, H = v.h / 1000;
+    p.frame({ x: [0, 10], y: [-0.3, 0.7], xlabel: '', ylabel: 'height, m' });
+    p.rect(2, 3, -0.25, 0.6, 'rgba(90,200,250,0.25)').rect(7, 8, -0.25, 0.6, 'rgba(90,200,250,0.25)').rect(2, 8, -0.3, -0.25, 'rgba(90,200,250,0.25)');
+    const mc = rm > 5000 ? 'rgba(200,200,210,0.9)' : rm > 900 && rm < 1000 ? 'rgba(90,150,250,0.9)' : 'rgba(255,190,60,0.9)';
+    p.rect(2, 3, -0.25, 0.1 - H / 2, mc).rect(7, 8, -0.25, 0.1 + H / 2, mc).rect(2, 8, -0.3, -0.25, mc);
+    p.line([3.2, 3.2], [0.1 - H / 2, 0.1 + H / 2], C.lime, 1.5).text(`h = ${v.h} mm`, 3.4, 0.1, C.lime);
+    p.text('high p', 1.4, 0.65, C.paper).text('low p', 7.1, 0.65, C.paper);
+    out(`Δp = (ρ_m − ρ_f) g h = (${rm} − ${rf}) × 9.81 × ${nf(3).format(H)} = ${nf(2).format(dp / 1000)} kPa. ${rm === 998 && v.f === 'Water' ? 'Same fluid on both sides: no reading is possible.' : rm < rf ? 'Negative: a manometer fluid lighter than the pipe fluid must be used in an inverted U-tube.' : ''} For reference, 10 m of water is 98.1 kPa.`);
+  },
+});
+
+// 11.03 tilting hull with metacentre
+def('tilthull', {
+  controls: [{ k: 'th', label: 'Heel angle (°)', min: 0, max: 25, step: 0.5, v: 10, f: 1 }, { k: 'KG', label: 'Centre of gravity above keel KG (m)', min: 0.5, max: 4.5, step: 0.05, v: 1.8, f: 2 }, { k: 'm', label: 'Displacement (t)', min: 60, max: 280, step: 5, v: 150, f: 0 }],
+  draw(p, v, out) {
+    const B = 6, D = 2.5, L = 20, T = v.m * 1000 / (1025 * L * B), th = v.th * Math.PI / 180, bm = B * B / (12 * T), GM = T / 2 + bm - v.KG;
+    const GZ = Math.sin(th) * (GM + bm / 2 * Math.tan(th) ** 2);
+    const rot = (x, y) => [x * Math.cos(th) - (y - T) * Math.sin(th), x * Math.sin(th) + (y - T) * Math.cos(th)];
+    p.frame({ x: [-5, 5], y: [-3, 5], xlabel: 'm', ylabel: 'm (waterline at 0)' });
+    p.rect(-5, 5, -3, 0, 'rgba(90,200,250,0.25)');
+    poly(p, [[-B / 2, 0], [B / 2, 0], [B / 2, D], [-B / 2, D]].map(([x, y]) => rot(x, y)), C.paper, 'rgba(255,190,60,0.25)', 2);
+    const yb = T / 2 + bm / 2 * Math.tan(th) ** 2, xb = -(B * B / (12 * T)) * Math.tan(th);     // wall-sided centre of buoyancy, ship frame
+    const Gp = rot(0, v.KG), Bp = rot(xb, yb), Mp = rot(0, T / 2 + bm);
+    p.dots([Gp[0]], [Gp[1]], C.red, 6).dots([Bp[0]], [Bp[1]], C.cyan, 6).dots([Mp[0]], [Mp[1]], C.lime, 6);
+    p.text('G', Gp[0] + 0.15, Gp[1], C.red).text('B', Bp[0] + 0.15, Bp[1], C.cyan).text('M', Mp[0] + 0.15, Mp[1], C.lime);
+    arrow(p, Gp[0], Gp[1], Gp[0], Gp[1] - 1.2, C.red, 2); arrow(p, Bp[0], Bp[1], Bp[0], Bp[1] + 1.2, C.cyan, 2);
+    out(`Draft ${nf(3).format(T)} m, BM = B²/12T = ${nf(3).format(bm)} m, GM = ${nf(3).format(GM)} m: ${GM > 0 ? 'stable, the metacentre is above G.' : 'unstable, G is above the metacentre and the barge capsizes.'} Righting arm GZ = ${nf(3).format(GZ)} m, moment ${nf(0).format(v.m * 9.81 * GZ)} kN m${GZ < 0 ? ' (heeling, not righting)' : ''}. Box hull, wall-sided formula; valid until the deck edge goes under.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
