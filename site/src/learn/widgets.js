@@ -10,14 +10,14 @@ class Plot {
     this.g.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.pad = { l: 46, r: 12, t: 12, b: 30 };
   }
-  frame({ x, y, xlog = false, ylog = false, xlabel = '', ylabel = '' }) {
+  frame({ x, y, xlog = false, ylog = false, xlabel = '', ylabel = '', noy = false }) {
     this.size();
     Object.assign(this, { xr: x, yr: y, xlog, ylog });
     const g = this.g; g.clearRect(0, 0, this.w, this.h);
     g.font = '11px "Archivo Variable", sans-serif'; g.fillStyle = C.grey; g.strokeStyle = C.rule; g.lineWidth = 1;
     const ticks = (r, log) => log ? range(Math.ceil(Math.log10(r[0])), Math.floor(Math.log10(r[1]))).map((e) => 10 ** e) : niceTicks(r[0], r[1], 5);
     for (const t of ticks(x, xlog)) { const px = this.X(t); g.beginPath(); g.moveTo(px, this.pad.t); g.lineTo(px, this.h - this.pad.b); g.stroke(); g.textAlign = 'center'; g.fillText(lab(t, xlog), px, this.h - this.pad.b + 14); }
-    for (const t of ticks(y, ylog)) { const py = this.Y(t); g.beginPath(); g.moveTo(this.pad.l, py); g.lineTo(this.w - this.pad.r, py); g.stroke(); g.textAlign = 'right'; g.fillText(lab(t, ylog), this.pad.l - 6, py + 4); }
+    if (!noy) for (const t of ticks(y, ylog)) { const py = this.Y(t); g.beginPath(); g.moveTo(this.pad.l, py); g.lineTo(this.w - this.pad.r, py); g.stroke(); g.textAlign = 'right'; g.fillText(lab(t, ylog), this.pad.l - 6, py + 4); }
     g.textAlign = 'right'; g.fillText(xlabel, this.w - this.pad.r, this.h - 4);
     g.save(); g.translate(11, this.pad.t); g.rotate(-Math.PI / 2); g.textAlign = 'right'; g.fillText(ylabel, 0, 0); g.restore();
     return this;
@@ -1207,6 +1207,116 @@ def('section', {
     const cut = prattMembers.map((mb, k) => [mb, k]).filter(([[i, j]]) => (prattNodes[i][0] - xc) * (prattNodes[j][0] - xc) < 0);
     const name = (i) => (i <= 6 ? `B${i}` : `T${i - 6}`);
     out(`The cut crosses ${cut.length} members: ${cut.map(([[i, j], k]) => `${name(i)}-${name(j)} ${nf(2).format(F[k])} kN`).join(', ')}. Each follows from equilibrium of the left part alone, e.g. the bottom chord from moments about the top node where the other two cut members meet.`);
+  },
+});
+
+// 3D truss solve (3 equations per joint); supports [node, dx, dy, dz]
+function truss3(nodes, members, supports, loads) {
+  const n = nodes.length, m = members.length, nu = m + supports.length;
+  if (3 * n !== nu) return null;
+  const A = Array.from({ length: 3 * n }, () => new Array(nu).fill(0)), b = new Array(3 * n).fill(0);
+  members.forEach(([i, j], k) => { const d = [0, 1, 2].map((c) => nodes[j][c] - nodes[i][c]), L = Math.hypot(...d); for (let c = 0; c < 3; c++) { A[3 * i + c][k] += d[c] / L; A[3 * j + c][k] -= d[c] / L; } });
+  supports.forEach(([nd, ...d], k) => { for (let c = 0; c < 3; c++) A[3 * nd + c][m + k] += d[c]; });
+  Object.entries(loads).forEach(([nd, F]) => { for (let c = 0; c < 3; c++) b[3 * nd + c] -= F[c]; });
+  return linSolve(A, b);
+}
+
+// 05.11 ski-lift pylon as a space truss
+def('spacetruss', {
+  controls: [{ k: 'yaw', label: 'View angle (°)', min: 0, max: 360, step: 2, v: 30, f: 0 }, { k: 'wx', label: 'Wind at the top, x direction (kN)', min: -8, max: 8, step: 0.5, v: 3, f: 1 }, { k: 'G', label: 'Rope load per top joint (kN)', min: 0, max: 15, step: 0.5, v: 5, f: 1 }, { type: 'check', k: 'bad', label: 'Unbrace the front face (brace the side twice)', v: 0 }],
+  draw(p, v, out) {
+    const nodes = [[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0], [-0.5, -0.5, 6], [0.5, -0.5, 6], [0.5, 0.5, 6], [-0.5, 0.5, 6]];
+    let mem = []; for (let i = 0; i < 4; i++) mem.push([i, i + 4]); for (let i = 0; i < 4; i++) mem.push([4 + i, 4 + (i + 1) % 4]); for (let i = 0; i < 4; i++) mem.push([i, 4 + (i + 1) % 4]);
+    if (v.bad) mem = mem.filter(([i, j]) => !(i === 0 && j === 5)).concat([[2, 5]]);
+    const sup = []; for (let i = 0; i < 4; i++) sup.push([i, 1, 0, 0], [i, 0, 1, 0], [i, 0, 0, 1]);
+    const F = truss3(nodes, mem, sup, { 4: [0, 0, -v.G], 5: [0, 0, -v.G], 6: [v.wx, 0, -v.G], 7: [v.wx, 0, -v.G] });
+    const a = v.yaw * Math.PI / 180, el = 0.35, P = ([x, y, z]) => { const xr = x * Math.cos(a) - y * Math.sin(a), yr = x * Math.sin(a) + y * Math.cos(a); return [xr, z * Math.cos(el) + yr * Math.sin(el) * 0.9]; };
+    fitAt(p, 0, 2.6, 2.4, 3.4, '', ''); 
+    const pts = nodes.map(P);
+    poly(p, [0, 1, 2, 3].map((i) => pts[i]), C.rule, 'rgba(154,157,147,0.12)', 1);
+    const sc = Math.max(1, ...((F || []).slice(0, mem.length).map(Math.abs)));
+    mem.forEach(([i, j], k) => { const f = F ? F[k] : 0, col = !F ? C.red : Math.abs(f) < 1e-6 ? C.grey : f > 0 ? C.cyan : C.amber; p.line([pts[i][0], pts[j][0]], [pts[i][1], pts[j][1]], col, F ? 1.5 + 5 * Math.abs(f) / sc : 2, F ? [] : [5, 4]); });
+    p.dots(pts.map((q) => q[0]), pts.map((q) => q[1]), C.paper, 3);
+    if (!F) { out(`12 members + 12 reactions = 24 = 3 × 8 joints, so Maxwell's count is satisfied, yet the equilibrium matrix has rank 23: the unbraced front face can shear sideways. Counting is necessary, not sufficient.`); return; }
+    let big = 0; F.slice(0, mem.length).forEach((f, k) => { if (Math.abs(f) > Math.abs(F[big])) big = k; });
+    out(`Maxwell: m + r = 12 + 12 = 3j = 24, rank 24: determinate. Cyan tension, amber compression, width ∝ force. Largest: member ${mem[big].join('-')} at ${nf(2).format(F[big])} kN. Wind sets one leg in tension and loads the face diagonals.`);
+  },
+});
+
+// 05.12 bicycle rim brake: lever and arm
+def('brake', {
+  controls: [{ k: 'F', label: 'Finger squeeze (N)', min: 0, max: 120, step: 1, v: 60, f: 0 }, { k: 'c', label: 'Cable anchor distance on the lever (mm)', min: 15, max: 40, step: 1, v: 25, f: 0 }, { k: 'pad', label: 'Pad distance from the arm pivot (mm)', min: 30, max: 60, step: 1, v: 40, f: 0 }],
+  draw(p, v, out) {
+    const T = v.F * 70 / v.c, N = T * 100 / v.pad, mu = 0.6;
+    p.frame({ x: [-20, 200], y: [-70, 130], xlabel: 'mm', ylabel: '', noy: true });
+    // hand lever, pivot at (0, 0), horizontal to 70 mm
+    p.line([0, 80], [0, 0], C.paper, 5).dots([0], [0], C.grey, 6);
+    arrow(p, 70, 8 + v.F * 0.45, 70, 4, C.lime, 3); p.text('finger', 74, 30, C.lime);
+    arrow(p, v.c, -4, v.c, -4 - T * 0.12, C.cyan, 2.5); p.text('cable', v.c + 4, -40, C.cyan);
+    // brake arm, pivot at (150, -60), vertical to 100 mm above
+    const ax = 150, ay = -60; p.line([ax, ax], [ay, ay + 110], C.paper, 5).dots([ax], [ay], C.grey, 6);
+    arrow(p, ax + 4, ay + 100, ax + 4 + T * 0.12, ay + 100, C.cyan, 2.5);
+    p.rect(ax - 14, ax - 4, ay + v.pad - 7, ay + v.pad + 7, 'rgba(255,170,60,0.85)');
+    arrow(p, ax - 16, ay + v.pad, ax - 16 - N * 0.05, ay + v.pad, C.amber, 3); p.text('pad', ax - 40, ay + v.pad + 12, C.amber);
+    out(`Lever ratio 70/${v.c} = ${nf(2).format(70 / v.c)} gives cable tension ${nf(1).format(T)} N. Arm ratio 100/${v.pad} = ${nf(2).format(100 / v.pad)} gives pad force ${nf(1).format(N)} N. Overall mechanical advantage ${nf(2).format(N / Math.max(v.F, 1e-9))}, the product of the arm ratios. Two pads with μ = ${mu}: ${nf(0).format(2 * mu * N)} N of friction on the rim.`);
+  },
+});
+
+// 05.13 live shear and moment diagrams
+def('vmdiag', {
+  controls: [{ k: 'a', label: 'Point load position (m)', min: 0, max: 6, step: 0.1, v: 3, f: 1 }, { k: 'P', label: 'Point load P (kN)', min: 0, max: 40, step: 1, v: 30, f: 0 }, { k: 'q', label: 'Uniform load q (kN/m)', min: 0, max: 10, step: 0.5, v: 0, f: 1 }],
+  draw(p, v, out) {
+    const L = 6, Rb = (v.P * v.a + v.q * L * L / 2) / L, Ra = v.P + v.q * L - Rb, xs = linspace(0, L, 601);
+    const V = xs.map((x) => Ra - v.q * x - (x > v.a ? v.P : 0)), M = xs.map((x) => Ra * x - v.q * x * x / 2 - v.P * Math.max(0, x - v.a));
+    const Vs = Math.max(1, ...V.map(Math.abs)), Ms = Math.max(1, ...M.map(Math.abs));
+    p.frame({ x: [-0.3, 6.3], y: [-3.3, 1.5], xlabel: 'x, m', ylabel: '', noy: true });
+    // beam and loads
+    p.line([0, L], [0.9, 0.9], C.paper, 4); drawSupport(p, 'pin', 0, 0.86, 0.12); drawSupport(p, 'roller', L, 0.86, 0.12);
+    if (v.P > 0) arrow(p, v.a, 1.45, v.a, 0.95, C.amber, 2.5);
+    if (v.q > 0) for (let x = 0; x <= L + 1e-9; x += 0.5) arrow(p, x, 1.2, x, 0.96, C.cyan, 1);
+    // V band centred at -0.35, M band baseline at -2.0 (positive moment drawn downward, the sagging side)
+    p.line([0, L], [-0.35, -0.35], C.rule, 1).line([0, L], [-2.0, -2.0], C.rule, 1);
+    p.line([0, ...xs, L], [-0.35, ...V.map((y) => -0.35 + 0.6 * y / Vs), -0.35], C.cyan, 2);
+    p.line([0, ...xs, L], [-2.0, ...M.map((y) => -2.0 - 1.15 * y / Ms), -2.0], C.lime, 2);
+    let k = 0; M.forEach((m, i) => { if (m > M[k]) k = i; });
+    p.dots([xs[k]], [-2.0 - 1.15 * M[k] / Ms], C.lime, 4);
+    p.text('V', -0.25, -0.2, C.cyan).text('M', -0.25, -1.85, C.lime);
+    out(`Reactions ${nf(2).format(Ra)} and ${nf(2).format(Rb)} kN. Shear V (cyan) jumps by P under the load and slopes at −q. Moment M (lime, drawn on the sagging side) peaks at ${nf(2).format(M[k])} kN m at x = ${nf(2).format(xs[k])} m, where V crosses zero. Central load alone: PL/4 = ${nf(1).format(v.P * L / 4)} kN m.`);
+  },
+});
+
+// 05.14 cable car track rope: catenary vs parabola
+function catA(S, L) { let lo = S / 500, hi = S * 1000; const f = (a) => 2 * a * Math.sinh(S / (2 * a)) - L; for (let i = 0; i < 200; i++) { const m = 0.5 * (lo + hi); if (f(m) > 0) lo = m; else hi = m; } return 0.5 * (lo + hi); }
+def('catenary', {
+  controls: [{ k: 'ex', label: 'Rope length beyond the span (%)', min: 0.2, max: 40, step: 0.1, v: 1, f: 1 }, { k: 'w', label: 'Rope mass (kg/m)', min: 5, max: 60, step: 1, v: 30, f: 0 }],
+  draw(p, v, out) {
+    const S = 400, L = S * (1 + v.ex / 100), a = catA(S, L), w = v.w * 9.81 / 1000, sag = a * (Math.cosh(S / (2 * a)) - 1), H = w * a, T = H + w * sag;
+    const d = Math.sqrt(3 * S * (L - S) / 8), xs = linspace(-S / 2, S / 2, 201);
+    const top = 30, low = Math.min(top - sag, top - d);
+    p.frame({ x: [-220, 220], y: [Math.min(-10, low - 15), top + 20], xlabel: 'x, m', ylabel: 'height, m' });
+    p.line([-S / 2, -S / 2], [-200, top], C.grey, 4).line([S / 2, S / 2], [-200, top], C.grey, 4);
+    p.line(xs, xs.map((x) => top - d + 4 * d * x * x / (S * S)), C.amber, 1.5, [5, 4]);
+    p.line(xs, xs.map((x) => top - sag + a * (Math.cosh(x / a) - 1)), C.lime, 2.5);
+    out(`Catenary (lime): a = ${nf(1).format(a)} m, sag ${nf(2).format(sag)} m, horizontal tension ${nf(1).format(H)} kN, ${nf(1).format(T)} kN at the towers. Parabola (amber dashed) sag ${nf(2).format(d)} m, ${nf(1).format((d / sag - 1) * 100)} % off. Tight ropes: almost identical. Slack: the parabola fails.`);
+  },
+});
+
+// 05.15 crate on a tilting ramp: slide or tip
+def('ramp', {
+  controls: [{ k: 'th', label: 'Ramp angle θ (°)', min: 0, max: 45, step: 0.5, v: 15, f: 1 }, { k: 'mu', label: 'Friction coefficient μ', min: 0.1, max: 0.9, step: 0.01, v: 0.3, f: 2 }, { k: 'h', label: 'Crate height (m), width 0.6 m', min: 0.3, max: 2, step: 0.05, v: 1.2, f: 2 }],
+  draw(p, v, out) {
+    const th = v.th * Math.PI / 180, b = 0.6, h = v.h, t = Math.tan(th), slide = t > v.mu, tip = t > b / h;
+    const state = slide && tip ? (v.mu < b / h ? 'slides' : 'tips') : slide ? 'slides' : tip ? 'tips' : 'stays';
+    sqAt(p, 1.2, 0.9, 1.3, 'm', 'm');
+    const R = (x, y) => [x * Math.cos(th) - y * Math.sin(th), x * Math.sin(th) + y * Math.cos(th)];
+    poly(p, [R(-0.3, 0), R(2.8, 0), [R(2.8, 0)[0], 0], [-0.3, 0]], C.grey, 'rgba(154,157,147,0.15)');
+    const x0 = 1.0, crate = [[x0, 0], [x0 + b, 0], [x0 + b, h], [x0, h]].map(([x, y]) => R(x, y));
+    poly(p, crate, state === 'stays' ? C.paper : C.red, state === 'stays' ? 'rgba(242,243,236,0.1)' : 'rgba(255,90,90,0.15)', 2);
+    const G = R(x0 + b / 2, h / 2); p.dots([G[0]], [G[1]], C.lime, 4);
+    p.line([G[0], G[0]], [G[1], G[1] - 1.5], C.lime, 1.5, [4, 3]);
+    const edge = R(x0, 0); p.dots([edge[0]], [edge[1]], C.amber, 4);
+    const crit = Math.atan(Math.min(v.mu, b / h)) * 180 / Math.PI;
+    out(`tan θ = ${nf(3).format(t)}, μ = ${nf(2).format(v.mu)}, b/h = ${nf(3).format(b / h)}. The crate ${state === 'stays' ? 'stays put' : state === 'slides' ? 'slides (tan θ > μ)' : 'tips over the lower edge (the weight line, dashed, passes the amber corner)'}. While tilting from flat it would first ${v.mu < b / h ? 'slide' : 'tip'} at ${nf(2).format(crit)}°.`);
   },
 });
 
