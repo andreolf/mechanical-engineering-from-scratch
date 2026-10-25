@@ -5657,6 +5657,51 @@ def('stepeddy', {
   },
 });
 
+// 17.17 grid convergence index calculator (Celik et al. 2008)
+def('gcicalc', {
+  controls: [{ type: 'select', k: 'ds', label: 'Data', options: ['Square duct, N = 16, 32, 64', 'Square duct, N = 21, 30, 45', 'Step eddy, OpenFOAM, 3 meshes'], v: 'Step eddy, OpenFOAM, 3 meshes' }, { k: 'pert', label: 'Perturb the medium-mesh value, % of the fine–coarse gap', min: -60, max: 60, step: 5, v: 0, f: 0 }, { k: 'Fs', label: 'Safety factor F_s', min: 1, max: 3, step: 0.25, v: 1.25, f: 2 }],
+  draw(p, v, out) {
+    const D = { 'Square duct, N = 16, 32, 64': { h: [1 / 64, 1 / 32, 1 / 16], f: [0.0351163816, 0.0350330195, 0.0347027523], ex: 0.0351442537, lab: 'Q' }, 'Square duct, N = 21, 30, 45': { h: [1 / 45, 1 / 30, 1 / 21], f: [0.0350879224, 0.0350177435, 0.0348868903], ex: 0.0351442537, lab: 'Q' }, 'Step eddy, OpenFOAM, 3 meshes': { h: [1, 2, 4], f: [4.3089, 4.2615, 4.0679], ex: null, lab: 'x_r / H' } }[v.ds];
+    const [h1, h2, h3] = D.h, f1 = D.f[0], f3 = D.f[2], f2 = D.f[1] + (v.pert / 100) * (f1 - f3);
+    const r21 = h2 / h1, r32 = h3 / h2, e21 = f2 - f1, e32 = f3 - f2, s = Math.sign(e32 / e21);
+    let pp = 2; for (let k = 0; k < 100; k++) { const q = Math.log((r21 ** pp - s) / (r32 ** pp - s)); pp = Math.abs(Math.log(Math.abs(e32 / e21)) + q) / Math.log(r21); }
+    const fe = (r21 ** pp * f1 - f2) / (r21 ** pp - 1), g21 = (v.Fs * Math.abs((f1 - f2) / f1)) / (r21 ** pp - 1), g32 = (v.Fs * Math.abs((f2 - f3) / f2)) / (r32 ** pp - 1), chk = g32 / (r21 ** pp * g21);
+    const hs = linspace(0, h3 * 1.1, 100), lo = Math.min(f1, f2, f3, fe) , hi = Math.max(f1, f2, f3, fe), pad = 0.15 * (hi - lo || 1);
+    p.frame({ x: [0, h3 * 1.1], y: [lo - pad, hi + pad], xlabel: 'representative cell size h', ylabel: D.lab });
+    if (Number.isFinite(pp) && Number.isFinite(fe)) p.line(hs, hs.map((h) => fe + (f1 - fe) * (h / h1) ** pp), C.grey, 1.5, [5, 4]);
+    p.rect(0, h3 * 0.03, f1 * (1 - g21), f1 * (1 + g21), 'rgba(238,255,65,0.35)');
+    p.dots([h1, h2, h3], [f1, f2, f3], C.lime, 5); p.dots([0], [fe], C.amber, 5);
+    if (D.ex) p.line([0, h3 * 1.1], [D.ex, D.ex], C.cyan, 1, [2, 3]);
+    out(`${s < 0 ? 'Oscillatory convergence (the changes alternate in sign). ' : ''}${Math.abs(e32) < Math.abs(e21) ? 'Warning: the change grows on refinement, so this is not convergence and p means nothing. ' : ''}Observed order p = ${nf(3).format(pp)}. Extrapolated ${D.lab} = ${nf(D.ex ? 8 : 4).format(fe)} (amber). GCI fine = ${nf(3).format(g21 * 100)} %, so ${nf(D.ex ? 7 : 4).format(f1)} ± ${nf(D.ex ? 7 : 4).format(g21 * f1)} (lime band). Asymptotic check GCI₃₂/(r^p GCI₂₁) = ${nf(3).format(chk)} (1 is ideal).${D.ex ? ' Cyan: exact.' : ''}`);
+  },
+});
+
+// 17.18 Q-criterion 3D viewer (a light canvas projection, no WebGL)
+def('qviewer', {
+  controls: [{ k: 'thr', label: 'Show cells with Q above (× max Q)', min: 0, max: 0.9, step: 0.05, v: 0.3, f: 2 }, { k: 'az', label: 'Rotate: azimuth, degrees', min: -180, max: 180, step: 5, v: 35, f: 0 }, { k: 'el', label: 'Rotate: elevation, degrees', min: -80, max: 80, step: 5, v: 25, f: 0 }, { type: 'select', k: 'fl', label: 'Flow', options: ['Taylor-Green vortex', 'Strain only (no vortex)'], v: 'Taylor-Green vortex' }],
+  draw(p, v, out) {
+    const n = 22, L = 2 * Math.PI, pts = [], a = (v.az * Math.PI) / 180, e = (v.el * Math.PI) / 180;
+    const Qf = (x, y, z) => {
+      let G;
+      if (v.fl === 'Taylor-Green vortex') { const sx = Math.sin(x), cx = Math.cos(x), sy = Math.sin(y), cy = Math.cos(y), sz = Math.sin(z), cz = Math.cos(z);
+        G = [[cx * cy * cz, -sx * sy * cz, -sx * cy * sz], [sx * sy * cz, -cx * cy * cz, cx * sy * sz], [0, 0, 0]]; }
+      else G = [[Math.cos(x), 0, 0], [0, -Math.cos(x), 0], [0, 0, 0]];
+      let w2 = 0, s2 = 0; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) { const S = 0.5 * (G[i][j] + G[j][i]), W = 0.5 * (G[i][j] - G[j][i]); w2 += W * W; s2 += S * S; } return 0.5 * (w2 - s2); };
+    let qmax = -1e9, pos = 0, tot = 0;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) for (let k = 0; k < n; k++) { const x = ((i + 0.5) * L) / n, y = ((j + 0.5) * L) / n, z = ((k + 0.5) * L) / n, q = Qf(x, y, z); qmax = Math.max(qmax, q); tot++; if (q > 0) pos++; pts.push([x - Math.PI, y - Math.PI, z - Math.PI, q]); }
+    const proj = ([x, y, z]) => { const X = x * Math.cos(a) - y * Math.sin(a), Y0 = x * Math.sin(a) + y * Math.cos(a), Y = z * Math.cos(e) - Y0 * Math.sin(e), D = z * Math.sin(e) + Y0 * Math.cos(e); return [X, Y, D]; };
+    fitAt(p, 0, 0, 5.6, 5.6, 'screen x', 'screen y');
+    const cube = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]].map((c) => proj(c.map((q) => q * Math.PI)));
+    [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]].forEach(([i, j]) => p.line([cube[i][0], cube[j][0]], [cube[i][1], cube[j][1]], C.grey, 1));
+    const zc = proj([0, 0, Math.PI * 1.25]); p.line([0, zc[0]], [0, zc[1]], C.paper, 1, [3, 3]); p.text('z', zc[0], zc[1], C.paper, 'center');
+    const show = qmax > 0 ? pts.filter((q) => q[3] > v.thr * qmax) : [];
+    const P = show.map((q) => [...proj(q), q[3]]).sort((A, B) => A[2] - B[2]);
+    const by = {}; P.forEach(([X, Y, D, q]) => { const key = heat16(0.25 + 0.75 * (q / qmax)); (by[key] = by[key] || [[], []])[0].push(X); by[key][1].push(Y); });
+    Object.entries(by).forEach(([col, [xs, ys]]) => p.dots(xs, ys, col, 2.2));
+    out(v.fl === 'Taylor-Green vortex' ? `${show.length} of ${tot} cells have Q > ${nf(2).format(v.thr)} × max (max Q = ${nf(3).format(qmax)}). Q > 0 in ${nf(1).format((100 * pos) / tot)} % of the box: vortex cores centred on x, y = π/2 + nπ in the planes z = 0, ±π. Lower the threshold and they stretch along z into columns, pinched off where Q = 0 at z = ±π/2.` : `Pure strain: Q ≤ 0 everywhere (max ${nf(3).format(Math.abs(qmax) < 5e-4 ? 0 : qmax)}), so nothing is shown. Strong velocity gradients alone are not vortices.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
