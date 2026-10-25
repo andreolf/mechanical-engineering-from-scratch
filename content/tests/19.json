@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "A project has tasks A (2 wk), then B (3 wk) and C (5 wk) in parallel, then D (1 wk). Project length (weeks)?",
+  "answer": 8,
+  "tol": 0.0005,
+  "py": "2+max(3,5)+1",
+  "explain": "The critical path is A-C-D."
+ },
+ {
+  "type": "num",
+  "q": "Shedding frequency (Hz) behind a 2 m boulder in a 0.5 m/s river, St = 0.2. 4 decimals.",
+  "answer": 0.05,
+  "tol": 0.0005,
+  "py": "0.2*0.5/2",
+  "explain": "$f = St\\,U/D$."
+ },
+ {
+  "type": "num",
+  "q": "Flow (L/s) over a sharp-crested weir 0.2 m wide with 5 cm head, Cd = 0.62. 5 significant figures.",
+  "answer": 4.0939,
+  "tol": 0.0005,
+  "py": "2/3*0.62*0.2*math.sqrt(2*9.81)*0.05**1.5*1e3",
+  "explain": "$\\tfrac23 C_d b\\sqrt{2g}H^{3/2}$."
+ },
+ {
+  "type": "num",
+  "q": "Days a 6 cm pond lasts with 8 mm a day of losses and no inflow. 4 decimals.",
+  "answer": 7.5,
+  "tol": 0.0005,
+  "py": "60/8",
+  "explain": "Depth divided by the loss rate."
+ },
+ {
+  "type": "num",
+  "q": "Midspan chord force (kN) of a truss: w = 5 kN/m, L = 10 m, depth 1.25 m. 4 decimals.",
+  "answer": 50.0,
+  "tol": 0.0005,
+  "py": "5*10**2/8/1.25",
+  "explain": "$wL^2/(8H)$."
+ },
+ {
+  "type": "num",
+  "q": "Euler buckling load (kN) of a 1.5 m pin-ended culm, E = 12 GPa, I = 1.0e-6 m⁴. 5 significant figures.",
+  "answer": 52.638,
+  "tol": 0.0005,
+  "py": "math.pi**2*12e9*1e-6/1.5**2/1e3",
+  "explain": "$\\pi^2EI/L^2$."
+ },
+ {
+  "type": "num",
+  "q": "Jet velocity (m/s) at 30 m net head, Cv = 0.98. 5 significant figures.",
+  "answer": 23.776,
+  "tol": 0.0005,
+  "py": "0.98*math.sqrt(2*9.81*30)",
+  "explain": "$C_v\\sqrt{2gH_n}$."
+ },
+ {
+  "type": "num",
+  "q": "Pelton pitch diameter (m) for a 24 m/s jet, u/V = 0.46, 750 rpm. 5 significant figures.",
+  "answer": 0.28112,
+  "tol": 0.0005,
+  "py": "60*0.46*24/(math.pi*750)",
+  "explain": "$D = 60u/(\\pi N)$."
+ },
+ {
+  "type": "num",
+  "q": "Joukowsky head rise (m) for a = 1200 m/s and a 0.8 m/s velocity drop. 5 significant figures.",
+  "answer": 97.859,
+  "tol": 0.0005,
+  "py": "1200*0.8/9.81",
+  "explain": "$a\\,\\Delta V/g$."
+ },
+ {
+  "type": "num",
+  "q": "Critical closure time 2L/a (s) for a 600 m penstock with a = 1000 m/s. 4 decimals.",
+  "answer": 1.2,
+  "tol": 0.0005,
+  "py": "2*600/1000",
+  "explain": "The round trip of the pressure wave."
+ },
+ {
+  "type": "num",
+  "q": "Steady winding temperature (°C) at 20 A, R = 0.2 Ω, Rth = 1.5 K/W, 30 °C ambient. 4 decimals.",
+  "answer": 150.0,
+  "tol": 0.0005,
+  "py": "30+20**2*0.2*1.5",
+  "explain": "$T_\\text{amb} + I^2RR_\\text{th}$."
+ },
+ {
+  "type": "num",
+  "q": "Centre stress (MPa) of a solid steel disc at a 180 m/s rim, ρ = 7850, ν = 0.3. 5 significant figures.",
+  "answer": 104.92,
+  "tol": 0.0005,
+  "py": "3.3/8*7850*180**2/1e6",
+  "explain": "$\\tfrac{3+\\nu}{8}\\rho(\\omega b)^2$."
+ },
+ {
+  "type": "num",
+  "q": "Vortex lock-in wind speed (m/s) for a 0.22 m pole at 6 Hz, St = 0.2. 4 decimals.",
+  "answer": 6.6,
+  "tol": 0.0005,
+  "py": "6*0.22/0.2",
+  "explain": "$V = fD/St$."
+ },
+ {
+  "type": "num",
+  "q": "Number of 512-bit SHA-256 blocks for a 1000-byte file. 4 decimals.",
+  "answer": 16,
+  "tol": 0.0005,
+  "py": "(1000*8+1+64+511)//512",
+  "explain": "8065 bits round up to 16 blocks."
+ }
+]
