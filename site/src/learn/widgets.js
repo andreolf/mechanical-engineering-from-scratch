@@ -4580,6 +4580,47 @@ def('gearmesh', {
   },
 });
 
+// 15.09 bending and contact stress against module
+def('gearstrength', {
+  controls: [{ k: 'm', label: 'Module (mm)', min: 1, max: 5, step: 0.25, v: 2, f: 2 }, { k: 'F', label: 'Face width (mm)', min: 8, max: 50, step: 1, v: 20, f: 0 }, { k: 'P', label: 'Power (kW)', min: 0.5, max: 10, step: 0.5, v: 3, f: 1 }],
+  draw(p, v, out) {
+    const z1 = 18, z2 = 45, n = 1500, Y = 0.309, phi = 20 * Math.PI / 180, Cp = 190.3, T = v.P * 1e6 / (2 * Math.PI * n / 60); // N mm
+    const I = Math.cos(phi) * Math.sin(phi) / 2 * (z2 / z1) / (z2 / z1 + 1);
+    const st = (m) => { const d = m * z1, V = Math.PI * d / 1000 * n / 60, Kv = (6.1 + V) / 6.1, Wt = 2 * T / d; return [Kv * Wt / (v.F * m * Y), Cp * Math.sqrt(Kv * Wt / (v.F * d * I)), Wt, V]; };
+    const ms = linspace(1, 5, 81), S = ms.map(st);
+    p.frame({ x: [1, 5], y: [10, 5000], ylog: true, xlabel: 'module (mm)', ylabel: 'stress (MPa)' });
+    p.line(ms, S.map((s) => s[0]), C.lime, 2.5).line(ms, S.map((s) => s[1]), C.cyan, 2.5);
+    const c = st(v.m);
+    p.dots([v.m, v.m], [c[0], c[1]], C.red, 5);
+    out(`Module ${nf(2).format(v.m)}: pitch diameter ${nf(1).format(v.m * z1)} mm, V = ${nf(2).format(c[3])} m/s, W_t = ${nf(0).format(c[2])} N. Bending (Lewis, Y = 0.309) ${nf(1).format(c[0])} MPa; contact (Hertz) ${nf(0).format(c[1])} MPa. Through-hardened steel allows roughly 200 MPa bending and 800 MPa contact.`);
+  },
+});
+
+// 15.10 planetary gear set animation by slider
+def('planetary', {
+  controls: [{ k: 'th', label: 'Input rotation (°)', min: 0, max: 720, step: 5, v: 90, f: 0 }, { type: 'select', k: 'mode', label: 'Arrangement', options: ['Ring fixed, sun in, carrier out', 'Sun fixed, carrier in, ring out', 'Sun fixed, ring in, carrier out'], v: 'Ring fixed, sun in, carrier out' }, { k: 'zs', label: 'Sun teeth', min: 12, max: 36, step: 2, v: 18, f: 0 }],
+  draw(p, v, out) {
+    const zs = v.zs, zp = 18, zr = zs + 2 * zp, k = zs / zr, a = v.th * Math.PI / 180;
+    let ws, wc, wr;
+    if (v.mode.startsWith('Ring')) { ws = a; wr = 0; wc = (wr + k * ws) / (1 + k); }
+    else if (v.mode.includes('carrier in')) { ws = 0; wc = a; wr = wc - k * (ws - wc); }
+    else { ws = 0; wr = a; wc = (wr + k * ws) / (1 + k); }
+    const m = 0.5, rs = m * zs / 2, rp = m * zp / 2, rr = m * zr / 2, rc = rs + rp, wp = (wc * rc - ws * rs) / rp;
+    sqframe(p, rr + 3, 'x', 'y');
+    const circ = (cx, cy, r, color, w) => { const t = linspace(0, 2 * Math.PI, 90); p.line(t.map((q) => cx + r * Math.cos(q)), t.map((q) => cy + r * Math.sin(q)), color, w); };
+    circ(0, 0, rr, C.amber, 3); circ(0, 0, rr + 1.2, C.amber, 1.5); circ(0, 0, rs, C.lime, 3);
+    p.line([0, rs * Math.cos(ws)], [0, rs * Math.sin(ws)], C.grey, 3).line([rr * Math.cos(wr), (rr + 1.2) * Math.cos(wr)], [rr * Math.sin(wr), (rr + 1.2) * Math.sin(wr)], C.grey, 4);
+    for (let j = 0; j < 3; j++) {
+      const c = wc + 2 * Math.PI * j / 3, cx = rc * Math.cos(c), cy = rc * Math.sin(c);
+      circ(cx, cy, rp, C.cyan, 2.5);
+      p.line([cx, cx + rp * Math.cos(wp + j)], [cy, cy + rp * Math.sin(wp + j)], C.grey, 2);
+      p.line([0, cx], [0, cy], C.paper, 1.5, [4, 3]);
+    }
+    const d = (x) => nf(0).format(x * 180 / Math.PI);
+    out(`Sun ${zs}, planets ${zp}, ring ${zr}. Sun ${d(ws)}°, carrier ${d(wc)}° (dashed arms), ring ${d(wr)}°, each planet ${d(wp)}° about itself. Willis: (ω_r − ω_c)/(ω_s − ω_c) = −${zs}/${zr}.${(zs + zr) % 3 ? ' Note: (z_s + z_r)/3 is not whole, so 3 equal planets would not really fit.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
