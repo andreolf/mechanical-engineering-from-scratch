@@ -115,5 +115,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--lime); width: 20px
   .nav-links a.xp-link { padding-left: 2px; }
   .xp-chip { padding: 0 8px; gap: 5px; }
 }
+@media (max-width: 370px) {
+  .nav-links a { padding: 0 6px; }
+  .xp-chip { padding: 0 7px; gap: 4px; }
+}
 
 .footer .brand { white-space: normal; }
