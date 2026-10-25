@@ -5563,6 +5563,55 @@ def('lbmlive', {
   },
 });
 
+// 17.13 law of the wall from the mixing length
+def('loglaw', {
+  controls: [{ k: 'kap', label: 'von Kármán constant κ', min: 0.35, max: 0.45, step: 0.01, v: 0.41, f: 2 }, { k: 'A', label: 'van Driest damping A⁺', min: 0, max: 40, step: 1, v: 26, f: 0 }, { k: 'Rt', label: 'Pipe Re_τ = u_τR/ν', min: 200, max: 10000, step: 100, v: 2000, f: 0 }],
+  draw(p, v, out) {
+    const prof = (pipe) => { const ys = [0, ...logspace(-3, Math.log10(v.Rt), 2000)], us = [0]; let prev = null;
+      ys.forEach((y, i) => { const eta = 1 - y / v.Rt, damp = v.A > 0 ? 1 - Math.exp(-y / v.A) : 1, l = pipe ? v.Rt * (0.14 - 0.08 * eta * eta - 0.06 * eta ** 4) * damp * (v.kap / 0.41) : v.kap * y * damp, tau = pipe ? eta : 1, g = 2 * tau / (1 + Math.sqrt(1 + 4 * l * l * tau));
+        if (i > 0) us.push(us[i - 1] + 0.5 * (g + prev) * (y - ys[i - 1])); prev = g; }); return [ys, us]; };
+    const [yw, uw] = prof(false), [yp, up] = prof(true);
+    p.frame({ x: [1, Math.max(1e3, v.Rt)], y: [0, 32], xlog: true, xlabel: 'y⁺ = y u_τ/ν', ylabel: 'u⁺ = u/u_τ' });
+    const xs = logspace(0, Math.log10(Math.max(1e3, v.Rt)), 60);
+    p.line(xs.filter((x) => x < 15), xs.filter((x) => x < 15), C.cyan, 1.5, [5, 4]);
+    p.line(xs.filter((x) => x > 8), xs.filter((x) => x > 8).map((x) => Math.log(x) / 0.41 + 5.2), C.grey, 1.5, [5, 4]);
+    p.line(yw.slice(1), uw.slice(1), C.amber, 2);
+    p.line(yp.slice(1), up.slice(1), C.lime, 2.5);
+    let Ub = 0; for (let i = 1; i < yp.length; i++) { const r1 = v.Rt - yp[i - 1], r2 = v.Rt - yp[i]; Ub += 0.5 * (up[i] * r2 + up[i - 1] * r1) * (r1 - r2); } Ub *= 2 / (v.Rt * v.Rt);
+    const Re = 2 * v.Rt * Ub, f = 8 / (Ub * Ub); let fp = 0.02; for (let k = 0; k < 50; k++) fp = (2 * Math.log10(Re * Math.sqrt(fp)) - 0.8) ** -2;
+    const i100 = yw.findIndex((y) => y >= 100), Bl = uw[i100] - Math.log(yw[i100]) / v.kap;
+    out(`Amber: law of the wall (constant stress); lime: the pipe; cyan: u⁺ = y⁺; grey: u⁺ = ln(y⁺)/0.41 + 5.2. Intercept B at y⁺ = 100: ${nf(2).format(Bl)}. Pipe: Re = ${nf(0).format(Re)}, f = ${nf(5).format(f)} against Prandtl's ${nf(5).format(fp)} (${nf(1).format((f / fp - 1) * 100)} %).`);
+  },
+});
+
+// 17.14 mesh quality: move a node, shear the mesh, see which cells fail
+def('meshquality', {
+  controls: [{ k: 'dx', label: 'Move node (8, 4): Δx, cell widths', min: -1, max: 1, step: 0.05, v: 0.85, f: 2 }, { k: 'dy', label: 'Move node (8, 4): Δy, cell heights', min: -1, max: 1, step: 0.05, v: 0.6, f: 2 }, { k: 'sh', label: 'Shear the whole mesh, degrees', min: 0, max: 75, step: 5, v: 0, f: 0 }, { type: 'select', k: 'm', label: 'Colour by', options: ['Non-orthogonality', 'Face skewness', 'Equiangle skewness'], v: 'Non-orthogonality' }],
+  draw(p, v, out) {
+    const nx = 16, ny = 8, W = 4, H = 2, hx = W / nx, hy = H / ny, t = Math.tan((v.sh * Math.PI) / 180);
+    const P = []; for (let i = 0; i <= nx; i++) { P.push([]); for (let j = 0; j <= ny; j++) { const y = j * hy; P[i].push([i * hx + t * y, y]); } }
+    P[8][4] = [P[8][4][0] + v.dx * hx, P[8][4][1] + v.dy * hy];
+    const cr = (a, b) => a[0] * b[1] - a[1] * b[0], sub = (a, b) => [a[0] - b[0], a[1] - b[1]], dot = (a, b) => a[0] * b[0] + a[1] * b[1], nrm = (a) => Math.hypot(a[0], a[1]);
+    const cen = [], area = [];
+    for (let i = 0; i < nx; i++) { cen.push([]); area.push([]); for (let j = 0; j < ny; j++) { const A = P[i][j], B = P[i + 1][j], Cq = P[i + 1][j + 1], D = P[i][j + 1], a1 = 0.5 * cr(sub(B, A), sub(Cq, A)), a2 = 0.5 * cr(sub(Cq, A), sub(D, A)), ar = a1 + a2;
+      cen[i].push([((A[0] + B[0] + Cq[0]) / 3 * a1 + (A[0] + Cq[0] + D[0]) / 3 * a2) / ar, ((A[1] + B[1] + Cq[1]) / 3 * a1 + (A[1] + Cq[1] + D[1]) / 3 * a2) / ar]); area[i].push(ar); } }
+    const no = Array.from({ length: nx }, () => new Array(ny).fill(0)), sk = Array.from({ length: nx }, () => new Array(ny).fill(0));
+    const face = (p0, p1, cO, cN, cells) => { const tt = sub(p1, p0), n = [tt[1] / nrm(tt), -tt[0] / nrm(tt)], d = sub(cN, cO), ang = (Math.acos(Math.min(1, Math.abs(dot(n, d)) / nrm(d))) * 180) / Math.PI;
+      const lam = cr(sub(p0, cO), tt) / cr(d, tt), xi = [cO[0] + lam * d[0], cO[1] + lam * d[1]], fc = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2], s = nrm(sub(fc, xi)) / nrm(d);
+      const A_ = Number.isFinite(ang) ? ang : 90, S_ = Number.isFinite(s) ? s : 1; cells.forEach(([a, b]) => { no[a][b] = Math.max(no[a][b], A_); sk[a][b] = Math.max(sk[a][b], S_); }); };
+    for (let i = 1; i < nx; i++) for (let j = 0; j < ny; j++) face(P[i][j], P[i][j + 1], cen[i - 1][j], cen[i][j], [[i - 1, j], [i, j]]);
+    for (let i = 0; i < nx; i++) for (let j = 1; j < ny; j++) face(P[i][j], P[i + 1][j], cen[i][j - 1], cen[i][j], [[i, j - 1], [i, j]]);
+    const eq = (i, j) => { const c = [P[i][j], P[i + 1][j], P[i + 1][j + 1], P[i][j + 1]]; let mx = 0, mn = 180; for (let k = 0; k < 4; k++) { const u = sub(c[(k + 3) % 4], c[k]), w = sub(c[(k + 1) % 4], c[k]), a = (Math.acos(Math.max(-1, Math.min(1, dot(u, w) / (nrm(u) * nrm(w))))) * 180) / Math.PI; mx = Math.max(mx, a); mn = Math.min(mn, a); } return Math.max((mx - 90) / 90, (90 - mn) / 90); };
+    fitAt(p, W / 2 + t * H / 2, H / 2, W / 2 + t * H / 2 + 0.2, H / 2 + 0.3, 'x', 'y');
+    let bad = 0, inv = 0, mNo = 0, mSk = 0, mEq = 0;
+    for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) { const e = eq(i, j), val = v.m === 'Non-orthogonality' ? no[i][j] / 90 : v.m === 'Face skewness' ? sk[i][j] / 0.6 : e, isBad = no[i][j] > 70 || sk[i][j] > 0.5 || e > 0.85 || area[i][j] <= 0;
+      if (isBad) bad++; if (area[i][j] <= 0) inv++; mNo = Math.max(mNo, no[i][j]); mSk = Math.max(mSk, sk[i][j]); mEq = Math.max(mEq, e);
+      poly(p, [P[i][j], P[i + 1][j], P[i + 1][j + 1], P[i][j + 1]], isBad ? C.red : C.paper, heat16(Math.min(1, val)), isBad ? 2 : 0.6); }
+    p.dots([P[8][4][0]], [P[8][4][1]], C.amber, 4);
+    out(`Max non-orthogonality ${nf(1).format(mNo)}°, max face skewness ${nf(3).format(mSk)}, max equiangle skewness ${nf(3).format(mEq)}. Red outline: ${bad} cell${bad === 1 ? '' : 's'} failing (non-orthogonality > 70°, skewness > 0.5, equiangle > 0.85${inv ? `; ${inv} inverted` : ''}).`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
