@@ -5494,6 +5494,75 @@ def('coconutwake', {
   },
 });
 
+// 17.11 D2Q9 equilibrium populations for a chosen velocity
+def('d2q9eq', {
+  controls: [{ k: 'ux', label: 'u_x (lattice units)', min: -0.9, max: 0.9, step: 0.01, v: 0.1, f: 2 }, { k: 'uy', label: 'u_y (lattice units)', min: -0.9, max: 0.9, step: 0.01, v: 0.05, f: 2 }, { k: 'rho', label: 'Density ρ', min: 0.5, max: 1.5, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const cv = [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]], wt = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36];
+    const u = [v.ux, v.uy], uu = u[0] * u[0] + u[1] * u[1];
+    const f = cv.map((c, i) => { const cu = c[0] * u[0] + c[1] * u[1]; return wt[i] * v.rho * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * uu); });
+    fitAt(p, 0, 0, 1.6, 1.6, 'c_x', 'c_y');
+    for (let i = 1; i < 9; i++) { const c = cv[i], s = f[i] / (wt[i] * v.rho), L = 0.8 * Math.min(1.5, Math.abs(s)) / Math.hypot(...c); arrow(p, 0, 0, c[0] * L, c[1] * L, f[i] < 0 ? C.red : C.lime); const lr = c[0] * c[1] === 0 ? 1.5 : 1.3; p.text(nf(3).format(f[i]), c[0] * lr, c[1] * lr - 0.06, C.paper, 'center'); }
+    p.dots([0], [0], f[0] < 0 ? C.red : C.cyan, 6);
+    arrow(p, 0, 0, u[0] * 1.5, u[1] * 1.5, C.amber);
+    const rho = f.reduce((a, b) => a + b, 0), jx = f.reduce((a, q, i) => a + q * cv[i][0], 0), jy = f.reduce((a, q, i) => a + q * cv[i][1], 0), pxx = f.reduce((a, q, i) => a + q * cv[i][0] ** 2, 0);
+    const neg = f.some((q) => q < 0);
+    out(`Rest population f₀ = ${nf(3).format(f[0])} (cyan dot). Σf = ${nf(4).format(rho)}, Σf c = (${nf(4).format(jx)}, ${nf(4).format(jy)}) = ρu, Π_xx = ${nf(4).format(pxx)} = ρu_x² + ρ/3 = ${nf(4).format(v.rho * u[0] ** 2 + v.rho / 3)}. Mach ${nf(2).format(Math.sqrt(uu * 3))}. ${neg ? 'Some populations are negative (red): far beyond the low-Mach range LBM is built for.' : 'Arrow length: f_i relative to its rest value w_iρ; amber: u (×1.5).'}`);
+  },
+});
+
+// 17.12 live lattice Boltzmann: Poiseuille start-up, or channel flow past a cylinder (BGK, bounce-back)
+def('lbmlive', {
+  controls: [{ type: 'select', k: 'case', label: 'Case', options: ['Poiseuille start-up', 'Cylinder in a channel'], v: 'Cylinder in a channel' }, { k: 'tau', label: 'Relaxation time τ (Poiseuille)', min: 0.55, max: 2, step: 0.05, v: 0.8, f: 2 }, { k: 'Re', label: 'Reynolds number (cylinder)', min: 5, max: 60, step: 5, v: 40, f: 0 }, { k: 'steps', label: 'Time steps', min: 200, max: 4000, step: 200, v: 2400, f: 0 }],
+  draw(p, v, out) {
+    const cxs = [0, 1, 0, -1, 0, 1, -1, -1, 1], cys = [0, 0, 1, 0, -1, 1, 1, -1, -1], wt = [4 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 9, 1 / 36, 1 / 36, 1 / 36, 1 / 36], op = [0, 3, 4, 1, 2, 7, 8, 5, 6];
+    const eq = (i, r, a, b) => { const cu = cxs[i] * a + cys[i] * b; return wt[i] * r * (1 + 3 * cu + 4.5 * cu * cu - 1.5 * (a * a + b * b)); };
+    if (v.case === 'Poiseuille start-up') {
+      // one column, periodic in x, body force G with Guo forcing, half-way bounce-back walls
+      const H = 24, tau = v.tau, nu = (tau - 0.5) / 3, G = 8 * 0.05 * nu / (H * H); let f = [];
+      for (let y = 0; y < H; y++) f.push(wt.map((w) => w));
+      let u = new Array(H).fill(0);
+      for (let s = 0; s < v.steps; s++) {
+        const post = f.map((fy) => { let r = 0, a = 0; fy.forEach((q, i) => { r += q; a += q * cxs[i]; }); a = (a + 0.5 * G) / r; return fy.map((q, i) => { const cu = cxs[i] * a; return q + (eq(i, r, a, 0) - q) / tau + (1 - 0.5 / tau) * wt[i] * (3 * (cxs[i] - a) * G + 9 * cu * cxs[i] * G); }); });
+        const nf_ = post.map(() => new Array(9).fill(0));
+        for (let y = 0; y < H; y++) for (let i = 0; i < 9; i++) { const Y = y + cys[i]; if (Y < 0 || Y >= H) nf_[y][op[i]] = post[y][i]; else nf_[Y][i] = post[y][i]; }
+        f = nf_;
+      }
+      u = f.map((fy) => { let r = 0, a = 0; fy.forEach((q, i) => { r += q; a += q * cxs[i]; }); return (a + 0.5 * G) / r; });
+      const ys = u.map((_, j) => j + 0.5), ex = ys.map((y) => (G / (2 * nu)) * y * (H - y)), um = Math.max(...ex);
+      p.frame({ x: [0, 1.15], y: [0, H], xlabel: 'u / u_max (exact steady)', ylabel: 'y, lattice units' });
+      p.line(ex.map((q) => q / um), ys, C.grey, 1.5, [5, 4]); p.dots(u.map((q) => q / um), ys, C.lime, 3.5);
+      const err = Math.sqrt(u.reduce((a, q, j) => a + (q - ex[j]) ** 2, 0) / ex.reduce((a, q) => a + q * q, 0)), tv = (v.steps * nu) / (H * H);
+      out(`τ = ${nf(2).format(tau)}, ν = ${nf(4).format(nu)}. After ${v.steps} steps (${nf(2).format(tv)} viscous times H²/ν): relative error against the steady parabola ${nf(2).format(err * 100)} %. ${tv > 0.6 ? 'Steady: the remaining error is the bounce-back wall slip, zero at τ ≈ 0.933.' : 'Still accelerating.'}`);
+      return;
+    }
+    const NX = 100, NY = 30, D = 6, cx = 20, cy = 15.3, U0 = 0.1, nu = U0 * D / v.Re, tau = 3 * nu + 0.5, om = 1 / tau, n = NX * NY;
+    const solid = new Uint8Array(n); for (let x = 0; x < NX; x++) for (let y = 0; y < NY; y++) if ((x - cx) ** 2 + (y - cy) ** 2 <= (D / 2) ** 2 || y === 0 || y === NY - 1) solid[y * NX + x] = 1;
+    let f = new Float64Array(9 * n), g = new Float64Array(9 * n); const ux = new Float64Array(n), uy = new Float64Array(n);
+    for (let c = 0; c < n; c++) for (let i = 0; i < 9; i++) f[9 * c + i] = eq(i, 1, solid[c] ? 0 : U0, 0);
+    const dst = new Int32Array(9 * n);   // streaming table: where each population goes (bounce-back folded in)
+    for (let c = 0; c < n; c++) { const x = c % NX, y = (c - x) / NX; for (let i = 0; i < 9; i++) { const X = Math.min(NX - 1, Math.max(0, x + cxs[i])), Y = Math.min(NY - 1, Math.max(0, y + cys[i])), d = Y * NX + X; dst[9 * c + i] = solid[d] ? 9 * c + op[i] : 9 * d + i; } }
+    const fluid = []; for (let c = 0; c < n; c++) if (!solid[c]) fluid.push(c);
+    for (let s = 0; s < v.steps; s++) {
+      for (const c of fluid) { const o = 9 * c; if (c % NX === 0) { for (let i = 0; i < 9; i++) f[o + i] = eq(i, 1, U0, 0); ux[c] = U0; uy[c] = 0; continue; }
+        const f0 = f[o], f1 = f[o + 1], f2 = f[o + 2], f3 = f[o + 3], f4 = f[o + 4], f5 = f[o + 5], f6 = f[o + 6], f7 = f[o + 7], f8 = f[o + 8];
+        const r = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8, a = (f1 - f3 + f5 - f6 - f7 + f8) / r, b = (f2 - f4 + f5 + f6 - f7 - f8) / r; ux[c] = a; uy[c] = b;
+        const q = 1 - 1.5 * (a * a + b * b);
+        f[o] += om * ((4 / 9) * r * q - f0);
+        f[o + 1] += om * ((1 / 9) * r * (q + 3 * a + 4.5 * a * a) - f1); f[o + 2] += om * ((1 / 9) * r * (q + 3 * b + 4.5 * b * b) - f2);
+        f[o + 3] += om * ((1 / 9) * r * (q - 3 * a + 4.5 * a * a) - f3); f[o + 4] += om * ((1 / 9) * r * (q - 3 * b + 4.5 * b * b) - f4);
+        const p5 = a + b, p6 = b - a; f[o + 5] += om * ((1 / 36) * r * (q + 3 * p5 + 4.5 * p5 * p5) - f5); f[o + 6] += om * ((1 / 36) * r * (q + 3 * p6 + 4.5 * p6 * p6) - f6);
+        f[o + 7] += om * ((1 / 36) * r * (q - 3 * p5 + 4.5 * p5 * p5) - f7); f[o + 8] += om * ((1 / 36) * r * (q - 3 * p6 + 4.5 * p6 * p6) - f8); }
+      for (const c of fluid) { const o = 9 * c; for (let i = 0; i < 9; i++) g[dst[o + i]] = f[o + i]; }
+      [f, g] = [g, f];
+    }
+    fitAt(p, NX / 2, NY / 2, NX / 2 + 1, NY / 2 + 1, 'x, lattice units (flow →)', 'y');
+    let back = 0;
+    for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++) { const c = y * NX + x, sp = Math.hypot(ux[c], uy[c]) / U0; if (!solid[c] && x > cx && ux[c] < 0 && Math.abs(y - cy) < D) back = Math.max(back, x - cx - D / 2 + 1); p.rect(x, x + 1, y, y + 1, solid[c] ? '#555' : ux[c] < 0 ? C.red : heat16(Math.min(1, sp / 1.8) * 0.75)); }
+    out(`τ = ${nf(3).format(tau)}, ${NX}×${NY} nodes, D = ${D}, Mach ${nf(3).format(U0 * Math.sqrt(3))}, ${v.steps} steps = ${nf(1).format((v.steps * U0) / NX)} flow-throughs. Red: reversed flow, ${back > 0 ? `a bubble about ${nf(1).format(back / D)} D long` : 'none'}. Colour elsewhere: speed.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
