@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Type B standard uncertainty (mm) of a caliper read to ±0.02 mm, rectangular distribution. 6 decimals.",
+  "answer": 0.011547,
+  "tol": 0.0005,
+  "py": "0.02/math.sqrt(3)",
+  "explain": "$a/\\sqrt3$."
+ },
+ {
+  "type": "num",
+  "q": "Relative uncertainty (%) of V = πd²L/4 with 0.2 % on d and 0.1 % on L, independent. 4 decimals.",
+  "answer": 0.4123,
+  "tol": 0.0005,
+  "py": "math.sqrt((2*0.2)**2+0.1**2)",
+  "explain": "Exponents 2 and 1, added in quadrature."
+ },
+ {
+  "type": "num",
+  "q": "Exact quarter-bridge output (mV) for V = 5 V, GF = 2, ε = 2000 µε. 5 decimals.",
+  "answer": 4.99002,
+  "tol": 0.0005,
+  "py": "5*0.004/(4+2*0.004)*1e3",
+  "explain": "$Vx/(4 + 2x)$ with $x = GF\\,\\varepsilon$."
+ },
+ {
+  "type": "num",
+  "q": "Alias (Hz) of a 730 Hz vibration sampled at 500 Hz.",
+  "answer": 230,
+  "tol": 0.0005,
+  "py": "abs(730-500*round(730/500))",
+  "explain": "$|730 - 500|$ = 230 Hz, inside the 250 Hz Nyquist band."
+ },
+ {
+  "type": "num",
+  "q": "Analogue second-order Butterworth gain at twice the cutoff. 5 decimals.",
+  "answer": 0.24254,
+  "tol": 0.0005,
+  "py": "1/math.sqrt(1+2**4)",
+  "explain": "$1/\\sqrt{1 + 2^4}$."
+ },
+ {
+  "type": "num",
+  "q": "rms quantisation noise (mV) of a 12-bit ADC with a 4.096 V reference. 5 decimals.",
+  "answer": 0.28868,
+  "tol": 0.0005,
+  "py": "4.096/4096/math.sqrt(12)*1e3",
+  "explain": "$q/\\sqrt{12}$ with $q = 1$ mV."
+ },
+ {
+  "type": "num",
+  "q": "Float coefficient (surface to mean) for a 1/8-power velocity profile. 4 decimals.",
+  "answer": 0.8889,
+  "tol": 0.0005,
+  "py": "8/9",
+  "explain": "$m/(m + 1)$."
+ },
+ {
+  "type": "num",
+  "q": "Surface strain (µε) of a cantilever load cell: F = 100 N, a = 80 mm, E = 70 GPa, b = 20 mm, h = 6 mm. 2 decimals.",
+  "answer": 952.38,
+  "tol": 0.0005,
+  "py": "6*100*0.08/(70e9*0.02*0.006**2)*1e6",
+  "explain": "$6Fa/(Ebh^2)$."
+ },
+ {
+  "type": "num",
+  "q": "A first-order sensor reaches 63.2 % of a step 2.4 s after it. How long (s) does it take to reach 95 %? 4 decimals.",
+  "answer": 7.1897,
+  "tol": 0.0005,
+  "py": "2.4*math.log(20)",
+  "explain": "$\\tau = 2.4$ s, and $\\tau\\ln 20$."
+ },
+ {
+  "type": "num",
+  "q": "Time constant (s) of an ARX(1,1) model with a = 0.98 at T = 0.05 s. 4 decimals.",
+  "answer": 2.4749,
+  "tol": 0.0005,
+  "py": "-0.05/math.log(0.98)",
+  "explain": "$-T/\\ln a$."
+ },
+ {
+  "type": "num",
+  "q": "Critical gain K for unity feedback around K/(s(s + 2)(s + 4)). 1 decimal.",
+  "answer": 48,
+  "tol": 0.0005,
+  "py": "6*8",
+  "explain": "$s^3 + 6s^2 + 8s + K$: Routh needs $6 \\times 8 > K$."
+ },
+ {
+  "type": "num",
+  "q": "Steady error (m/s) of a P speed controller: needed force 45 N, Kp = 300 N·s/m, drag slope c = 5 N·s/m. 5 decimals.",
+  "answer": 0.14754,
+  "tol": 0.0005,
+  "py": "45/(300+5)",
+  "explain": "$F/(K_p + c)$."
+ },
+ {
+  "type": "num",
+  "q": "Delay margin (ms) for a phase margin of 40° at a 12 rad/s crossover. 3 decimals.",
+  "answer": 58.178,
+  "tol": 0.0005,
+  "py": "math.radians(40)/12*1e3",
+  "explain": "$PM/\\omega_c$."
+ },
+ {
+  "type": "num",
+  "q": "LQR gain for ẋ = u with q = 25 and r = 4. 1 decimal.",
+  "answer": 2.5,
+  "tol": 0.0005,
+  "py": "math.sqrt(25/4)",
+  "explain": "$\\sqrt{q/r}$."
+ }
+]
