@@ -5310,6 +5310,79 @@ def('burgerssteep', {
   },
 });
 
+// 17.05 dam break: HLL + MUSCL against Ritter (dry bed) and Stoker (wet bed)
+def('dambreak', {
+  controls: [{ k: 't', label: 'Time, s', min: 0.05, max: 0.7, step: 0.05, v: 0.5, f: 2 }, { k: 'hr', label: 'Downstream depth h_R, m (0 = dry bed)', min: 0, max: 0.5, step: 0.05, v: 0, f: 2 }, { k: 'N', label: 'Cells', min: 50, max: 800, step: 50, v: 400, f: 0 }, { type: 'select', k: 'show', label: 'Show', options: ['Depth h', 'Velocity u'], v: 'Depth h' }],
+  draw(p, v, out) {
+    const g = 9.81, hl = 1, hr = v.hr, N = v.N, L = 10, dx = L / N, T = v.t, x = Array.from({ length: N }, (_, i) => -L / 2 + (i + 0.5) * dx);
+    const mm = (a, b) => (a * b > 0 ? Math.sign(a) * Math.min(Math.abs(a), Math.abs(b)) : 0), vel = (h, q) => (h > 1e-8 ? q / h : 0);
+    const flux = (hL, qL, hR, qR) => { const uL = vel(hL, qL), uR = vel(hR, qR), cL = Math.sqrt(g * hL), cR = Math.sqrt(g * hR), sL = Math.min(uL - cL, uR - 2 * cR), sR = Math.max(uR + cR, uL + 2 * cL);
+      const FL = [hL * uL, hL * uL * uL + 0.5 * g * hL * hL], FR = [hR * uR, hR * uR * uR + 0.5 * g * hR * hR];
+      if (sL >= 0) return FL; if (sR <= 0) return FR; const d = Math.max(sR - sL, 1e-12); return [(sR * FL[0] - sL * FR[0] + sL * sR * (hR - hL)) / d, (sR * FL[1] - sL * FR[1] + sL * sR * (qR - qL)) / d]; };
+    const rhs = (h, q) => { const gh = (i) => h[Math.min(N - 1, Math.max(0, i))], gq = (i) => q[Math.min(N - 1, Math.max(0, i))], sh = (i) => mm(gh(i) - gh(i - 1), gh(i + 1) - gh(i)), sq = (i) => mm(gq(i) - gq(i - 1), gq(i + 1) - gq(i));
+      const F = []; for (let i = -1; i < N; i++) F.push(flux(gh(i) + 0.5 * sh(i), gq(i) + 0.5 * sq(i), gh(i + 1) - 0.5 * sh(i + 1), gq(i + 1) - 0.5 * sq(i + 1)));
+      return [h.map((_, i) => -(F[i + 1][0] - F[i][0]) / dx), q.map((_, i) => -(F[i + 1][1] - F[i][1]) / dx)]; };
+    let h = x.map((z) => (z < 0 ? hl : hr)), q = x.map(() => 0), t = 0;
+    while (t < T - 1e-12) { let sm = 0; for (let i = 0; i < N; i++) sm = Math.max(sm, Math.abs(vel(h[i], q[i])) + Math.sqrt(g * h[i]));
+      const dt = Math.min(0.45 * dx / sm, T - t), [a1, b1] = rhs(h, q), h1 = h.map((z, i) => Math.max(0, z + dt * a1[i])), q1 = q.map((z, i) => z + dt * b1[i]), [a2, b2] = rhs(h1, q1);
+      h = h.map((z, i) => Math.max(0, 0.5 * (z + h1[i] + dt * a2[i]))); q = q.map((z, i) => 0.5 * (z + q1[i] + dt * b2[i])); t += dt; }
+    // exact solution
+    const cl = Math.sqrt(g * hl); let hm = 0, um = 0, s = 2 * cl;
+    if (hr > 0) { const f = (m) => 2 * (cl - Math.sqrt(g * m)) - (m - hr) * Math.sqrt(0.5 * g * (m + hr) / (m * hr)); let a = hr, b = hl; for (let k = 0; k < 100; k++) { const m = 0.5 * (a + b); if (f(m) > 0) a = m; else b = m; } hm = 0.5 * (a + b); um = 2 * (cl - Math.sqrt(g * hm)); s = hm * um / (hm - hr); }
+    const cm = Math.sqrt(g * hm), xe = linspace(-L / 2, L / 2, 600);
+    const exact = (z) => { const xi = z / T; if (xi < -cl) return [hl, 0]; if (hr > 0 && xi > s) return [hr, 0]; if (hr === 0 && xi > 2 * cl) return [0, 0]; if (hr > 0 && xi >= um - cm) return [hm, um]; const hh = (2 * cl - xi) ** 2 / (9 * g); return [hh, (2 / 3) * (cl + xi)]; };
+    const dep = v.show === 'Depth h', idx = dep ? 0 : 1;
+    p.frame({ x: [-5, 5], y: dep ? [0, 1.1] : [0, 7], xlabel: 'x, m (dam at 0)', ylabel: dep ? 'h, m' : 'u, m/s' });
+    p.line(xe, xe.map((z) => exact(z)[idx]), C.grey, 1.5, [5, 4]);
+    p.line(x, dep ? h : x.map((_, i) => (h[i] > 1e-3 ? q[i] / h[i] : NaN)), C.lime, 2.5);
+    const err = x.reduce((a, z, i) => a + Math.abs(h[i] - exact(z)[0]), 0) * dx;
+    out(`L1 error in depth ${nf(4).format(err)} m². ` + (hr === 0 ? `Ritter: front at 2√(gh₀)t = ${nf(3).format(2 * cl * T)} m, depth 4h₀/9 = 0.444 m at the dam.` : `Stoker: plateau ${nf(3).format(hm)} m at ${nf(2).format(um)} m/s, bore at ${nf(2).format(s)} m/s, now at x = ${nf(3).format(s * T)} m.`) + ' Grey: exact.');
+  },
+});
+
+// 17.06 2D shallow water on rice terraces, wet/dry, hydrostatic reconstruction (coarse 1 m grid)
+def('subakflow', {
+  controls: [{ k: 't', label: 'Time since the inlet opened, s', min: 0, max: 900, step: 30, v: 600, f: 0 }, { k: 'Q', label: 'Inlet flow, L/s', min: 5, max: 40, step: 5, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const g = 9.81, nm = 0.03, dx = 1, Nx = 40, Ny = 12, Q = v.Q / 1000, n = Nx * Ny, I = (i, j) => j * Nx + i;
+    const Z = new Float64Array(n), K = new Int8Array(n), B = new Uint8Array(n);
+    for (let j = 0; j < Ny; j++) for (let i = 0; i < Nx; i++) { const x = i + 0.5, y = j + 0.5, k = Math.min(4, Math.floor(x / 8)), b = x % 8 > 7 && k < 4; K[I(i, j)] = k; B[I(i, j)] = b; Z[I(i, j)] = -0.4 * k + 0.005 * y + (b ? 0.06 : 0); }
+    let h = new Float64Array(n), qx = new Float64Array(n), qy = new Float64Array(n);
+    // face flux, hydrostatic reconstruction + HLL: returns [mass, normal mom (left side), tangential mom, normal mom (right side)]
+    const face = (hL, nL, tL, zL, hR, nR, tR, zR) => {
+      const zf = Math.max(zL, zR), a = Math.max(0, hL + zL - zf), b = Math.max(0, hR + zR - zf);
+      const uL = hL > 1e-6 ? nL / hL : 0, vL = hL > 1e-6 ? tL / hL : 0, uR = hR > 1e-6 ? nR / hR : 0, vR = hR > 1e-6 ? tR / hR : 0;
+      const cL = Math.sqrt(g * a), cR = Math.sqrt(g * b), sL = Math.min(uL - cL, uR - cR), sR = Math.max(uL + cL, uR + cR);
+      let F = [0, 0, 0];
+      if (sR - sL > 1e-12) { const FL = [a * uL, a * uL * uL + 0.5 * g * a * a, a * uL * vL], FR = [b * uR, b * uR * uR + 0.5 * g * b * b, b * uR * vR], UL = [a, a * uL, a * vL], UR = [b, b * uR, b * vR];
+        F = sL >= 0 ? FL : sR <= 0 ? FR : FL.map((_, m) => (sR * FL[m] - sL * FR[m] + sL * sR * (UR[m] - UL[m])) / (sR - sL)); }
+      return [F[0], F[1] + 0.5 * g * (hL * hL - a * a), F[2], F[1] + 0.5 * g * (hR * hR - b * b), Math.max(Math.abs(sL), Math.abs(sR))];
+    };
+    let t = 0, steps = 0;
+    while (t < v.t - 1e-9 && steps < 20000) {
+      const dh = new Float64Array(n), dx_ = new Float64Array(n), dy_ = new Float64Array(n); let smax = 1e-9;
+      for (let j = 0; j < Ny; j++) for (let i = 0; i < Nx - 1; i++) { const L = I(i, j), R = I(i + 1, j), f = face(h[L], qx[L], qy[L], Z[L], h[R], qx[R], qy[R], Z[R]);
+        dh[L] -= f[0]; dh[R] += f[0]; dx_[L] -= f[1]; dx_[R] += f[3]; dy_[L] -= f[2]; dy_[R] += f[2]; smax = Math.max(smax, f[4]); }
+      for (let j = 0; j < Ny - 1; j++) for (let i = 0; i < Nx; i++) { const L = I(i, j), R = I(i, j + 1), f = face(h[L], qy[L], qx[L], Z[L], h[R], qy[R], qx[R], Z[R]);
+        dh[L] -= f[0]; dh[R] += f[0]; dy_[L] -= f[1]; dy_[R] += f[3]; dx_[L] -= f[2]; dx_[R] += f[2]; smax = Math.max(smax, f[4]); }
+      for (let c = 0; c < n; c++) { const i = c % Nx, j = (c - i) / Nx, w = 0.5 * g * h[c] * h[c]; // wall faces: pressure only
+        if (i === 0) dx_[c] += w; if (i === Nx - 1) dx_[c] -= w; if (j === 0) dy_[c] += w; if (j === Ny - 1) dy_[c] -= w; }
+      const dt = Math.min(v.t - t, 0.5, (0.4 * dx) / smax);
+      for (let c = 0; c < n; c++) { h[c] = Math.max(0, h[c] + (dt * dh[c]) / dx); qx[c] += (dt * dx_[c]) / dx; qy[c] += (dt * dy_[c]) / dx; }
+      const inl = [I(0, Ny - 1), I(1, Ny - 1), I(0, Ny - 2), I(1, Ny - 2)]; for (const c of inl) h[c] += (dt * Q) / (4 * dx * dx);
+      for (let c = 0; c < n; c++) { if (h[c] < 1e-6) { qx[c] = 0; qy[c] = 0; continue; } const sp = Math.hypot(qx[c], qy[c]) / h[c], fr = 1 + dt * g * nm * nm * sp / h[c] ** (4 / 3); qx[c] /= fr; qy[c] /= fr; }
+      t += dt; steps++;
+    }
+    fitAt(p, 20, 6, 21, 7.5, 'x, m (downhill →)', 'y, m');
+    let hmax = 0.08;
+    for (let c = 0; c < n; c++) { const i = c % Nx, j = (c - i) / Nx; p.rect(i, i + 1, j, j + 1, h[c] > 1e-3 ? heat16(Math.min(1, h[c] / hmax)) : B[c] ? '#5a4a32' : '#2b2b2b'); }
+    for (let k = 1; k < 5; k++) p.line([8 * k, 8 * k], [0, Ny], C.paper, 1, [3, 3]);
+    p.text('inlet', 1, Ny + 0.6, C.paper, 'center');
+    const vol = [0, 0, 0, 0, 0]; let tot = 0; for (let c = 0; c < n; c++) { vol[K[c]] += h[c]; tot += h[c]; }
+    out(`t = ${nf(0).format(t)} s. Water ${nf(4).format(tot)} m³, inflow Q·t = ${nf(4).format(Q * t)} m³. Per terrace (top to bottom): ${vol.map((z) => nf(2).format(z)).join(', ')} m³. Colour: depth, 0 to 8 cm; brown: dry bunds.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
