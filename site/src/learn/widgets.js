@@ -5274,6 +5274,42 @@ def('fvcells', {
   },
 });
 
+// 17.03 square pulse advected with different flux limiters
+def('limiterpulse', {
+  controls: [{ type: 'select', k: 'sch', label: 'Scheme', options: ['upwind', 'Lax-Wendroff', 'minmod', 'van Leer', 'superbee'], v: 'minmod' }, { k: 'c', label: 'Courant number', min: 0.1, max: 1, step: 0.05, v: 0.5, f: 2 }, { k: 'per', label: 'Times around the domain', min: 0.25, max: 4, step: 0.25, v: 1, f: 2 }, { k: 'N', label: 'Cells', min: 50, max: 400, step: 25, v: 200, f: 0 }],
+  draw(p, v, out) {
+    const N = v.N, c = v.c, phi = { upwind: () => 0, 'Lax-Wendroff': () => 1, minmod: (r) => Math.max(0, Math.min(1, r)), 'van Leer': (r) => (r + Math.abs(r)) / (1 + Math.abs(r)), superbee: (r) => Math.max(0, Math.min(2 * r, 1), Math.min(r, 2)) }[v.sch];
+    const x = Array.from({ length: N }, (_, i) => (i + 0.5) / N), sq = (z) => { const y = ((z % 1) + 1) % 1; return y > 0.2 && y < 0.5 ? 1 : 0; };
+    let q = x.map(sq); const tv = (a) => a.reduce((s, z, i) => s + Math.abs(a[(i + 1) % N] - z), 0), tv0 = tv(q), steps = Math.round(v.per * N / c);
+    for (let s = 0; s < steps; s++) { const F = q.map((z, i) => { const dq = q[(i + 1) % N] - z, dm = z - q[(i - 1 + N) % N], r = Math.abs(dq) > 1e-14 ? dm / dq : 0; return z + 0.5 * (1 - c) * phi(r) * dq; }); q = q.map((z, i) => z - c * (F[i] - F[(i - 1 + N) % N])); }
+    const T = steps * c / N, ex = x.map((z) => sq(z - T)), err = q.reduce((s, z, i) => s + Math.abs(z - ex[i]), 0) / N;
+    p.frame({ x: [0, 1], y: [-0.35, 1.35], xlabel: 'x', ylabel: 'q' });
+    p.line(x, ex, C.grey, 1.5, [5, 4]).line(x, q, C.lime, 2.5);
+    out(`${v.sch}: min ${nf(4).format(Math.min(...q))}, max ${nf(4).format(Math.max(...q))}, total variation ${nf(3).format(tv0)} → ${nf(3).format(tv(q))}, mean error ${nf(4).format(err)}. ${v.sch === 'Lax-Wendroff' ? 'Second order but not TVD: it overshoots.' : v.sch === 'upwind' ? 'TVD but first order: it smears.' : 'TVD: no new extrema.'}`);
+  },
+});
+
+// 17.04 Burgers: a sine steepening into a shock, MUSCL with the Rusanov flux
+def('burgerssteep', {
+  controls: [{ k: 't', label: 'Time / t* (shock forms at 1)', min: 0, max: 3, step: 0.05, v: 0.9, f: 2 }, { type: 'select', k: 'ic', label: 'Initial condition', options: ['Sine, u = 1 + 0.5 sin 2πx', 'Step, 1 then 0'], v: 'Sine, u = 1 + 0.5 sin 2πx' }],
+  draw(p, v, out) {
+    const sine = v.ic.startsWith('Sine'), N = 400, L0 = sine ? 0 : -1, L = sine ? 1 : 4, dx = L / N, x = Array.from({ length: N }, (_, i) => L0 + (i + 0.5) * dx);
+    const u0f = (z) => (sine ? 1 + 0.5 * Math.sin(2 * Math.PI * z) : z < 0 ? 1 : 0), ts = sine ? 1 / Math.PI : 1, T = v.t * ts;
+    const mm = (a, b) => (a * b > 0 ? Math.sign(a) * Math.min(Math.abs(a), Math.abs(b)) : 0);
+    const rhs = (u) => { const g = (i) => (sine ? u[((i % N) + N) % N] : u[Math.min(N - 1, Math.max(0, i))]), s = (i) => mm(g(i) - g(i - 1), g(i + 1) - g(i));
+      const F = []; for (let i = -1; i < N; i++) { const uL = g(i) + 0.5 * s(i), uR = g(i + 1) - 0.5 * s(i + 1), a = Math.max(Math.abs(uL), Math.abs(uR)); F.push(0.25 * (uL * uL + uR * uR) - 0.5 * a * (uR - uL)); }
+      return u.map((_, i) => -(F[i + 1] - F[i]) / dx); };
+    let u = x.map(u0f), t = 0;
+    while (t < T - 1e-12) { const dt = Math.min(0.4 * dx / Math.max(...u.map(Math.abs)), T - t), k1 = rhs(u), u1 = u.map((z, i) => z + dt * k1[i]), k2 = rhs(u1); u = u.map((z, i) => 0.5 * (z + u1[i] + dt * k2[i])); t += dt; }
+    p.frame({ x: [L0, L0 + L], y: [sine ? 0.3 : -0.2, sine ? 1.7 : 1.3], xlabel: 'x', ylabel: 'u' });
+    if (sine && v.t < 1) { const xe = linspace(0, 1, 300), ue = xe.map((z) => { let w = 1; for (let k = 0; k < 80; k++) w = u0f(z - w * T); return w; }); p.line(xe, ue, C.grey, 1.5, [5, 4]); }
+    if (!sine) p.line([L0, 0.5 * T, 0.5 * T, L0 + L], [1, 1, 0, 0], C.grey, 1.5, [5, 4]);
+    p.line(x, u, C.lime, 2.5);
+    let gmax = 0; for (let i = 1; i < N; i++) gmax = Math.max(gmax, Math.abs(u[i] - u[i - 1]) / dx);
+    out(sine ? `t = ${nf(3).format(T)} (${nf(2).format(v.t)} t*). Steepest slope ${nf(1).format(gmax)}${v.t < 1 ? `, exact π/(1 − t/t*) = ${nf(1).format(Math.PI / (1 - v.t))}` : ': a shock, held to about two cells by the scheme'}. Grey: exact solution by characteristics (until they cross).` : `t = ${nf(2).format(T)}. Grey: the exact shock at x = t/2, moving at the Rankine-Hugoniot speed (uL + uR)/2 = 0.5.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
