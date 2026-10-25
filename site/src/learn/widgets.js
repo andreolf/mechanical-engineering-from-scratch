@@ -4736,6 +4736,37 @@ def('linkdesign', {
   },
 });
 
+// 15.17 ski-lift grip against slope
+def('skigrip', {
+  controls: [{ k: 'th', label: 'Rope angle (°)', min: 0, max: 60, step: 1, v: 45, f: 0 }, { k: 'riders', label: 'Riders on the chair', min: 0, max: 6, step: 1, v: 4, f: 0 }, { k: 'Fc', label: 'Grip clamping force (kN)', min: 10, max: 60, step: 1, v: 35, f: 0 }, { k: 'mu', label: 'Jaw friction coefficient', min: 0.1, max: 0.3, step: 0.01, v: 0.2, f: 2 }],
+  draw(p, v, out) {
+    const m = 250 + 100 * v.riders, SF = 3, g = 9.81, cap = 2 * v.mu * v.Fc * 1000, need = (deg) => SF * m * g * Math.sin(deg * Math.PI / 180);
+    const ths = linspace(0, 60, 121);
+    p.frame({ x: [0, 60], y: [0, 40], xlabel: 'rope angle (°)', ylabel: 'force along the rope (kN)' });
+    p.line([0, 60], [cap / 1000, cap / 1000], C.lime, 2.5).line(ths, ths.map((t) => need(t) / 1000), C.red, 2.5);
+    const ok = cap >= need(v.th);
+    p.dots([v.th], [need(v.th) / 1000], ok ? C.lime : C.red, 6);
+    const s = cap / (SF * m * g), tmax = s >= 1 ? 90 : Math.asin(s) * 180 / Math.PI;
+    out(`Chair plus ${v.riders} rider${v.riders === 1 ? '' : 's'}: ${m} kg. Required at ${v.th}°: ${nf(2).format(need(v.th) / 1000)} kN (downhill pull × 3). Grip capacity 2μF_c = ${nf(2).format(cap / 1000)} kN: ${ok ? 'holds' : 'SLIPS'}. Steepest angle it holds: ${tmax >= 90 ? 'any' : nf(1).format(tmax) + '°'}. Educational model, not a certified design.`);
+  },
+});
+
+// 15.18 live design report table
+def('designreport', {
+  controls: [{ k: 'd', label: 'Shaft diameter (mm)', min: 24, max: 45, step: 1, v: 32, f: 0 }, { k: 'T', label: 'Torque (N·m)', min: 50, max: 400, step: 10, v: 150, f: 0 }, { k: 'Fg', label: 'Gear force (N)', min: 500, max: 5000, step: 100, v: 2000, f: 0 }, { k: 'C', label: 'Bearing rating C (kN)', min: 8, max: 40, step: 0.5, v: 19.5, f: 1 }],
+  draw(p, v, out) {
+    const L = 300, Fp = 1200, R2 = (v.Fg * 100 + Fp * 220) / L, R1 = v.Fg + Fp - R2, M = Math.max(R1 * 100, R2 * 80), T = v.T * 1000, d = v.d;
+    const Se = 4.51 * 630 ** -0.265 * 1.24 * d ** -0.107 * 315, sa = 32 * 1.7 * M / (Math.PI * d ** 3), sm = Math.sqrt(3) * 16 * 1.5 * T / (Math.PI * d ** 3), nf_ = 1 / (sa / Se + sm / 630);
+    const Lh = (R) => (v.C * 1000 / R) ** 3 * 1e6 / 36000, tk = 2 * T / (d * 400), ck = 4 * T / (d * 320);
+    const rows = [['Fatigue factor', nf_, '≥ 2.00', nf_ >= 2], ['Bearing L10 left (h)', Lh(R1), '≥ 20000', Lh(R1) >= 20000], ['Bearing L10 right (h)', Lh(R2), '≥ 20000', Lh(R2) >= 20000], ['Key shear (MPa)', tk, '≤ 106.7', tk <= 106.74], ['Key crushing (MPa)', ck, '≤ 185.0', ck <= 185]];
+    p.frame({ x: [0, 100], y: [0, 100], xlabel: '', ylabel: '' });
+    p.text('Check', 2, 92, C.grey, 'left').text('Value', 60, 92, C.grey, 'right').text('Limit', 80, 92, C.grey, 'right').text('Status', 98, 92, C.grey, 'right');
+    rows.forEach(([n, val, lim, ok], i) => { const y = 78 - i * 15; p.text(n, 2, y, C.paper, 'left').text(val >= 1000 ? Math.round(val).toLocaleString('en') : nf(2).format(val), 60, y, C.paper, 'right').text(lim, 80, y, C.grey, 'right').text(ok ? 'pass' : 'FAIL', 98, y, ok ? C.lime : C.red, 'right'); });
+    const fails = rows.filter((r) => !r[3]).length;
+    out(`${fails === 0 ? 'All checks pass.' : `${fails} check${fails > 1 ? 's' : ''} fail.`} Peak moment ${nf(1).format(M / 1000)} N·m, endurance limit ${nf(1).format(Se)} MPa. 600 rpm, 10 × 8 × 40 mm key, 1045 shaft. The same numbers a script would write into the report.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
