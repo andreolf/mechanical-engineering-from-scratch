@@ -5070,6 +5070,61 @@ def('lockingdemo', {
   },
 });
 
+// 16.13 L bracket with Tet4 elements, a rotatable 3D view coloured by von Mises stress
+def('bracket3d', {
+  controls: [{ k: 'az', label: 'View angle (°)', min: -80, max: 80, step: 5, v: 35, f: 0 }, { k: 'el', label: 'Elevation (°)', min: -10, max: 60, step: 5, v: 20, f: 0 }, { k: 'P', label: 'Tip load (N)', min: 100, max: 5000, step: 100, v: 1000, f: 0 }, { type: 'select', k: 'mag', label: 'Deformation', options: ['Off', 'Magnified ×200'], v: 'Magnified ×200' }],
+  draw(p, v, out) {
+    const h = 10, cells = []; for (let i = 0; i < 8; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 6; k++) if (k >= 4 || i < 2) cells.push([i, j, k]);
+    const ids = new Map(), X = [], tets = [], cor = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]], kuhn = [[0, 1, 2, 6], [0, 2, 3, 6], [0, 3, 7, 6], [0, 7, 4, 6], [0, 4, 5, 6], [0, 5, 1, 6]];
+    const vol = (t) => { const [a, b, c, d] = t.map((q) => X[q]), u = [0, 1, 2].map((k) => b[k] - a[k]), w = [0, 1, 2].map((k) => c[k] - a[k]), z = [0, 1, 2].map((k) => d[k] - a[k]); return (u[0] * (w[1] * z[2] - w[2] * z[1]) - u[1] * (w[0] * z[2] - w[2] * z[0]) + u[2] * (w[0] * z[1] - w[1] * z[0])) / 6; };
+    cells.forEach(([i, j, k]) => { const c = cor.map(([a, b, d]) => { const key = `${i + a},${j + b},${k + d}`; if (!ids.has(key)) { ids.set(key, X.length); X.push([h * (i + a), h * (j + b), h * (k + d)]); } return ids.get(key); }); kuhn.forEach((t) => { let tt = t.map((q) => c[q]); if (vol(tt) < 0) tt = [tt[0], tt[2], tt[1], tt[3]]; tets.push(tt); }); });
+    const E = 210e3, nu = 0.3, lam = E * nu / ((1 + nu) * (1 - 2 * nu)), mu = E / (2 * (1 + nu));
+    const D = [[lam + 2 * mu, lam, lam, 0, 0, 0], [lam, lam + 2 * mu, lam, 0, 0, 0], [lam, lam, lam + 2 * mu, 0, 0, 0], [0, 0, 0, mu, 0, 0], [0, 0, 0, 0, mu, 0], [0, 0, 0, 0, 0, mu]];
+    const Bt = (t) => { const P4 = t.map((q) => X[q]), M = P4.map((q) => [1, ...q]), V = vol(t);
+      const G = [1, 2, 3].map((col) => [0, 1, 2, 3].map((r) => { const sub = M.filter((_, i) => i !== r).map((row) => row.filter((_, j) => j !== col)); const det = sub[0][0] * (sub[1][1] * sub[2][2] - sub[1][2] * sub[2][1]) - sub[0][1] * (sub[1][0] * sub[2][2] - sub[1][2] * sub[2][0]) + sub[0][2] * (sub[1][0] * sub[2][1] - sub[1][1] * sub[2][0]); return ((r + col) % 2 ? -1 : 1) * det / (6 * V); }));
+      const B = Array.from({ length: 6 }, () => new Array(12).fill(0)); for (let a = 0; a < 4; a++) { const [bx, by, bz] = [G[0][a], G[1][a], G[2][a]]; B[0][3 * a] = bx; B[1][3 * a + 1] = by; B[2][3 * a + 2] = bz; B[3][3 * a] = by; B[3][3 * a + 1] = bx; B[4][3 * a + 1] = bz; B[4][3 * a + 2] = by; B[5][3 * a] = bz; B[5][3 * a + 2] = bx; } return [B, V]; };
+    const n = X.length, K = zeros16(3 * n, 3 * n), F = new Array(3 * n).fill(0), Bs = tets.map(Bt);
+    tets.forEach((t, e) => { const [B, V] = Bs[e], dof = t.flatMap((q) => [3 * q, 3 * q + 1, 3 * q + 2]), DB = D.map((row) => B[0].map((_, j) => row.reduce((s, d, k) => s + d * B[k][j], 0)));
+      for (let r = 0; r < 12; r++) for (let c = 0; c < 12; c++) { let s = 0; for (let k = 0; k < 6; k++) s += B[k][r] * DB[k][c]; K[dof[r]][dof[c]] += s * V; } });
+    const tip = []; X.forEach((q, i) => { if (Math.abs(q[0] - 80) < 1e-9) tip.push(i); }); tip.forEach((i) => { F[3 * i + 2] -= v.P / tip.length; });
+    const fixed = []; X.forEach((q, i) => { if (Math.abs(q[0]) < 1e-9) fixed.push(3 * i, 3 * i + 1, 3 * i + 2); });
+    const u = femSolve16(K, F, fixed);
+    const vm = tets.map((t, e) => { const ue = t.flatMap((q) => [u[3 * q], u[3 * q + 1], u[3 * q + 2]]), eps = Bs[e][0].map((row) => row.reduce((s, b, j) => s + b * ue[j], 0)), s = D.map((row) => row.reduce((a, d, k) => a + d * eps[k], 0));
+      return Math.sqrt(0.5 * ((s[0] - s[1]) ** 2 + (s[1] - s[2]) ** 2 + (s[2] - s[0]) ** 2) + 3 * (s[3] ** 2 + s[4] ** 2 + s[5] ** 2)); });
+    const fc = new Map(); tets.forEach((t, e) => [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]].forEach((f) => { const tri = f.map((q) => t[q]), key = tri.slice().sort((a, b) => a - b).join(','); if (fc.has(key)) fc.delete(key); else fc.set(key, [tri, e]); }));
+    const sc = v.mag === 'Off' ? 0 : 200, a = v.az * Math.PI / 180, b = v.el * Math.PI / 180;
+    const proj = (i) => { const x = X[i][0] - 40 + sc * u[3 * i], y = X[i][1] - 10 + sc * u[3 * i + 1], z = X[i][2] - 30 + sc * u[3 * i + 2], xr = x * Math.cos(a) - y * Math.sin(a), yr = x * Math.sin(a) + y * Math.cos(a); return [xr, z * Math.cos(b) - yr * Math.sin(b), yr * Math.cos(b) + z * Math.sin(b)]; };
+    const P2 = X.map((_, i) => proj(i)), vmax = Math.max(...vm);
+    fitAt(p, 0, 0, 50, 45, '', '');
+    [...fc.values()].map(([tri, e]) => [tri, e, tri.reduce((s, q) => s + P2[q][2], 0)]).sort((m1, m2) => m2[2] - m1[2]).forEach(([tri, e]) => poly(p, tri.map((q) => [P2[q][0], P2[q][1]]), 'rgba(0,0,0,0.35)', heat16(vm[e] / vmax), 0.6));
+    const d = -tip.reduce((s, i) => s + u[3 * i + 2], 0) / tip.length, worst = tets[vm.indexOf(vmax)].map((q) => X[q]).reduce((s, q) => s.map((c, k) => c + q[k] / 4), [0, 0, 0]);
+    out(`${tets.length} tets, ${3 * n} dofs (coarse 10 mm cubes). Tip deflection ${nf(2).format(d * 1000)} µm. Peak von Mises ${nf(1).format(vmax)} MPa near (${worst.map((c) => nf(0).format(c)).join(', ')}) mm, where the arm meets the leg. Colours: cyan low, red the peak.`);
+  },
+});
+
+// 16.14 heatsink: steady 2D heat conduction with convection on the fins
+def('heatsink', {
+  controls: [{ k: 'P', label: 'Chip power (W)', min: 1, max: 30, step: 1, v: 10, f: 0 }, { k: 'h', label: 'Convection coefficient (W/m²K)', min: 5, max: 150, step: 5, v: 25, f: 0 }, { type: 'select', k: 'mat', label: 'Material', options: ['Aluminium (200 W/mK)', 'Copper (390 W/mK)', 'Steel (50 W/mK)'], v: 'Aluminium (200 W/mK)' }],
+  draw(p, v, out) {
+    const k = v.mat.startsWith('Al') ? 200 : v.mat.startsWith('Co') ? 390 : 50, h = 0.001, depth = 0.05, Tinf = 25, cells = new Set();
+    for (let i = 0; i < 48; i++) for (let j = 0; j < 5; j++) cells.add(`${i},${j}`);
+    for (let f = 0; f < 6; f++) for (const i of [3 + 8 * f, 4 + 8 * f]) for (let j = 5; j < 30; j++) cells.add(`${i},${j}`);
+    const ids = new Map(), X = [], Q = [], cnt = new Map(), id = (i, j) => { const key = `${i},${j}`; if (!ids.has(key)) { ids.set(key, X.length); X.push([i * h, j * h]); } return ids.get(key); };
+    [...cells].map((s) => s.split(',').map(Number)).forEach(([i, j]) => { Q.push([id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)]); [[[i, j], [i + 1, j]], [[i + 1, j], [i + 1, j + 1]], [[i, j + 1], [i + 1, j + 1]], [[i, j], [i, j + 1]]].forEach((e) => { const key = e.join(';'); cnt.set(key, (cnt.get(key) || 0) + 1); }); });
+    const n = X.length, K = zeros16(n, n), F = new Array(n).fill(0), ke = [[4, -1, -2, -1], [-1, 4, -1, -2], [-2, -1, 4, -1], [-1, -2, -1, 4]];
+    Q.forEach((e) => { for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) K[e[a]][e[b]] += k * ke[a][b] / 6; });
+    const flux = v.P / (0.016 * depth); let A = 0;
+    cnt.forEach((c, key) => { if (c !== 1) return; const [[i0, j0], [i1, j1]] = key.split(';').map((s) => s.split(',').map(Number)), a = id(i0, j0), b = id(i1, j1);
+      if (j0 === 0 && j1 === 0) { const xm = (i0 + i1) / 2 * h; if (xm >= 0.016 && xm <= 0.032) { F[a] += flux * h / 2; F[b] += flux * h / 2; } return; }
+      K[a][a] += v.h * h / 3; K[b][b] += v.h * h / 3; K[a][b] += v.h * h / 6; K[b][a] += v.h * h / 6; F[a] += v.h * Tinf * h / 2; F[b] += v.h * Tinf * h / 2; A += h; });
+    const T = linSolve(K, F), Tmax = Math.max(...T), Tmin = Math.min(...T);
+    fitAt(p, 24, 15, 26, 17, 'x (mm)', 'y (mm)');
+    Q.forEach((e) => { const Tm = e.reduce((s, q) => s + T[q], 0) / 4; poly(p, e.map((q) => [X[q][0] * 1000, X[q][1] * 1000]), null, heat16((Tm - Tmin) / Math.max(Tmax - Tmin, 1e-9))); });
+    p.rect(16, 32, -1.6, -0.3, C.amber).text('chip', 24, -3.2, C.amber, 'center');
+    out(`Max ${nf(1).format(Tmax)} °C at the chip, min ${nf(1).format(Tmin)} °C at a fin tip (air 25 °C). Spread ${nf(2).format(Tmax - Tmin)} K. Lumped estimate, if the metal were perfectly conducting: ${nf(1).format(Tinf + v.P / (v.h * A * depth))} °C.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
