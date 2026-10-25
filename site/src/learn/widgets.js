@@ -5015,6 +5015,61 @@ def('sparsity', {
   },
 });
 
+// Phase 16 Q4 helpers: B matrix (plane) and gradient of the shape functions
+function q4grad16(X, xi, eta) { const dN = [[-(1 - eta), 1 - eta, 1 + eta, -(1 + eta)].map((q) => q / 4), [-(1 - xi), -(1 + xi), 1 + xi, 1 - xi].map((q) => q / 4)];
+  const J = [0, 1].map((r) => [0, 1].map((c) => dN[r].reduce((s, q, i) => s + q * X[i][c], 0))), dJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+  return [dN[0].map((_, i) => (J[1][1] * dN[0][i] - J[0][1] * dN[1][i]) / dJ), dN[0].map((_, i) => (-J[1][0] * dN[0][i] + J[0][0] * dN[1][i]) / dJ), dJ]; }
+function q4B16(X, xi, eta) { const [dx, dy, dJ] = q4grad16(X, xi, eta); return [[0, 1, 2].map((r) => dx.flatMap((_, i) => (r === 0 ? [dx[i], 0] : r === 1 ? [0, dy[i]] : [dy[i], dx[i]]))), dJ]; }
+
+// 16.11 convergence study: error against h on uniform or distorted Q4 meshes
+def('convrate', {
+  controls: [{ type: 'select', k: 'mesh', label: 'Mesh', options: ['Uniform squares', 'Distorted (interior nodes shifted)'], v: 'Uniform squares' }, { k: 'nmax', label: 'Finest mesh (elements per side)', min: 4, max: 16, step: 4, v: 16, f: 0 }],
+  draw(p, v, out) {
+    const ns = [2, 4, 8, 16].filter((n) => n <= v.nmax), PI = Math.PI, g3 = [[-Math.sqrt(0.6), 5 / 9], [0, 8 / 9], [Math.sqrt(0.6), 5 / 9]];
+    const res = ns.map((n) => { const m = n + 1, X = []; for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) { let x = i / n, y = j / n; if (v.mesh.startsWith('Dist') && i > 0 && i < n && j > 0 && j < n) { x += 0.2 / n * Math.sin(7.3 * i + 3.1 * j); y += 0.2 / n * Math.cos(5.7 * i - 2.3 * j); } X.push([x, y]); }
+      const K = zeros16(m * m, m * m), F = new Array(m * m).fill(0), els = [];
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) els.push([j * m + i, j * m + i + 1, (j + 1) * m + i + 1, (j + 1) * m + i]);
+      const each = (e, fn) => { const Xe = e.map((a) => X[a]); g3.forEach(([a, wa]) => g3.forEach(([b, wb]) => { const N = [(1 - a) * (1 - b), (1 + a) * (1 - b), (1 + a) * (1 + b), (1 - a) * (1 + b)].map((q) => q / 4), [dx, dy, dJ] = q4grad16(Xe, a, b), x = N.reduce((s, q, k) => s + q * Xe[k][0], 0), y = N.reduce((s, q, k) => s + q * Xe[k][1], 0); fn(N, dx, dy, dJ * wa * wb, x, y); })); };
+      els.forEach((e) => each(e, (N, dx, dy, w, x, y) => { for (let a = 0; a < 4; a++) { F[e[a]] += N[a] * 2 * PI * PI * Math.sin(PI * x) * Math.sin(PI * y) * w; for (let b = 0; b < 4; b++) K[e[a]][e[b]] += (dx[a] * dx[b] + dy[a] * dy[b]) * w; } }));
+      const fixed = []; for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) if (i === 0 || j === 0 || i === n || j === n) fixed.push(j * m + i);
+      const u = femSolve16(K, F, fixed); let l2 = 0, h1 = 0;
+      els.forEach((e) => each(e, (N, dx, dy, w, x, y) => { const uh = N.reduce((s, q, k) => s + q * u[e[k]], 0), gx = dx.reduce((s, q, k) => s + q * u[e[k]], 0), gy = dy.reduce((s, q, k) => s + q * u[e[k]], 0);
+        l2 += (uh - Math.sin(PI * x) * Math.sin(PI * y)) ** 2 * w; h1 += ((gx - PI * Math.cos(PI * x) * Math.sin(PI * y)) ** 2 + (gy - PI * Math.sin(PI * x) * Math.cos(PI * y)) ** 2) * w; }));
+      return [1 / n, Math.sqrt(l2), Math.sqrt(h1)]; });
+    p.frame({ x: [0.04, 0.7], y: [5e-4, 3], xlog: true, ylog: true, xlabel: 'element size h', ylabel: 'error' });
+    const hs = res.map((r) => r[0]); p.line(hs, res.map((r) => r[1]), C.lime, 2.5).dots(hs, res.map((r) => r[1]), C.lime, 4).line(hs, res.map((r) => r[2]), C.cyan, 2.5).dots(hs, res.map((r) => r[2]), C.cyan, 4);
+    const k = res.length - 1, slope = (j) => Math.log(res[k][j] / res[k - 1][j]) / Math.log(res[k][0] / res[k - 1][0]);
+    p.text('L² (lime)', 0.3, 2e-3, C.lime, 'center').text('energy (cyan)', 0.3, 1.2, C.cyan, 'center');
+    out(`Slopes on the last halving: L² ${nf(2).format(slope(1))} (theory 2), energy ${nf(2).format(slope(2))} (theory 1). Finest error: L² ${res[k][1].toExponential(3)}, energy ${res[k][2].toExponential(3)}.`);
+  },
+});
+
+// 16.12 shear and volumetric locking of Q4 on a slender cantilever
+def('lockingdemo', {
+  controls: [{ type: 'select', k: 'sch', label: 'Integration', options: ['Full 2×2', 'Selective (shear at 1 point)', 'Volumetric at 1 point'], v: 'Full 2×2' }, { type: 'select', k: 'mesh', label: 'Mesh', options: ['10 × 1', '20 × 2', '30 × 3'], v: '10 × 1' }, { type: 'select', k: 'mat', label: 'Material', options: ['Plane stress, ν = 0.25', 'Plane strain, ν = 0.49'], v: 'Plane stress, ν = 0.25' }],
+  draw(p, v, out) {
+    const [nx, ny] = v.mesh.split(' × ').map(Number), L = 10, H = 1, E = 1000, P = 1, strain = v.mat.startsWith('Plane strain'), nu = strain ? 0.49 : 0.25;
+    const c0 = strain ? E / ((1 + nu) * (1 - 2 * nu)) : E / (1 - nu * nu), D = strain ? [[c0 * (1 - nu), c0 * nu, 0], [c0 * nu, c0 * (1 - nu), 0], [0, 0, c0 * (1 - 2 * nu) / 2]] : [[c0, c0 * nu, 0], [c0 * nu, c0, 0], [0, 0, c0 * (1 - nu) / 2]];
+    const m = nx + 1, nn = m * (ny + 1), X = []; for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) X.push([L * i / nx, -H / 2 + H * j / ny]);
+    const K = zeros16(2 * nn, 2 * nn), F = new Array(2 * nn).fill(0), g = 1 / Math.sqrt(3), G2 = [[-g, -g], [g, -g], [g, g], [-g, g]];
+    const parts = (sch) => { const lam = D[0][1], Dv = [[lam, lam, 0], [lam, lam, 0], [0, 0, 0]], Dd = D.map((r, i) => r.map((q, j) => q - Dv[i][j])), Dn = D.map((r, i) => r.map((q, j) => (i === 2 && j === 2 ? 0 : q))), Ds = [[0, 0, 0], [0, 0, 0], [0, 0, D[2][2]]];
+      return sch.startsWith('Full') ? [[D, G2, 1]] : sch.startsWith('Sel') ? [[Dn, G2, 1], [Ds, [[0, 0]], 4]] : [[Dd, G2, 1], [Dv, [[0, 0]], 4]]; };
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const e = [j * m + i, j * m + i + 1, (j + 1) * m + i + 1, (j + 1) * m + i], Xe = e.map((a) => X[a]), dof = e.flatMap((a) => [2 * a, 2 * a + 1]);
+      parts(v.sch).forEach(([Dm, pts, wt]) => pts.forEach(([xi, eta]) => { const [B, dJ] = q4B16(Xe, xi, eta); for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { let s = 0; for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) s += B[a][r] * Dm[a][b] * B[b][c]; K[dof[r]][dof[c]] += s * dJ * wt; } })); }
+    const tau = (y) => 1.5 * P / H * (1 - (2 * y / H) ** 2);
+    for (let j = 0; j < ny; j++) { const a = j * m + nx, b = (j + 1) * m + nx, ya = X[a][1], yb = X[b][1], seg = (yb - ya) * (tau(ya) + 4 * tau((ya + yb) / 2) + tau(yb)) / 6; F[2 * a + 1] -= seg / 2; F[2 * b + 1] -= seg / 2; }
+    const fixed = []; for (let j = 0; j <= ny; j++) fixed.push(2 * j * m); if (ny % 2) fixed.push(1, 2 * ny * m + 1); else fixed.push(2 * (ny / 2) * m + 1);
+    const u = femSolve16(K, F, fixed);
+    const Ee = strain ? E / (1 - nu * nu) : E, Gs = E / (2 * (1 + nu)), I = H ** 3 / 12, beam = (x) => P * x * x * (3 * L - x) / (6 * Ee * I) + P * x / (5 / 6 * Gs * H), ref = beam(L);
+    let tip = 0; for (let j = 0; j <= ny; j++) tip -= u[2 * (j * m + nx) + 1] / (ny + 1);
+    fitAt(p, 5, -0.8, 5.6, 1.6, 'x', 'y (deflection shown ×0.5)');
+    const sc = 0.5, xs = linspace(0, L, 60); p.line(xs, xs.map((x) => -sc * beam(x)), C.grey, 1.5, [5, 4]);
+    for (let j = 0; j <= ny; j++) { const row = Array.from({ length: m }, (_, i) => j * m + i); p.line(row.map((a) => X[a][0] + sc * u[2 * a]), row.map((a) => X[a][1] + sc * u[2 * a + 1]), C.lime, 1.5); }
+    for (let i = 0; i <= nx; i++) { const col = Array.from({ length: ny + 1 }, (_, j) => j * m + i); p.line(col.map((a) => X[a][0] + sc * u[2 * a]), col.map((a) => X[a][1] + sc * u[2 * a + 1]), C.lime, 1); }
+    out(`Tip deflection ${nf(3).format(tip)} against beam theory ${nf(3).format(ref)}: ${nf(1).format(100 * tip / ref)}\u00a0%. ${tip / ref < 0.8 ? 'Locked: far too stiff.' : tip / ref < 0.97 ? 'A little stiff; refine the mesh.' : tip / ref > 1.03 ? 'Slightly too flexible.' : 'Close to beam theory.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
