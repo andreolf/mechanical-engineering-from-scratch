@@ -6128,6 +6128,41 @@ def('bambootruss', {
     out(`Line load ${w.toFixed(2)} kN/m per truss. Worst member utilisation ${worst.toFixed(2)} (${what}), web joints need up to ${bolts} bolts at 4 kN, crowd deflection ${dmid.toFixed(1)} mm vs 24 mm. ${worst > 1 || bolts > 5 || dmid > 24 ? 'Fails a check.' : 'All checks pass.'}`);
   },
 });
+
+// 19.05 Pelton runner efficiency from the Euler turbine equation
+def('pelton', {
+  controls: [{ k: 'r', label: 'Bucket speed / jet speed', min: 0, max: 1, step: 0.01, v: 0.46, f: 2 }, { k: 'b', label: 'Bucket turning angle, degrees', min: 90, max: 175, step: 1, v: 165, f: 0 }, { k: 'k', label: 'Relative speed kept, k', min: 0.6, max: 1, step: 0.01, v: 0.9, f: 2 }],
+  draw(p, v, out) {
+    const cb = Math.cos((v.b * Math.PI) / 180), eta = (r) => 2 * r * (1 - r) * (1 - v.k * cb), xs = linspace(0, 1, 101);
+    p.frame({ x: [0, 1], y: [0, 1.05], xlabel: 'u / V', ylabel: 'runner efficiency' });
+    p.line(xs, xs.map(eta), C.lime, 2.5).line([0, 1], [1, 1], C.grey, 1, [4, 3]).dots([v.r], [eta(v.r)], C.amber, 5);
+    const left = 1 - eta(v.r), fr = (1 - v.r) ** 2 * (1 - v.k ** 2);
+    out(`Efficiency ${eta(v.r).toFixed(3)} at u/V = ${v.r.toFixed(2)}, best ${eta(0.5).toFixed(3)} at 0.50. Of the jet power, ${(fr * 100).toFixed(1)} % is bucket friction and ${((left - fr) * 100).toFixed(1)} % leaves in the water.`);
+  },
+});
+
+// 19.06 water hammer by the method of characteristics
+def('hammer', {
+  controls: [{ k: 'Tc', label: 'Valve closure time, s', min: 0, max: 10, step: 0.1, v: 2, f: 1 }, { k: 'L', label: 'Penstock length, m', min: 100, max: 1000, step: 10, v: 300, f: 0 }, { k: 'e', label: 'Steel wall, mm', min: 2, max: 15, step: 0.5, v: 6, f: 1 }],
+  draw(p, v, out) {
+    const rho = 1000, g = 9.81, D = 0.3, f = 0.015, Ap = (Math.PI * D * D) / 4, K = 2.2e9, a = Math.sqrt(K / rho / (1 + (K * D) / (200e9 * v.e / 1000)));
+    const Q0 = 0.036, H0 = 52, nx = 40, dx = v.L / nx, dt = dx / a, B = a / (g * Ap), R = (f * dx) / (2 * g * D * Ap * Ap), kf = (f * v.L) / D / (2 * g * Ap * Ap);
+    let H = Array.from({ length: nx + 1 }, (_, i) => H0 - (kf * Q0 * Q0 * i) / nx), Q = new Array(nx + 1).fill(Q0);
+    const Hv0 = H[nx], Cv = Q0 / Math.sqrt(Hv0), T = Math.max(4, v.Tc + 3), ts = [0], hs = [Hv0];
+    for (let t = dt; t < T; t += dt) {
+      const Hn = new Array(nx + 1), Qn = new Array(nx + 1), CP = (i) => H[i] + B * Q[i] - R * Q[i] * Math.abs(Q[i]), CM = (i) => H[i] - B * Q[i] + R * Q[i] * Math.abs(Q[i]);
+      for (let i = 1; i < nx; i++) { const cp = CP(i - 1), cm = CM(i + 1); Hn[i] = (cp + cm) / 2; Qn[i] = (cp - cm) / (2 * B); }
+      Hn[0] = H0; Qn[0] = (H0 - CM(1)) / B;
+      const cv = Cv * (v.Tc > 0 ? Math.max(0, 1 - t / v.Tc) : 0), cp = CP(nx - 1);
+      if (cv === 0) { Qn[nx] = 0; Hn[nx] = cp; } else { const s = (-B * cv * cv + Math.sqrt((B * cv * cv) ** 2 + 4 * cv * cv * cp)) / 2; Qn[nx] = s; Hn[nx] = cp - B * s; }
+      H = Hn; Q = Qn; ts.push(t); hs.push(H[nx]);
+    }
+    const dHj = (a * (Q0 / Ap)) / g, Hm = Math.max(...hs), Hmin = Math.min(...hs);
+    p.frame({ x: [0, T], y: [Math.min(0, Hmin - 5), Math.max(H0 + dHj, Hm) + 10], xlabel: 's', ylabel: 'head at valve, m' });
+    p.line([0, T], [Hv0 + dHj, Hv0 + dHj], C.grey, 1, [4, 3]).line(ts, hs, C.lime, 2);
+    out(`Wave speed ${a.toFixed(0)} m/s, 2L/a = ${((2 * v.L) / a).toFixed(2)} s. Peak rise ${(Hm - Hv0).toFixed(1)} m against Joukowsky ${dHj.toFixed(1)} m (${(((Hm - Hv0) / dHj) * 100).toFixed(0)} %).`);
+  },
+});
 // @@P19 END
 
 export function mountWidgets(root) {
