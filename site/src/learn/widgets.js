@@ -5239,6 +5239,41 @@ def('toolcompare', {
   },
 });
 
+// 17.01 error budget of a toy advection-diffusion problem
+def('errsources', {
+  controls: [{ k: 'lg', label: 'Grid intervals N = 10^x, x', min: 1, max: 3.5, step: 0.1, v: 1.6, f: 1 }, { type: 'select', k: 'prec', label: 'Arithmetic', options: ['float64', 'float32'], v: 'float64' }, { type: 'select', k: 'src', label: 'Heat source in the model', options: ['Left out (as in the lesson)', 'Included'], v: 'Left out (as in the lesson)' }],
+  draw(p, v, out) {
+    const U = 1, G = 0.05, S0 = 0.05, XP = 0.9, N = Math.round(10 ** v.lg), Pe = U / G;
+    const exact = (x, s) => { const hm = (Math.exp(Pe * x) - 1) / (Math.exp(Pe) - 1); return hm + s / U * (x - hm); };
+    const solve = (N, s, f32) => { const r = f32 ? Math.fround : (z) => z, h = 1 / N, a = r(-U / (2 * h) - G / h / h), b = r(2 * G / h / h), c = r(U / (2 * h) - G / h / h), n = N - 1, cp = new Array(n), dp = new Array(n), d = new Array(n).fill(r(s));
+      d[n - 1] = r(d[n - 1] - c); cp[0] = r(c / b); dp[0] = r(d[0] / b);
+      for (let i = 1; i < n; i++) { const m = r(b - r(a * cp[i - 1])); cp[i] = r(c / m); dp[i] = r(r(d[i] - r(a * dp[i - 1])) / m); }
+      const ph = new Array(n); ph[n - 1] = dp[n - 1]; for (let i = n - 2; i >= 0; i--) ph[i] = r(dp[i] - r(cp[i] * ph[i + 1]));
+      const all = [0, ...ph, 1], xi = XP * N, k = Math.floor(xi), t = xi - k; return all[k] * (1 - t) + all[Math.min(k + 1, N)] * t; };
+    const sm = v.src.startsWith('Inc') ? S0 : 0, f32 = v.prec === 'float32', truth = exact(XP, S0);
+    const val = solve(N, sm, f32), obs = val - truth, ref = solve(N, sm, false), model = solve(4 * N, sm, false) - solve(4 * N, S0, false), disc = (ref - solve(2 * N, sm, false)) * 4 / 3, rnd = val - ref;
+    const bars = [['modelling', model], ['discretisation', disc], ['round-off', rnd], ['observed', obs]];
+    p.frame({ x: [0, 4], y: [1e-10, 30], ylog: true, xlabel: 'bars: modelling, discretisation, round-off, observed', ylabel: '|error| in φ(0.9)' });
+    bars.forEach(([nm, e], i) => { const m = Math.max(Math.abs(e), 1.1e-10); p.rect(i + 0.15, i + 0.85, 1e-10, m, i === 3 ? C.paper : [C.lime, C.cyan, C.amber][i]); p.text(nm === 'discretisation' ? 'discret.' : nm, i + 0.5, m * 3.5, i === 3 ? C.paper : [C.lime, C.cyan, C.amber][i], 'center'); });
+    out(`N = ${N}, cell Peclet ${nf(2).format(U / G / N)}${U / G / N > 2 ? ' (above 2: central differences wiggle)' : ''}. Modelling ${model.toExponential(2)}, discretisation ${disc.toExponential(2)}, round-off ${rnd.toExponential(2)}; sum ${(model + disc + rnd).toExponential(3)} against observed ${obs.toExponential(3)}.`);
+  },
+});
+
+// 17.02 finite-volume cells with face fluxes
+def('fvcells', {
+  controls: [{ k: 'N', label: 'Cells', min: 10, max: 40, step: 1, v: 20, f: 0 }, { k: 'c', label: 'Courant number a Δt / Δx', min: 0.1, max: 1.2, step: 0.05, v: 0.8, f: 2 }, { k: 's', label: 'Time steps taken', min: 0, max: 60, step: 1, v: 6, f: 0 }],
+  draw(p, v, out) {
+    const N = v.N, dx = 1 / N; let q = Array.from({ length: N }, (_, i) => { const x = (i + 0.5) * dx; return Math.exp(-200 * (x - 0.3) ** 2) + (Math.abs(x - 0.7) < 0.1 ? 1 : 0); });
+    const m0 = q.reduce((s, z) => s + z, 0) * dx;
+    for (let s = 0; s < v.s; s++) { const F = q.map((z) => v.c * z); q = q.map((z, i) => z - (F[i] - F[(i - 1 + N) % N])); }
+    const m = q.reduce((s, z) => s + z, 0) * dx, top = Math.max(1.6, ...q.map(Math.abs)) * 1.1;
+    p.frame({ x: [0, 1], y: [Math.min(-0.2, ...q) * 1.1, top], xlabel: 'x', ylabel: 'cell average q' });
+    q.forEach((z, i) => p.rect(i * dx + dx * 0.06, (i + 1) * dx - dx * 0.06, 0, z, z >= 0 ? 'rgba(238,255,65,0.55)' : 'rgba(255,90,54,0.6)'));
+    q.forEach((z, i) => { const f = v.c * z; if (Math.abs(f) > 0.02) arrow(p, (i + 1) * dx - 0.5 * dx * Math.min(1, Math.abs(f)), top * 0.92, (i + 1) * dx + 0.5 * dx * Math.min(1, Math.abs(f)) * Math.sign(f), top * 0.92, C.cyan, 1.5); });
+    out(`Total ∑ q Δx = ${m.toFixed(15)} (start ${m0.toFixed(15)}). Cyan arrows: upwind flux through each right face, the same amount leaves one cell and enters the next. ${v.c > 1 ? 'Courant number above 1: the scheme is unstable.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
