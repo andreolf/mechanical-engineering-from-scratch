@@ -5451,6 +5451,49 @@ def('projectstep', {
   },
 });
 
+// 17.09 Strouhal number against Re, with this lesson's results
+def('strouhal', {
+  controls: [{ k: 'Re', label: 'Reynolds number', min: 50, max: 180, step: 5, v: 100, f: 0 }, { k: 'D', label: 'Cylinder diameter, mm', min: 1, max: 50, step: 1, v: 10, f: 0 }, { type: 'select', k: 'fl', label: 'Fluid', options: ['Water (ν = 1.0e-6 m²/s)', 'Air (ν = 1.5e-5 m²/s)'], v: 'Water (ν = 1.0e-6 m²/s)' }],
+  draw(p, v, out) {
+    const rosh = (re) => 0.212 * (1 - 21.2 / re), will = (re) => -3.3265 / re + 0.1816 + 1.6e-4 * re, res = linspace(50, 180, 80);
+    p.frame({ x: [50, 180], y: [0.1, 0.22], xlabel: 'Re', ylabel: 'St = fD/U' });
+    p.rect(50, 180, 0.16, 0.2, 'rgba(238,255,65,0.06)');
+    p.line(res, res.map(rosh), C.cyan, 2, [5, 4]).line(res, res.map(will), C.lime, 2.5);
+    p.dots([100], [0.1585], C.amber, 5).dots([100], [0.1724], C.red, 5).dots([v.Re], [will(v.Re)], C.paper, 4);
+    p.text('Williamson', 175, 0.197, C.lime, 'right').text('Roshko', 175, 0.178, C.cyan, 'right');
+    const nu = v.fl.startsWith('Water') ? 1e-6 : 1.5e-5, Dm = v.D / 1000, Uv = v.Re * nu / Dm, St = will(v.Re), f = St * Uv / Dm;
+    out(`Re ${v.Re}: St = ${nf(4).format(St)} (Williamson fit), ${nf(4).format(rosh(v.Re))} (Roshko). For a ${v.D} mm cylinder that Re needs U = ${Uv < 0.1 ? nf(4).format(Uv) : nf(3).format(Uv)} m/s and sheds at ${f < 1 ? nf(3).format(f) : nf(2).format(f)} Hz. Amber and red: this lesson's solver at h = D/10 and D/16.`);
+  },
+});
+
+// 17.10 coconut in the wake: Föppl vortex pair, kinematic model, RK4 particles
+def('coconutwake', {
+  controls: [{ k: 'x0', label: 'Vortex pair position x₀ / a (bubble size)', min: 1.4, max: 2.6, step: 0.1, v: 2, f: 1 }, { k: 'eps', label: 'Shedding wobble ε of the vortex strengths', min: 0, max: 0.6, step: 0.05, v: 0.3, f: 2 }, { k: 't', label: 'Time, a/U', min: 0, max: 200, step: 10, v: 100, f: 0 }],
+  draw(p, v, out) {
+    const cmul = (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]], cdiv = (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; };
+    const field = (z, vs, skip) => { const t = cdiv([1, 0], cmul(z, z)); let w = [1 - t[0], -t[1]];
+      vs.forEach(([x, y, G], k) => { const im = cdiv([1, 0], [x, -y]); const add = (q, s) => { const d = cdiv([1, 0], [z[0] - q[0], z[1] - q[1]]); w = [w[0] + (s / (2 * Math.PI)) * d[1], w[1] - (s / (2 * Math.PI)) * d[0]]; }; if (k !== skip) add([x, y], G); add(im, -G); });
+      return [w[0], -w[1]]; };
+    const x0 = v.x0; let lo = 0.01, hi = 3; const fc = (y) => { const r = Math.hypot(x0, y); return r - 1 / r - 2 * y; };
+    for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (fc(lo) * fc(m) <= 0) hi = m; else lo = m; } const y0 = (lo + hi) / 2;
+    const u0 = field([x0, y0], [[x0, y0, 0], [x0, -y0, 0]], 0)[0], u1 = field([x0, y0], [[x0, y0, 1], [x0, -y0, -1]], 0)[0], G = -u0 / (u1 - u0);
+    const om = 2 * Math.PI * 0.2 / 2, vel = (x, y, t) => { if (x * x + y * y < 1) return [0, 0]; const s = v.eps * Math.sin(om * t); return field([x, y], [[x0, y0, G * (1 + s)], [x0, -y0, -G * (1 - s)]], -1); };
+    const P = []; for (let k = 0; k < 40; k++) { const th = 2 * Math.PI * k / 20, rr = (k < 20 ? 0.25 : 0.45) * y0; P.push([x0 + rr * Math.cos(th), y0 + rr * Math.sin(th)], [x0 + rr * Math.cos(th), -y0 + rr * Math.sin(th)]); }
+    const dt = 0.05, nS = Math.round(v.t / dt), trails = [[], [], []], tr = [0, 41, 79];
+    for (let s = 0; s < nS; s++) { const t = s * dt; for (let k = 0; k < P.length; k++) { const [x, y] = P[k]; if (x > 12) continue;
+      const a = vel(x, y, t), b = vel(x + 0.5 * dt * a[0], y + 0.5 * dt * a[1], t + 0.5 * dt), c = vel(x + 0.5 * dt * b[0], y + 0.5 * dt * b[1], t + 0.5 * dt), d = vel(x + dt * c[0], y + dt * c[1], t + dt);
+      P[k] = [x + dt / 6 * (a[0] + 2 * b[0] + 2 * c[0] + d[0]), y + dt / 6 * (a[1] + 2 * b[1] + 2 * c[1] + d[1])]; }
+      if (s % 4 === 0) tr.forEach((k, m) => { if (P[k][0] < 8) trails[m].push(P[k]); }); }
+    fitAt(p, 3, 0, 4.2, 2.6, 'x / a (flow →)', 'y / a');
+    poly(p, linspace(0, 2 * Math.PI, 60).map((t) => [Math.cos(t), Math.sin(t)]), C.paper, '#3a3a3a', 1.5);
+    trails.forEach((T) => { if (T.length > 1) p.line(T.map((q) => q[0]), T.map((q) => q[1]), C.grey, 1); });
+    const inB = P.filter(([x, y]) => x > 0 && x < 2.2 * x0 && Math.abs(y) < 2.2 * y0);
+    p.dots(inB.map((q) => q[0]), inB.map((q) => q[1]), C.lime, 3);
+    p.dots([x0, x0], [y0, -y0], C.red, 5);
+    out(`Föppl pair at (${nf(1).format(x0)}, ±${nf(3).format(y0)}) a, strength Γ = ${nf(2).format(Math.abs(G))} Ua. After t = ${v.t} a/U: ${inB.length} of ${P.length} coconuts still in the bubble. ${v.eps === 0 ? 'Steady wake: closed streamlines trap them forever.' : 'The wobble breaks the closed streamlines: chaotic advection leaks coconuts out.'}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
