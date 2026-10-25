@@ -5193,6 +5193,52 @@ def('groundshake', {
   },
 });
 
+// 16.17 von Mises truss snap-through: load control against arc length
+def('snapthru', {
+  controls: [{ type: 'select', k: 'm', label: 'Solution method', options: ['Arc length (cylindrical)', 'Newton, load control'], v: 'Arc length (cylindrical)' }, { k: 's', label: 'Progress along the solution (%)', min: 0, max: 100, step: 1, v: 45, f: 0 }],
+  draw(p, v, out) {
+    const a = 1, H = 0.1, EA = 1e6, L0 = Math.hypot(a, H);
+    const exact = (w) => { const l2 = a * a + (H - w) ** 2, N = EA * (l2 - L0 * L0) / (2 * L0 * L0); return -2 * N * (H - w) / L0; };
+    const intl = (u) => { const f = [0, 0], K = [[0, 0], [0, 0]]; [-a, a].forEach((xs) => { const x = [-xs + u[0], H + u[1]], L2 = x[0] ** 2 + x[1] ** 2, N = EA * (L2 - L0 * L0) / (2 * L0 * L0);
+      for (let i = 0; i < 2; i++) { f[i] += N * x[i] / L0; for (let j = 0; j < 2; j++) K[i][j] += EA / L0 ** 3 * x[i] * x[j] + (i === j ? N / L0 : 0); } }); return [f, K]; };
+    const sol = (K, r) => { const d = K[0][0] * K[1][1] - K[0][1] * K[1][0]; return [(K[1][1] * r[0] - K[0][1] * r[1]) / d, (K[0][0] * r[1] - K[1][0] * r[0]) / d]; };
+    const Fr = [0, -1], pts = [[0, 0]];
+    if (v.m.startsWith('Arc')) { let u = [0, 0], lam = 0, prev = null; const dl = 0.004;
+      for (let s = 0; s < 55; s++) { let [f, K] = intl(u); const ut = sol(K, Fr); let dlam = dl / Math.hypot(...ut); if (prev && ut[0] * prev[0] + ut[1] * prev[1] < 0) dlam = -dlam;
+        let Du = ut.map((q) => q * dlam), Dl = dlam;
+        for (let it = 0; it < 50; it++) { [f, K] = intl([u[0] + Du[0], u[1] + Du[1]]); const r = [(lam + Dl) * Fr[0] - f[0], (lam + Dl) * Fr[1] - f[1]]; if (Math.hypot(...r) < 1e-9) break;
+          const aa = sol(K, Fr), bb = sol(K, r), A = aa[0] ** 2 + aa[1] ** 2, B = 2 * (aa[0] * (Du[0] + bb[0]) + aa[1] * (Du[1] + bb[1])), Cc = (Du[0] + bb[0]) ** 2 + (Du[1] + bb[1]) ** 2 - dl * dl, disc = Math.sqrt(Math.max(0, B * B - 4 * A * Cc));
+          const roots = [(-B + disc) / (2 * A), (-B - disc) / (2 * A)], score = (q) => (Du[0] + bb[0] + q * aa[0]) * Du[0] + (Du[1] + bb[1] + q * aa[1]) * Du[1], q = score(roots[0]) >= score(roots[1]) ? roots[0] : roots[1];
+          Du = [Du[0] + bb[0] + q * aa[0], Du[1] + bb[1] + q * aa[1]]; Dl += q; }
+        u = [u[0] + Du[0], u[1] + Du[1]]; lam += Dl; prev = Du; pts.push([-u[1], lam]); } }
+    else { let u = [0, 0]; for (let k = 1; k <= 30; k++) { const lam = 500 * k / 30; for (let it = 0; it < 100; it++) { const [f, K] = intl(u), r = [lam * Fr[0] - f[0], lam * Fr[1] - f[1]]; if (Math.hypot(...r) < 1e-9) break; const du = sol(K, r); u = [u[0] + du[0], u[1] + du[1]]; } pts.push([-u[1], lam]); } }
+    const k = Math.round(v.s / 100 * (pts.length - 1)), [wc, Pc] = pts[k];
+    p.frame({ x: [0, 240], y: [-500, 800], xlabel: 'apex deflection w (mm)', ylabel: 'apex load P (N)' });
+    const ws = linspace(0, 0.225, 200); p.line(ws.map((w) => w * 1000), ws.map(exact), C.grey, 1.5, [5, 4]);
+    const sh = pts.slice(0, k + 1); p.line(sh.map((q) => q[0] * 1000), sh.map((q) => q[1]), C.lime, 2).dots(sh.map((q) => q[0] * 1000), sh.map((q) => q[1]), C.lime, 2.5).dots([wc * 1000], [Pc], C.amber, 6);
+    const ox = 175, oy = 520, s = 50; [-a, a].forEach((xs) => p.line([ox + s * xs, ox], [oy, oy + s * 30 * (H - wc) / 1], C.cyan, 2.5)); p.dots([ox - s * a, ox + s * a], [oy, oy], C.paper, 4);
+    p.text('truss (height ×30)', ox, oy + 170, C.cyan, 'center');
+    const jump = !v.m.startsWith('Arc') && k > 0 && pts[k][0] - pts[k - 1][0] > 0.05;
+    out(`w = ${nf(1).format(wc * 1000)} mm, P = ${nf(1).format(Math.abs(Pc) < 0.05 ? 0 : Pc)} N. Limit load 379.2 N at w = 42.3 mm. ${v.m.startsWith('Arc') ? 'Arc length follows the path through the limit point, down the unstable branch (negative load) and back up.' : jump ? 'Snap: past the limit load, Newton jumps to the far branch.' : 'Load control can only step the load up, so it cannot follow the falling branch.'}`);
+  },
+});
+
+// 16.18 two independent discretisations converging together (data from the lesson's code)
+def('toolcompare', {
+  controls: [{ type: 'select', k: 'q', label: 'Quantity', options: ['Edge displacement (global)', 'Hoop stress at the hole (local)'], v: 'Edge displacement (global)' }, { k: 'n', label: 'Meshes shown', min: 2, max: 4, step: 1, v: 4, f: 0 }],
+  draw(p, v, out) {
+    const dofs = [80, 288, 1088, 4224], glob = v.q.startsWith('Edge');
+    const q4 = glob ? [10.21306, 10.23412, 10.24013, 10.24184] : [2.6377, 3.0554, 3.0968, 3.0925], cst = glob ? [10.18049, 10.21985, 10.23563, 10.24063] : [2.3749, 2.8942, 3.0046, 3.0473];
+    const k = v.n, d = dofs.slice(0, k);
+    p.frame({ x: [50, 7000], y: glob ? [10.17, 10.25] : [2.3, 3.2], xlog: true, xlabel: 'free dofs', ylabel: glob ? 'edge displacement × E / S' : 'σ at the hole / S' });
+    if (glob && k === 4) { p.rect(50, 7000, 10.24252 - 0.00068, 10.24252 + 0.00068, 'rgba(238,255,65,0.18)').rect(50, 7000, 10.24295 - 0.00232, 10.24295 + 0.00232, 'rgba(92,200,255,0.14)'); }
+    p.line(d, q4.slice(0, k), C.lime, 2.5).dots(d, q4.slice(0, k), C.lime, 4).line(d, cst.slice(0, k), C.cyan, 2.5).dots(d, cst.slice(0, k), C.cyan, 4);
+    p.text('Q4', d[k - 1], q4[k - 1] + (glob ? 0.004 : 0.06), C.lime, 'center').text('CST', d[k - 1], cst[k - 1] - (glob ? 0.006 : 0.09), C.cyan, 'center');
+    const gap = Math.abs(q4[k - 1] - cst[k - 1]) / q4[k - 1] * 100;
+    out(glob ? `Finest pair differs by ${nf(3).format(gap)} %. ${k === 4 ? 'Shaded bands: Richardson estimates (Q4 10.2425 ± 0.0007, CST 10.2430 ± 0.0023). They overlap: agreement within discretisation error, the right test between two codes.' : 'Show all four meshes to see the Richardson bands.'}` : `Finest pair differs by ${nf(2).format(gap)} %. A peak stress at one node converges slowly and not always monotonically, so compare codes on global quantities first.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
