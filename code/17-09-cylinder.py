@@ -1,0 +1,85 @@
+"""Vortex shedding behind a circular cylinder at Re = 100: a pseudo-spectral (FFT)
+Navier-Stokes solver on a periodic box, the cylinder imposed by Brinkman volume
+penalisation and the inflow restored by a fringe (sponge) strip at the outlet.
+The Strouhal number comes from the lift signal. numpy only."""
+import numpy as np
+
+Re, U, D = 100.0, 1.0, 1.0
+nu = U * D / Re
+Lx, Ly = 12.0, 6.0                            # blockage D/Ly = 1/6 (periodic in y: a row of cylinders 6 D apart)
+
+def run(Nx, Ny, dt):
+    h = Lx / Nx
+    x = np.arange(Nx) * h; y = np.arange(Ny) * h
+    X, Y = np.meshgrid(x, y, indexing="ij")
+    xc, yc = 3.0, Ly / 2
+    r = np.hypot(X - xc, Y - yc)
+    chi = 0.5 * (1 - np.tanh((r - D / 2) / (0.5 * h)))          # smoothed cylinder mask
+    fr = np.clip((X - (Lx - 2.0)) / 1.0, 0, 1)
+    fringe = np.where(X > Lx - 2.0, np.sin(0.5 * np.pi * fr) ** 2, 0.0)   # 0 -> 1 over 1 D, then 1
+
+    kx = 2 * np.pi * np.fft.fftfreq(Nx, h); ky = 2 * np.pi * np.fft.rfftfreq(Ny, h)
+    KX, KY = np.meshgrid(kx, ky, indexing="ij")
+    K2 = KX**2 + KY**2; K2i = np.where(K2 > 0, 1 / np.where(K2 > 0, K2, 1), 0)
+    dealias = (abs(KX) < (2 / 3) * abs(kx).max()) & (abs(KY) < (2 / 3) * ky.max())
+    F, Fi = (lambda a: np.fft.rfft2(a)), (lambda a: np.fft.irfft2(a, s=(Nx, Ny)))
+
+    def project(uh, vh):
+        d = (KX * uh + KY * vh) * K2i
+        return uh - KX * d, vh - KY * d
+
+    def nonlinear(uh, vh):
+        u, v = Fi(uh), Fi(vh)
+        ux, uy, vx, vy = Fi(1j * KX * uh), Fi(1j * KY * uh), Fi(1j * KX * vh), Fi(1j * KY * vh)
+        return F(u * ux + v * uy) * dealias, F(u * vx + v * vy) * dealias
+
+    lam_c, lam_f = 1e4, 20.0                       # penalisation strengths (1/time); applied implicitly
+    u = np.ones((Nx, Ny)) * (1 - chi); v = 0.05 * np.sin(2 * np.pi * X / Lx) * np.exp(-((Y - yc) ** 2))   # small kick breaks symmetry
+    uh, vh = project(F(u), F(v))
+    visc = 1 / (1 + nu * K2 * dt)
+    Nu_old = Nv_old = None
+    T_end, t, n = 100.0, 0.0, 0
+    ts, lift, drag, probe = [], [], [], []
+    ip, jp = int(round((xc + 2 * D) / h)), int(round((yc) / h))
+    while t < T_end - 1e-9:
+        Nu, Nv = nonlinear(uh, vh)
+        if Nu_old is None:
+            Nu_old, Nv_old = Nu, Nv
+        uh = (uh - dt * (1.5 * Nu - 0.5 * Nu_old)) * visc       # AB2 convection, implicit diffusion
+        vh = (vh - dt * (1.5 * Nv - 0.5 * Nv_old)) * visc
+        Nu_old, Nv_old = Nu, Nv
+        u, v = Fi(uh), Fi(vh)
+        # implicit penalisation: cylinder -> 0, fringe -> (U, 0)
+        a = dt * (lam_c * chi + lam_f * fringe)
+        un = (u + dt * lam_f * fringe * U) / (1 + a)
+        vn = v / (1 + a)
+        fx = np.sum((u - un) * (chi > 0.5 * 0) * (lam_c * chi) / (lam_c * chi + lam_f * fringe + 1e-30)) * h * h / dt
+        fy = np.sum((v - vn) * (lam_c * chi) / (lam_c * chi + lam_f * fringe + 1e-30)) * h * h / dt
+        uh, vh = project(F(un), F(vn))
+        t += dt; n += 1
+        ts.append(t); drag.append(fx / (0.5 * U**2 * D)); lift.append(fy / (0.5 * U**2 * D)); probe.append(Fi(vh)[ip, jp])
+    ts, lift, drag, probe = map(np.array, (ts, lift, drag, probe))
+    u, v = Fi(uh), Fi(vh)
+    div = Fi(1j * KX * uh + 1j * KY * vh)
+    print(f"h = D/{D/h:.0f}, {Nx} x {Ny}: {n} steps of dt = {dt}; max |div u| = {abs(div).max():.1e}; max |u| inside the cylinder {abs(u[chi > 0.99]).max():.4f}")
+    m = ts > 50                                  # discard the start-up
+    cl = lift[m] - lift[m].mean()
+    z = np.where((cl[:-1] < 0) & (cl[1:] >= 0))[0]
+    tz = ts[m][z] - cl[z] * dt / (cl[z + 1] - cl[z])      # upward zero crossings, interpolated
+    period = np.mean(np.diff(tz))
+    St = D / (period * U)
+    pr = probe[m] - probe[m].mean()
+    spec = abs(np.fft.rfft(pr * np.hanning(len(pr)))); fq = np.fft.rfftfreq(len(pr), dt)
+    St_probe = fq[np.argmax(spec[1:]) + 1] * D / U
+    print(f"lift oscillates with period {period:.3f} (from {len(tz)} crossings): Strouhal number {St:.4f}; wake probe spectrum peak St {St_probe:.4f}")
+    print(f"mean drag coefficient {drag[m].mean():.3f}, lift amplitude {0.5*(lift[m].max()-lift[m].min()):.3f}")
+    print(f"startup: lift amplitude in 10 < t < 20: {np.ptp(lift[(ts>10)&(ts<20)])/2:.4f}; in 80 < t < 100: {np.ptp(lift[ts>80])/2:.4f}")
+    return St, St_probe, drag[m].mean()
+
+res = {}
+for Nx, Ny, dt in ((120, 60, 0.02), (192, 96, 0.0125)):
+    res[Nx] = run(Nx, Ny, dt)
+St_c, St_f = res[120][0], res[192][0]
+print(f"Strouhal number: {St_c:.4f} at h = D/10, {St_f:.4f} at h = D/16")
+assert 0.16 <= St_f <= 0.20 and abs(St_f - res[192][1]) < 0.02
+assert St_f > St_c                     # the coarse mask is effectively a fatter, blunter body
