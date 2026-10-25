@@ -1,4 +1,5 @@
 // Small 2D canvas widgets used inside lessons. Each one has thumb-friendly controls below the plot.
+import { sha256Fallback } from './cert.js';
 const C = { ink: '#000', paper: '#f2f3ec', grey: '#9a9d93', rule: 'rgba(242,243,236,0.14)', lime: '#eeff41', red: '#ff5a36', cyan: '#5cc8ff', amber: '#ffb547' };
 const nf = (d) => new Intl.NumberFormat('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
 
@@ -6194,6 +6195,39 @@ def('diskstress', {
     p.line([0, 300], [sy, sy], C.grey, 1, [4, 3]).line(rs.map((r) => r * 1000), sr, C.amber, 2).line(rs.map((r) => r * 1000), st, C.lime, 2.5);
     if (a > 0) p.rect(0, v.a, 0, top, 'rgba(154,157,147,0.25)');
     out(`Speed ${((w * 60) / 2 / Math.PI).toFixed(0)} rpm, ${(v.vr ** 2 / 4 / 1000).toFixed(2)} kJ/kg. Peak ${smax.toFixed(1)} MPa${a > 0 ? ' at the bore' : ' at the centre'}: yield margin ${(sy / smax).toFixed(2)}, burst at ${Math.sqrt(su / smax).toFixed(2)} x this speed.${smax > sy ? ' Yields.' : ''}`);
+  },
+});
+
+// 19.09 sign pole vortex lock-in: amplitude against wind speed and the wind climate
+def('signviv', {
+  controls: [{ k: 'd', label: 'Log decrement δ', min: 0.005, max: 0.2, step: 0.001, v: 0.012, f: 3 }, { k: 'D', label: 'Pole diameter, mm (5 mm wall)', min: 100, max: 300, step: 1, v: 168, f: 0 }, { k: 'ms', label: 'Sign mass, kg', min: 10, max: 80, step: 1, v: 35, f: 0 }],
+  draw(p, v, out) {
+    const E = 210e9, L = 4.5, D = v.D / 1000, t = 0.005, rho = 1.2, I = (Math.PI / 64) * (D ** 4 - (D - 2 * t) ** 4), mp = 7850 * (Math.PI / 4) * (D * D - (D - 2 * t) ** 2) * L;
+    const fn = Math.sqrt((3 * E * I) / L ** 3 / (v.ms + 0.236 * mp)) / (2 * Math.PI), VL = (fn * D) / 0.2, me = (v.ms + 0.236 * mp) / (0.236 * L), Sc = (2 * v.d * me) / (rho * D * D);
+    const y = (D * 0.13 * 0.6 * 0.7) / (0.04 * Sc), ds = (6 * E * y * (D / 2)) / (L * L) / 1e6, cW = 5.5;
+    const band = (Math.exp(-(((0.9 * VL) / cW) ** 2)) - Math.exp(-(((1.1 * VL) / cW) ** 2))) * 8760, nyr = band * 3600 * fn;
+    const s = ds * 1.35, sD = 0.737 * 71, sL = 0.549 * sD, N = s < sL ? Infinity : s >= sD ? 2e6 * (71 / s) ** 3 : 5e6 * (sD / s) ** 5, life = N / nyr;
+    const Vs = linspace(0, 20, 300), amp = Vs.map((V) => y * 1000 * Math.exp(-(((V - VL) / (0.08 * VL)) ** 2))), pdf = Vs.map((V) => ((2 * V) / cW ** 2) * Math.exp(-((V / cW) ** 2)));
+    const top = Math.max(1, y * 1000) * 1.15, pmax = Math.max(...pdf);
+    p.frame({ x: [0, 20], y: [0, top], xlabel: 'mean wind, m/s', ylabel: 'tip amplitude, mm' });
+    p.line(Vs, pdf.map((q) => (q / pmax) * top * 0.8), C.grey, 1.5, [4, 3]).line(Vs, amp, C.lime, 2.5);
+    out(`f = ${fn.toFixed(2)} Hz, lock-in at ${VL.toFixed(2)} m/s, Scruton ${Sc.toFixed(0)}, amplitude ${(y * 1000).toFixed(2)} mm, stress range ${ds.toFixed(1)} MPa. ${isFinite(life) ? `Fatigue life about ${life < 2 ? (life * 12).toFixed(0) + ' months' : life.toFixed(0) + ' years'}.` : 'Below the cut-off: no fatigue damage.'}`);
+  },
+});
+
+// 19.10 SHA-256 avalanche: which hash bits flip when a printed result carries floating-point noise
+def('hashbits', {
+  controls: [{ k: 'dig', label: 'Decimals printed', min: 1, max: 15, step: 1, v: 4, f: 0 }, { k: 'ex', label: 'Floating-point error, log10 of relative size', min: -16, max: -2, step: 1, v: -13, f: 0 }],
+  draw(p, v, out) {
+    const x = 57.34238461728, y = x * (1 + 10 ** v.ex), enc = (s) => new TextEncoder().encode(s);
+    const sa = `base stress = ${x.toFixed(v.dig)} MPa\n`, sb = `base stress = ${y.toFixed(v.dig)} MPa\n`;
+    const ha = sha256Fallback(enc(sa)), hb = sha256Fallback(enc(sb));
+    const bits = (h) => [...h].flatMap((c) => parseInt(c, 16).toString(2).padStart(4, '0').split('').map(Number));
+    const A = bits(ha), B = bits(hb); let diff = 0;
+    p.frame({ x: [0, 16], y: [0, 16], xlabel: '', ylabel: '', noy: true });
+    A.forEach((b, i) => { const cx = i % 16, cy = 15 - Math.floor(i / 16), d = b !== B[i]; if (d) diff++;
+      p.rect(cx + 0.08, cx + 0.92, cy + 0.08, cy + 0.92, d ? 'rgba(255,90,54,0.9)' : b ? 'rgba(238,255,65,0.75)' : 'rgba(154,157,147,0.25)'); });
+    out(`Prints "${sa.trim()}". ${diff ? `With the error it prints "${sb.trim()}" and ${diff} of 256 hash bits flip: the manifest no longer matches.` : 'The error does not reach the printed digits, so the hash is identical.'} Hash ${ha.slice(0, 16)}…`);
   },
 });
 // @@P19 END
