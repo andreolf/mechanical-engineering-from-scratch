@@ -4905,6 +4905,65 @@ def('bikeframe', {
   },
 });
 
+// Phase 16 colour ramp: 0 cyan, 1/3 lime, 2/3 amber, 1 red
+function heat16(t) { const cols = [[92, 200, 255], [238, 255, 65], [255, 181, 71], [255, 90, 54]], u = Math.min(Math.max(t, 0), 1) * 3, i = Math.min(Math.floor(u), 2), f = u - i, a = cols[i], b = cols[i + 1]; return `rgb(${a.map((q, j) => Math.round(q + (b[j] - q) * f)).join(',')})`; }
+
+// 16.07 isoparametric Q4 mapping with a Jacobian check
+def('isoquad', {
+  controls: [{ k: 'x', label: 'Corner 3 x', min: 0.6, max: 5, step: 0.05, v: 3.2, f: 2 }, { k: 'y', label: 'Corner 3 y', min: 0.3, max: 4, step: 0.05, v: 3, f: 2 }],
+  draw(p, v, out) {
+    const X = [[0, 0], [4, 0.5], [v.x, v.y], [0.6, 2.2]];
+    const map = (a, b) => { const N = [(1 - a) * (1 - b), (1 + a) * (1 - b), (1 + a) * (1 + b), (1 - a) * (1 + b)].map((n) => n / 4); return [0, 1].map((k) => N.reduce((s, n, i) => s + n * X[i][k], 0)); };
+    const detJ = (a, b) => { const dxi = [-(1 - b), 1 - b, 1 + b, -(1 + b)].map((n) => n / 4), det = [-(1 - a), -(1 + a), 1 + a, 1 - a].map((n) => n / 4);
+      const J = [[0, 1].map((k) => dxi.reduce((s, n, i) => s + n * X[i][k], 0)), [0, 1].map((k) => det.reduce((s, n, i) => s + n * X[i][k], 0))]; return J[0][0] * J[1][1] - J[0][1] * J[1][0]; };
+    fitAt(p, 2.5, 2, 2.8, 2.4, 'x', 'y');
+    const s = linspace(-1, 1, 9), cells = 16; let mn = Infinity;
+    for (let i = 0; i < cells; i++) for (let j = 0; j < cells; j++) { const a0 = -1 + 2 * i / cells, a1 = a0 + 2 / cells, b0 = -1 + 2 * j / cells, b1 = b0 + 2 / cells, d = detJ((a0 + a1) / 2, (b0 + b1) / 2);
+      poly(p, [map(a0, b0), map(a1, b0), map(a1, b1), map(a0, b1)], null, d > 0 ? 'rgba(238,255,65,0.10)' : 'rgba(255,90,54,0.45)'); }
+    s.forEach((t) => { const A = linspace(-1, 1, 30).map((q) => map(t, q)), B = linspace(-1, 1, 30).map((q) => map(q, t)); p.line(A.map((q) => q[0]), A.map((q) => q[1]), C.grey, 1).line(B.map((q) => q[0]), B.map((q) => q[1]), C.grey, 1); });
+    linspace(-1, 1, 41).forEach((a) => linspace(-1, 1, 41).forEach((b) => { mn = Math.min(mn, detJ(a, b)); }));
+    poly(p, X, C.lime, null, 2.5);
+    p.dots(X.map((q) => q[0]), X.map((q) => q[1]), C.cyan, 5); p.text('3', v.x + 0.15, v.y + 0.15, C.cyan);
+    const g = 1 / Math.sqrt(3); let A = 0; [-g, g].forEach((a) => [-g, g].forEach((b) => { A += detJ(a, b); }));
+    let sh = 0; X.forEach((q, i) => { const r = X[(i + 1) % 4]; sh += q[0] * r[1] - r[0] * q[1]; }); sh /= 2;
+    out(`Area: 2×2 Gauss ${nf(4).format(A)}, shoelace ${nf(4).format(sh)}. Smallest det J ${nf(3).format(mn)}. ${mn > 0 ? 'Valid element: every point maps one to one.' : 'Warning: det J < 0 in the red region. The element folds over itself and its stiffness is meaningless.'}`);
+  },
+});
+
+// 16.08 quarter plate with a hole in tension: Q4 or CST, coloured by sigma_x
+def('platehole', {
+  controls: [{ type: 'select', k: 'el', label: 'Element', options: ['Q4', 'CST'], v: 'Q4' }, { k: 'n', label: 'Mesh rings (spokes = 2 × rings)', min: 2, max: 10, step: 1, v: 6, f: 0 }, { type: 'select', k: 'view', label: 'View', options: ['Near the hole', 'Whole quarter plate'], v: 'Near the hole' }],
+  draw(p, v, out) {
+    const n = v.n, a = 1, w = 10, m = 2 * n + 1, E = 210e3, nu = 0.3, c0 = E / (1 - nu * nu), D = [[c0, c0 * nu, 0], [c0 * nu, c0, 0], [0, 0, c0 * (1 - nu) / 2]];
+    const nodes = []; for (let i = 0; i <= n; i++) { const r = (i / n) ** 1.8; for (let k = 0; k < m; k++) { const t = Math.PI / 2 * k / (m - 1), o = t <= Math.PI / 4 ? [w, w * Math.tan(t)] : [k === m - 1 ? 0 : w / Math.tan(t), w], q = [a * Math.cos(t), a * Math.sin(t)]; nodes.push([q[0] + r * (o[0] - q[0]), q[1] + r * (o[1] - q[1])]); } }
+    const quads = []; for (let i = 0; i < n; i++) for (let k = 0; k < m - 1; k++) quads.push([i * m + k, (i + 1) * m + k, (i + 1) * m + k + 1, i * m + k + 1]);
+    const els = v.el === 'Q4' ? quads : quads.flatMap((q) => [[q[0], q[1], q[2]], [q[0], q[2], q[3]]]);
+    const nd = nodes.length, K = zeros16(2 * nd, 2 * nd), F = new Array(2 * nd).fill(0), g = 1 / Math.sqrt(3), GPs = [[-g, -g], [g, -g], [g, g], [-g, g]];
+    const Bq = (X, xi, eta) => { const dN = [[-(1 - eta), 1 - eta, 1 + eta, -(1 + eta)].map((q) => q / 4), [-(1 - xi), -(1 + xi), 1 + xi, 1 - xi].map((q) => q / 4)];
+      const J = [0, 1].map((r) => [0, 1].map((c) => dN[r].reduce((s, q, i) => s + q * X[i][c], 0))), dJ = J[0][0] * J[1][1] - J[0][1] * J[1][0];
+      const dx = dN[0].map((_, i) => (J[1][1] * dN[0][i] - J[0][1] * dN[1][i]) / dJ), dy = dN[0].map((_, i) => (-J[1][0] * dN[0][i] + J[0][0] * dN[1][i]) / dJ);
+      return [[0, 1, 2].map((r) => dx.flatMap((_, i) => (r === 0 ? [dx[i], 0] : r === 1 ? [0, dy[i]] : [dy[i], dx[i]]))), dJ]; };
+    const Bt = (X) => { const [[x1, y1], [x2, y2], [x3, y3]] = X, A2 = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1), b = [y2 - y3, y3 - y1, y1 - y2].map((q) => q / A2), c = [x3 - x2, x1 - x3, x2 - x1].map((q) => q / A2);
+      return [[0, 1, 2].map((r) => b.flatMap((_, i) => (r === 0 ? [b[i], 0] : r === 1 ? [0, c[i]] : [c[i], b[i]]))), A2 / 2]; };
+    const addK = (e, B, wt) => { const DB = D.map((row) => B[0].map((_, j) => row.reduce((s, d, k) => s + d * B[k][j], 0))), dof = e.flatMap((i) => [2 * i, 2 * i + 1]);
+      dof.forEach((r, ii) => dof.forEach((c, jj) => { let s = 0; for (let k = 0; k < 3; k++) s += B[k][ii] * DB[k][jj]; K[r][c] += s * wt; })); };
+    els.forEach((e) => { const X = e.map((i) => nodes[i]); if (e.length === 4) GPs.forEach(([xi, eta]) => { const [B, dJ] = Bq(X, xi, eta); addK(e, B, dJ); }); else { const [B, A] = Bt(X); addK(e, B, A); } });
+    const edge = []; for (let i = 0; i < nd; i++) if (Math.abs(nodes[i][0] - w) < 1e-9) edge.push(i); edge.sort((i, j) => nodes[i][1] - nodes[j][1]);
+    for (let k = 0; k + 1 < edge.length; k++) { const h = nodes[edge[k + 1]][1] - nodes[edge[k]][1]; F[2 * edge[k]] += h / 2; F[2 * edge[k + 1]] += h / 2; }
+    const fixed = []; nodes.forEach(([x, y], i) => { if (Math.abs(y) < 1e-9) fixed.push(2 * i + 1); if (Math.abs(x) < 1e-9) fixed.push(2 * i); });
+    const u = femSolve16(K, F, fixed);
+    const sx = (e, xi, eta) => { const X = e.map((i) => nodes[i]), ue = e.flatMap((i) => [u[2 * i], u[2 * i + 1]]), B = e.length === 4 ? Bq(X, xi, eta)[0] : Bt(X)[0]; const eps = B.map((row) => row.reduce((s, b, j) => s + b * ue[j], 0)); return D[0][0] * eps[0] + D[0][1] * eps[1]; };
+    const top = m - 1, pk = []; els.forEach((e) => { if (!e.includes(top)) return; if (e.length === 3) { pk.push(sx(e)); return; }
+      const loc = e.indexOf(top), [cx, cy] = [[-1, -1], [1, -1], [1, 1], [-1, 1]][loc], sg = GPs.map(([xi, eta]) => sx(e, xi, eta));
+      pk.push(sg.reduce((s, q, k) => s + q * 0.25 * (1 + cx * Math.sqrt(3) * Math.sign(GPs[k][0])) * (1 + cy * Math.sqrt(3) * Math.sign(GPs[k][1])), 0)); });
+    const kt = pk.reduce((s, q) => s + q, 0) / pk.length;
+    const zoom = v.view === 'Near the hole', lim = zoom ? 3.2 : 10.01;
+    if (zoom) fitAt(p, 1.6, 1.6, 1.75, 1.75, 'x / hole radius', 'y / hole radius'); else fitAt(p, 5, 5, 5.3, 5.3, 'x / hole radius', 'y / hole radius');
+    els.forEach((e) => { if (e.some((i) => nodes[i][0] > lim || nodes[i][1] > lim)) return; const s = e.length === 4 ? sx(e, 0, 0) : sx(e); poly(p, e.map((i) => nodes[i]), 'rgba(0,0,0,0.5)', heat16(s / 3.1), 0.8); });
+    out(`${v.el}, ${els.length} elements. Hoop stress at the top of the hole: ${nf(3).format(kt)} × the applied stress. Kirsch (infinite plate) gives 3; this 20 × 20 plate converges to about 3.09. Colours: σx from 0 (cyan) to 3.1 (red).`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
