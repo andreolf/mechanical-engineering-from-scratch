@@ -6075,6 +6075,59 @@ def('coconutvideo', {
     out(`This coconut ${Number.isFinite(tr) ? `leaves the 4 m box after ${nf(1).format(tr)} s` : 'is still trapped after 240 s'}. Of 30 released within 3 cm of it, ${fin.length} escape within 240 s; median residence ${Number.isFinite(med) ? nf(0).format(med) + ' s' : 'over 240 s'}. ${v.eps === 0 ? 'Steady wake: the closed streamlines trap it for ever.' : ''}`);
   },
 });
+
+// 19.03 subak network: dry-season standing water on 12 terraces, proportional split or rotation
+def('subaknet', {
+  controls: [{ k: 'Q', label: 'Intake flow, L/s', min: 0.6, max: 3, step: 0.05, v: 1.5, f: 2 }, { type: 'select', k: 'mode', label: 'Sharing', options: ['proportional', 'rotation'], v: 'proportional' }, { k: 'rot', label: 'Rotation turn, days', min: 1, max: 15, step: 1, v: 5, f: 0 }],
+  draw(p, v, out) {
+    const A = [[2400, 2200, 2000, 1800], [1800, 1700, 1600, 1500], [1200, 1100, 1000, 900]], land = A.map((r) => r.reduce((s, x) => s + x, 0)), tot = land.reduce((s, x) => s + x, 0);
+    const hc = 0.05, Lo = 0.3, loss = 8e-3 / 86400, dt = 3600, wq = (H) => (H > 0 ? (2 / 3) * 0.62 * Lo * Math.sqrt(2 * 9.81) * H ** 1.5 : 0);
+    const h = A.map((r) => r.map(() => 0.06)), wet = A.map((r) => r.map(() => 0)), N = 185 * 24, Q = v.Q / 1000;
+    for (let k = 0; k < N; k++) {
+      const turn = Math.floor(k / 24 / v.rot) % 3;
+      for (let i = 0; i < 3; i++) {
+        let qin = v.mode === 'rotation' ? (i === turn ? Q : 0) : (Q * land[i]) / tot;
+        for (let j = 0; j < 4; j++) { const a = A[i][j], qo = Math.min(wq(h[i][j] - hc), (Math.max(0, h[i][j] - hc) * a) / dt), lv = Math.min(loss * a * dt, h[i][j] * a);
+          h[i][j] += (qin * dt - qo * dt - lv) / a; qin = qo; if (h[i][j] > 0.01) wet[i][j]++; }
+      }
+    }
+    const f = wet.map((r) => r.map((x) => x / N)), all = f.flat(), mean = all.reduce((s, x) => s + x, 0) / 12;
+    p.frame({ x: [0, 15], y: [0, 1.05], xlabel: 'branch 1, 2, 3 (top terrace first)', ylabel: 'fraction of dry season wet' });
+    f.forEach((r, i) => r.forEach((x, j) => { const x0 = i * 5 + j + 0.6; p.rect(x0, x0 + 0.8, 0, x, x > 0.9 ? 'rgba(238,255,65,0.8)' : x > 0.5 ? 'rgba(255,180,60,0.8)' : 'rgba(255,90,54,0.85)'); }));
+    p.line([0, 15], [mean, mean], C.grey, 1, [4, 3]);
+    out(`Demand 1.78 L/s, supply ${v.Q.toFixed(2)} L/s (${Math.round((v.Q / 1.7778) * 100)} %). Mean wetted fraction ${mean.toFixed(2)} (dashed), worst terrace ${Math.min(...all).toFixed(2)}, branch 3 tail ${f[2][3].toFixed(2)}.`);
+  },
+});
+
+// 19.04 bamboo Pratt truss: direct stiffness, member forces, governing check
+def('bambootruss', {
+  controls: [{ k: 'q', label: 'Crowd load, kPa', min: 1, max: 8, step: 0.1, v: 4, f: 1 }, { k: 'D', label: 'Culm outside diameter, mm (wall D/10)', min: 50, max: 120, step: 1, v: 80, f: 0 }, { k: 'H', label: 'Truss depth, m', min: 0.5, max: 1.5, step: 0.05, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const n = 6, L = 6, E = 15e6, Do = v.D / 1000, t = Do / 10, A = (Math.PI / 4) * (Do ** 2 - (Do - 2 * t) ** 2), I = (Math.PI / 64) * (Do ** 4 - (Do - 2 * t) ** 4);
+    const xy = []; for (let i = 0; i <= n; i++) xy.push([i, 0]); for (let i = 1; i < n; i++) xy.push([i, v.H]);
+    const B = (i) => i, T = (i) => n + i, el = [];
+    for (let i = 0; i < n; i++) el.push([B(i), B(i + 1), 'chord']); for (let i = 1; i < n - 1; i++) el.push([T(i), T(i + 1), 'chord']);
+    for (let i = 1; i < n; i++) el.push([B(i), T(i), 'web']); el.push([B(0), T(1), 'end'], [B(n), T(n - 1), 'end']);
+    for (let i = 1; i < n / 2; i++) el.push([T(i), B(i + 1), 'web']); for (let i = n / 2 + 1; i < n; i++) el.push([T(i), B(i - 1), 'web']);
+    const nn = xy.length, w = ((1.5 * v.q + 1.35 * 0.6) * 1.2) / 2, F = new Array(2 * nn).fill(0);
+    for (let i = 0; i <= n; i++) F[2 * i + 1] = -w * (i === 0 || i === n ? 0.5 : 1);
+    const K = Array.from({ length: 2 * nn }, () => new Array(2 * nn).fill(0)), geo = el.map(([a, b]) => { const dx = xy[b][0] - xy[a][0], dy = xy[b][1] - xy[a][1], Le = Math.hypot(dx, dy); return [Le, dx / Le, dy / Le, [2 * a, 2 * a + 1, 2 * b, 2 * b + 1]]; });
+    geo.forEach(([Le, c, s, idx]) => { const g = [-c, -s, c, s]; for (let r = 0; r < 4; r++) for (let q = 0; q < 4; q++) K[idx[r]][idx[q]] += ((E * A) / Le) * g[r] * g[q]; });
+    const fixed = new Set([0, 1, 2 * n + 1]), free = [...Array(2 * nn).keys()].filter((i) => !fixed.has(i));
+    const x = linSolve(free.map((r) => free.map((q) => K[r][q] / 1e4)), free.map((r) => F[r] / 1e4)); if (!x) return out('Solver failed.');
+    const u = new Array(2 * nn).fill(0); free.forEach((r, i) => (u[r] = x[i]));
+    const N = geo.map(([Le, c, s, idx]) => ((E * A) / Le) * (-c * u[idx[0]] - s * u[idx[1]] + c * u[idx[2]] + s * u[idx[3]]));
+    let worst = 0, what = '';
+    N.forEach((f, k) => { const Le = geo[k][0], ax = f < 0 ? -f / A / 20e3 : f / A / 40e3, bk = f < 0 ? -f / (((Math.PI ** 2 * E * I) / Le ** 2) / 2) : 0; if (ax > worst) { worst = ax; what = `${el[k][2]} axial`; } if (bk > worst) { worst = bk; what = `${el[k][2]} buckling`; } });
+    const bolts = Math.max(...N.map((f, k) => (el[k][2] === 'chord' ? 0 : Math.max(1, Math.ceil(Math.abs(f) / 4))))), dmid = -u[2 * 3 + 1] * (v.q / (1.5 * v.q + 1.35 * 0.6)) * 1000;
+    const Nmax = Math.max(...N.map(Math.abs));
+    p.frame({ x: [-0.4, 6.4], y: [-1.2, 2.2], xlabel: 'm', ylabel: '', noy: true });
+    el.forEach(([a, b], k) => p.line([xy[a][0], xy[b][0]], [xy[a][1], xy[b][1]], N[k] >= 0 ? C.lime : C.red, 1 + (7 * Math.abs(N[k])) / Nmax));
+    p.dots(xy.map((q) => q[0]), xy.map((q) => q[1]), C.paper, 3);
+    p.text('pin', 0, -0.35, C.grey, 'center').text('roller', 6, -0.35, C.grey, 'center');
+    out(`Line load ${w.toFixed(2)} kN/m per truss. Worst member utilisation ${worst.toFixed(2)} (${what}), web joints need up to ${bolts} bolts at 4 kN, crowd deflection ${dmid.toFixed(1)} mm vs 24 mm. ${worst > 1 || bolts > 5 || dmid > 24 ? 'Fails a check.' : 'All checks pass.'}`);
+  },
+});
 // @@P19 END
 
 export function mountWidgets(root) {
