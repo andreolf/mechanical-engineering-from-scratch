@@ -4663,6 +4663,44 @@ def('jointdiagram', {
   },
 });
 
+// 15.13 eccentrically loaded weld group
+def('weldgroup', {
+  controls: [{ k: 'h', label: 'Weld leg size h (mm)', min: 3, max: 12, step: 0.5, v: 6, f: 1 }, { k: 'e', label: 'Load eccentricity (mm)', min: 0, max: 250, step: 5, v: 150, f: 0 }, { k: 'd', label: 'Distance between the welds (mm)', min: 30, max: 150, step: 5, v: 80, f: 0 }],
+  draw(p, v, out) {
+    const b = 50, F = 10000, t = 0.707 * v.h, A = t * 2 * b, Ju = b * (3 * v.d * v.d + b * b) / 6, J = t * Ju, M = F * v.e;
+    const R = Math.max(70, v.d * 0.9, b / 2 + v.e + 20);
+    sqframe(p, R, 'x (mm)', 'y (mm)');
+    p.rect(-b / 2 - 8, b / 2 + v.e + 10, -v.d / 2 - 6, v.d / 2 + 6, 'rgba(154,157,147,0.18)');
+    let worst = 0, wp = [0, 0];
+    for (const y of [v.d / 2, -v.d / 2]) {
+      p.line([-b / 2, b / 2], [y, y], C.lime, 4);
+      for (const x of linspace(-b / 2, b / 2, 6)) {
+        const tx = M * y / J, ty = -F / A - M * x / J, tau = Math.hypot(tx, ty), s = 0.25 * R / 110;
+        p.line([x, x + s * tx], [y, y + s * ty], C.cyan, 1.5);
+        if (tau > worst) { worst = tau; wp = [x, y]; }
+      }
+    }
+    p.dots([wp[0]], [wp[1]], C.red, 6).dots([0], [0], C.paper, 3);
+    p.line([b / 2 + v.e, b / 2 + v.e], [0.3 * R, 0], C.amber, 3).text('10 kN', b / 2 + v.e, 0.38 * R, C.amber, 'center');
+    out(`Two 50 mm fillet welds, throat ${nf(2).format(t)} mm. Direct shear ${nf(1).format(F / A)} MPa; moment ${nf(2).format(M / 1e6)} kN·m about the centroid (white). Worst point (red) ${nf(1).format(worst)} MPa against an allowable of 145 MPa${worst > 145 ? ': too small' : ''}. Cyan arrows show the throat shear vectors.`);
+  },
+});
+
+// 15.14 spring rate from wire, coil diameter and coil count
+def('springcoils', {
+  controls: [{ k: 'n', label: 'Active coils', min: 3, max: 20, step: 1, v: 8, f: 0 }, { k: 'd', label: 'Wire diameter (mm)', min: 2, max: 8, step: 0.1, v: 5, f: 1 }, { k: 'D', label: 'Mean coil diameter (mm)', min: 15, max: 70, step: 1, v: 40, f: 0 }],
+  draw(p, v, out) {
+    const G = 79300, k = G * v.d ** 4 / (8 * v.D ** 3 * v.n), Cc = v.D / v.d, Kw = (4 * Cc - 1) / (4 * Cc - 4) + 0.615 / Cc;
+    const Sut = 1855 / v.d ** 0.187, Ssy = 0.5 * Sut, Fy = Ssy * Math.PI * v.d ** 3 / (Kw * 8 * v.D);
+    const xmax = 120, Fmax = 2000;
+    p.frame({ x: [0, xmax], y: [0, Fmax], xlabel: 'deflection (mm)', ylabel: 'force (N)' });
+    const xe = Math.min(xmax, Fy / k, Fmax / k);
+    p.line([0, xe], [0, k * xe], C.lime, 3);
+    if (Fy / k <= xmax && Fy <= Fmax) p.dots([Fy / k], [Fy], C.red, 6);
+    out(`k = G d⁴/(8 D³ n) = ${nf(3).format(k)} N/mm. Spring index C = ${nf(1).format(Cc)}${Cc < 4 || Cc > 12 ? ' (outside the practical 4 to 12)' : ''}, Wahl factor ${nf(3).format(Kw)}. Torsional yield (red) at ${nf(0).format(Fy)} N and ${nf(1).format(Fy / k)} mm, for oil-tempered wire with S_sy = ${nf(0).format(Ssy)} MPa.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
