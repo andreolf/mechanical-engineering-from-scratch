@@ -4701,6 +4701,41 @@ def('springcoils', {
   },
 });
 
+// 15.15 disc brake torque, uniform wear against uniform pressure
+def('discbrake', {
+  controls: [{ k: 'L', label: 'Lever force (N)', min: 10, max: 200, step: 5, v: 100, f: 0 }, { k: 'ri', label: 'Pad inner radius (mm)', min: 20, max: 76, step: 1, v: 62, f: 0 }, { k: 'mu', label: 'Pad friction coefficient', min: 0.2, max: 0.6, step: 0.01, v: 0.4, f: 2 }],
+  draw(p, v, out) {
+    const ro = 78, F = v.L * 4 / (Math.PI * 25) * 2 * Math.PI * 121; // N per side
+    const Tw = (ri) => 2 * v.mu * F * (ro + ri) / 2 / 1000, Tp = (ri) => 2 * 2 / 3 * v.mu * F * (ro ** 3 - ri ** 3) / (ro ** 2 - ri ** 2) / 1000;
+    const rs = linspace(20, 76, 57), top = Math.max(...rs.map(Tp)) * 1.15;
+    p.frame({ x: [20, 78], y: [0, top], xlabel: 'pad inner radius (mm), outer radius fixed at 78 mm', ylabel: 'brake torque (N·m)' });
+    p.line(rs, rs.map(Tp), C.cyan, 2.5).line(rs, rs.map(Tw), C.lime, 2.5);
+    p.dots([v.ri, v.ri], [Tw(v.ri), Tp(v.ri)], C.red, 5);
+    const T = Tw(v.ri), Fx = T / 0.35;
+    out(`Clamp force ${nf(0).format(F)} N per side. Torque: uniform wear ${nf(1).format(T)} N·m, uniform pressure ${nf(1).format(Tp(v.ri))} N·m (${nf(1).format(100 * (Tp(v.ri) / T - 1))}% more). At a 0.35 m tyre: ${nf(0).format(Fx)} N, ${nf(2).format(Fx / 90)} m/s² for 90 kg${Fx / 90 > 7 ? ', enough to lift the rear wheel' : ''}.`);
+  },
+});
+
+// 15.16 three-position Freudenstein synthesis
+def('linkdesign', {
+  controls: [{ k: 'p1', label: 'Rocker angle at crank 40° (°)', min: 50, max: 110, step: 1, v: 70, f: 0 }, { k: 'p2', label: 'Rocker angle at crank 70° (°)', min: 55, max: 130, step: 1, v: 80, f: 0 }, { k: 'p3', label: 'Rocker angle at crank 100° (°)', min: 60, max: 150, step: 1, v: 95, f: 0 }],
+  draw(p, v, out) {
+    const r = Math.PI / 180, ph = [40, 70, 100].map((x) => x * r), ps = [v.p1, v.p2, v.p3].map((x) => x * r), d = 100;
+    const M = ph.map((f, j) => [Math.cos(ps[j]), -Math.cos(f), 1]), rhs = ph.map((f, j) => Math.cos(f - ps[j]));
+    const det3 = (m) => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const D = det3(M), K = [0, 1, 2].map((i) => det3(M.map((row, j) => row.map((x, k) => (k === i ? rhs[j] : x)))) / D);
+    const a = d / K[0], c = d / K[1], b2 = a * a + c * c + d * d - 2 * a * c * K[2];
+    sqframe(p, 160, 'x (mm)', 'y (mm)');
+    if (!isFinite(a) || !isFinite(c) || b2 <= 0 || a <= 0 || c <= 0) { out(`No usable four-bar for these targets (a = ${nf(1).format(a)}, c = ${nf(1).format(c)}, b² = ${nf(0).format(b2)}). Try a smoother progression of rocker angles.`); return; }
+    const b = Math.sqrt(b2), A = [a * Math.cos(ph[1]), a * Math.sin(ph[1])], B = [d + c * Math.cos(ps[1]), c * Math.sin(ps[1])];
+    p.line([0, d], [0, 0], C.grey, 3).line([0, A[0]], [0, A[1]], C.lime, 4).line([A[0], B[0]], [A[1], B[1]], C.paper, 3).line([d, B[0]], [0, B[1]], C.cyan, 4);
+    for (let j = 0; j < 3; j++) p.line([d, d + c * Math.cos(ps[j])], [0, c * Math.sin(ps[j])], C.cyan, 1, [4, 3]);
+    p.dots([0, d, A[0], B[0]], [0, 0, A[1], B[1]], C.red, 4);
+    const L = [a, b, c, d].slice().sort((x, y) => x - y), gr = L[0] + L[3] <= L[1] + L[2];
+    out(`Crank a = ${nf(1).format(a)} mm (lime), coupler b = ${nf(1).format(b)} mm, rocker c = ${nf(1).format(c)} mm (cyan), ground 100 mm. ${gr ? (Math.min(a, b, c, d) === a ? 'Grashof crank-rocker: the crank can turn fully.' : 'Grashof, but the crank is not the shortest link.') : 'Not Grashof: no link turns fully.'} Dashed: the three target rocker positions.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
