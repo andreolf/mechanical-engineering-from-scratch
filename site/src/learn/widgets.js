@@ -5702,6 +5702,47 @@ def('qviewer', {
   },
 });
 
+// @@P18 START
+// 18.01 weir discharge: linearised normal vs Monte Carlo histogram
+def('uncprop', {
+  controls: [{ k: 'h', label: 'Measured head h, mm', min: 20, max: 150, step: 5, v: 40, f: 0 }, { k: 'uh', label: 'Head uncertainty u(h), mm', min: 1, max: 15, step: 0.5, v: 8, f: 1 }],
+  draw(p, v, out) {
+    const K = (2 / 3) * 0.62 * 0.5 * Math.sqrt(2 * 9.81), Qf = (h) => K * Math.max(h, 0) ** 1.5 * 1000, h = v.h / 1000, uh = v.uh / 1000;
+    const Q0 = Qf(h), c = 1.5 * Q0 / h, ul = Math.hypot(c * uh, Q0 * 0.02 / 0.62, Q0 * 0.0029 / 0.5);
+    const rn = gaussRng(11), M = 20000, s = [];
+    for (let i = 0; i < M; i++) s.push(Qf(h + uh * rn()) * (1 + (0.02 / 0.62) * rn()) * (1 + (0.005 / 0.5) * (2 * ((i * 0.618034) % 1) - 1)));
+    s.sort((a, b) => a - b);
+    const mean = s.reduce((a, b) => a + b, 0) / M, lo = s[Math.floor(0.025 * M)], hi = s[Math.floor(0.975 * M)];
+    const x0 = Math.max(0, Q0 - 4 * ul), x1 = Q0 + 4.5 * ul, nb = 50, hg = new Array(nb).fill(0);
+    for (const q of s) { const k = Math.floor(((q - x0) / (x1 - x0)) * nb); if (k >= 0 && k < nb) hg[k]++; }
+    const dens = hg.map((n) => n / M / ((x1 - x0) / nb)), pk = Math.max(...dens, 1 / (ul * Math.sqrt(2 * Math.PI)));
+    p.frame({ x: [x0, x1], y: [0, pk * 1.15], xlabel: 'Q, L/s', ylabel: 'probability density' });
+    dens.forEach((d, i) => p.rect(x0 + ((x1 - x0) * i) / nb, x0 + ((x1 - x0) * (i + 0.9)) / nb, 0, d, 'rgba(238,255,65,0.55)'));
+    const xs = linspace(x0, x1, 200); p.line(xs, xs.map((x) => Math.exp(-0.5 * ((x - Q0) / ul) ** 2) / (ul * Math.sqrt(2 * Math.PI))), C.paper, 2);
+    p.line([lo, lo], [0, pk], C.lime, 1, [4, 3]).line([hi, hi], [0, pk], C.lime, 1, [4, 3]);
+    out(`Linearised: ${nf(2).format(Q0)} ± ${nf(2).format(2 * ul)} L/s, interval ${nf(2).format(Q0 - 2 * ul)} to ${nf(2).format(Q0 + 2 * ul)}. Monte Carlo: mean ${nf(2).format(mean)}, 95 % interval ${nf(2).format(lo)} to ${nf(2).format(hi)} (dashed). Above/below ratio ${nf(2).format((hi - Q0) / (Q0 - lo))}.`);
+  },
+});
+
+// 18.02 Wheatstone bridge configurations
+def('bridge', {
+  controls: [{ type: 'select', k: 'kind', label: 'Configuration', options: ['Quarter bridge', 'Quarter bridge + dummy gauge', 'Half bridge (bending)', 'Full bridge'], v: 'Quarter bridge' }, { k: 'eps', label: 'Strain, microstrain', min: 0, max: 20000, step: 250, v: 1000, f: 0 }, { k: 'dT', label: 'Temperature rise, K', min: 0, max: 40, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const V = 5, GF = 2.1, app = v.dT * 1.5e-6, kind = v.kind;
+    const vout = (e) => { const d = (s) => 1 + GF * (s + app); let r;
+      if (kind === 'Quarter bridge') r = [d(e), 1, 1, 1]; else if (kind === 'Quarter bridge + dummy gauge') r = [d(e), d(0), 1, 1]; else if (kind === 'Half bridge (bending)') r = [d(e), d(-e), 1, 1]; else r = [d(e), d(-e), d(e), d(-e)];
+      return 1000 * V * (r[0] / (r[0] + r[1]) - r[3] / (r[2] + r[3])); };
+    const mult = kind === 'Full bridge' ? 1 : kind === 'Half bridge (bending)' ? 0.5 : 0.25;
+    const xs = linspace(0, 20, 120), ex = xs.map((e) => vout(e * 1e-3)), li = xs.map((e) => 1000 * V * GF * e * 1e-3 * mult);
+    p.frame({ x: [0, 20], y: [Math.min(0, ...ex), Math.max(...li, ...ex) * 1.05], xlabel: 'strain, 1000 µε', ylabel: 'V_out, mV' });
+    p.line(xs, li, C.grey, 1.5, [5, 4]).line(xs, ex, C.lime, 2.5);
+    const e = v.eps * 1e-6, y = vout(e), yl = 1000 * V * GF * e * mult, zero = vout(0);
+    p.dots([v.eps / 1000], [y], C.amber, 5);
+    out(`V_out = ${nf(4).format(y)} mV (linear formula ${nf(4).format(yl)} mV, ${y ? nf(3).format((yl / y - 1) * 100) : '0.000'} % apart). Zero drift from the temperature rise: ${nf(2).format(zero * 1000)} µV = ${nf(1).format(zero / (1000 * V * GF * mult) * 1e6)} µε of fake strain.`);
+  },
+});
+// @@P18 END
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
