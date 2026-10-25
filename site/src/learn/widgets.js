@@ -5383,6 +5383,74 @@ def('subakflow', {
   },
 });
 
+// 17.07 lid-driven cavity, streamfunction-vorticity, run live on a coarse grid
+const ghiaY17 = [0.0547, 0.0625, 0.0703, 0.1016, 0.1719, 0.2813, 0.4531, 0.5, 0.6172, 0.7344, 0.8516, 0.9531, 0.9609, 0.9688, 0.9766];
+const ghiaU17 = [-0.03717, -0.04192, -0.04775, -0.06434, -0.1015, -0.15662, -0.2109, -0.20581, -0.13641, 0.00332, 0.23151, 0.68717, 0.73722, 0.78871, 0.84123];
+def('cavitysf', {
+  controls: [{ k: 'Re', label: 'Reynolds number', min: 10, max: 200, step: 10, v: 100, f: 0 }, { k: 'N', label: 'Cells per side', min: 16, max: 32, step: 4, v: 32, f: 0 }, { type: 'select', k: 'view', label: 'View', options: ['Streamfunction', 'Centreline u against Ghia'], v: 'Streamfunction' }],
+  draw(p, v, out) {
+    const N = v.N, Re = v.Re, h = 1 / N, m = N - 1, dt = Math.min(0.2 * h * h * Re, 0.5 * h);
+    const S = Array.from({ length: m }, (_, i) => Array.from({ length: m }, (_, j) => Math.sin(Math.PI * (i + 1) * (j + 1) / N)));
+    const lam = Array.from({ length: m }, (_, k) => (2 * Math.cos(Math.PI * (k + 1) / N) - 2) / (h * h));
+    const mul = (A, B) => A.map((r) => B[0].map((_, j) => r.reduce((s, a, k) => s + a * B[k][j], 0)));
+    const psi = Array.from({ length: N + 1 }, () => new Float64Array(N + 1)), w = Array.from({ length: N + 1 }, () => new Float64Array(N + 1));
+    let t = 0, it = 0, res = 1;
+    while (t < 80 && it < 12000) {
+      for (let k = 0; k <= N; k++) { w[0][k] = -2 * psi[1][k] / (h * h); w[N][k] = -2 * psi[N - 1][k] / (h * h); w[k][0] = -2 * psi[k][1] / (h * h); w[k][N] = -2 * psi[k][N - 1] / (h * h) - 2 / h; }
+      const dw = []; res = 0;
+      for (let i = 1; i < N; i++) { const row = []; for (let j = 1; j < N; j++) { const u = (psi[i][j + 1] - psi[i][j - 1]) / (2 * h), vv = -(psi[i + 1][j] - psi[i - 1][j]) / (2 * h);
+        const d = -u * (w[i + 1][j] - w[i - 1][j]) / (2 * h) - vv * (w[i][j + 1] - w[i][j - 1]) / (2 * h) + (w[i + 1][j] + w[i - 1][j] + w[i][j + 1] + w[i][j - 1] - 4 * w[i][j]) / (h * h * Re); row.push(d); res = Math.max(res, Math.abs(d)); } dw.push(row); }
+      const f = []; for (let i = 1; i < N; i++) { const r = []; for (let j = 1; j < N; j++) { w[i][j] += dt * dw[i - 1][j - 1]; r.push(-w[i][j]); } f.push(r); }
+      const F = mul(mul(S, f), S); for (let a = 0; a < m; a++) for (let b = 0; b < m; b++) F[a][b] /= lam[a] + lam[b];
+      const P = mul(mul(S, F), S), sc = (2 / N) ** 2; for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) psi[i][j] = P[i - 1][j - 1] * sc;
+      t += dt; it++; if (res < 1e-4) break;
+    }
+    let mi = 1, mj = 1; for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) if (psi[i][j] < psi[mi][mj]) { mi = i; mj = j; }
+    const pmin = psi[mi][mj], di = 0.5 * (psi[mi - 1][mj] - psi[mi + 1][mj]) / (psi[mi - 1][mj] - 2 * pmin + psi[mi + 1][mj]), dj = 0.5 * (psi[mi][mj - 1] - psi[mi][mj + 1]) / (psi[mi][mj - 1] - 2 * pmin + psi[mi][mj + 1]);
+    const xc = (mi + di) * h, yc = (mj + dj) * h, ys = linspace(0, 1, N + 1), half = N / 2;
+    const uc = ys.map((_, j) => (j === 0 ? 0 : j === N ? 1 : (psi[half][j + 1] - psi[half][j - 1]) / (2 * h)));
+    if (v.view === 'Streamfunction') {
+      fitAt(p, 0.5, 0.5, 0.55, 0.55, 'x', 'y');
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const s = 0.25 * (psi[i][j] + psi[i + 1][j] + psi[i][j + 1] + psi[i + 1][j + 1]); p.rect(i * h, (i + 1) * h, j * h, (j + 1) * h, heat16(Math.sqrt(Math.max(0, s / pmin)))); }
+      p.line([0, 1], [1.02, 1.02], C.paper, 3); p.text('lid, u = 1 →', 0.5, 1.06, C.paper, 'center');
+      p.dots([xc], [yc], C.paper, 5); if (Re === 100) p.dots([0.6172], [0.7344], C.cyan, 3);
+    } else {
+      p.frame({ x: [-0.4, 1.05], y: [0, 1], xlabel: 'u on x = 0.5', ylabel: 'y' });
+      p.line(uc, ys, C.lime, 2.5);
+      if (Re === 100) p.dots(ghiaU17, ghiaY17, C.cyan, 4);
+    }
+    const dev = Re === 100 ? Math.max(...ghiaY17.map((y, k) => { const j = Math.min(N - 1, Math.floor(y / h)), f = y / h - j; return Math.abs(uc[j] * (1 - f) + uc[j + 1] * f - ghiaU17[k]); })) : NaN;
+    out(`Re ${Re}, ${N}×${N}: ${res < 1e-4 ? 'steady' : 'not yet steady'} after ${it} steps (t = ${nf(1).format(t)}). ψ_min ${nf(5).format(pmin)} at (${nf(3).format(xc)}, ${nf(3).format(yc)}).` + (Re === 100 ? ` Ghia (cyan): −0.10342 at (0.617, 0.734); max centreline deviation ${nf(3).format(dev)}.` : ' Ghia markers appear at Re 100.'));
+  },
+});
+
+// 17.08 one projection step on a MAC grid
+def('projectstep', {
+  controls: [{ k: 'a', label: 'Divergent part added to the field', min: 0, max: 2, step: 0.1, v: 1, f: 1 }, { type: 'select', k: 'st', label: 'Show', options: ['Before projection (u*)', 'After projection (u)'], v: 'Before projection (u*)' }],
+  draw(p, v, out) {
+    const N = 12, h = 1 / N;
+    // u* = swirl (divergence-free) + a * gradient of a bump; normal velocity zero on the walls
+    const sw = (x, y) => [Math.sin(Math.PI * x) ** 2 * Math.sin(2 * Math.PI * y), -Math.sin(2 * Math.PI * x) * Math.sin(Math.PI * y) ** 2];
+    const gr = (x, y) => [0.3 * Math.sin(Math.PI * x) * Math.cos(Math.PI * x) * Math.sin(Math.PI * y) ** 2 * 2 * Math.PI, 0.3 * Math.sin(Math.PI * y) * Math.cos(Math.PI * y) * Math.sin(Math.PI * x) ** 2 * 2 * Math.PI];
+    const U = Array.from({ length: N + 1 }, (_, i) => Array.from({ length: N }, (_, j) => (i === 0 || i === N ? 0 : sw(i * h, (j + 0.5) * h)[0] + v.a * gr(i * h, (j + 0.5) * h)[0])));
+    const V = Array.from({ length: N }, (_, i) => Array.from({ length: N + 1 }, (_, j) => (j === 0 || j === N ? 0 : sw((i + 0.5) * h, j * h)[1] + v.a * gr((i + 0.5) * h, j * h)[1])));
+    const divf = () => Array.from({ length: N }, (_, i) => Array.from({ length: N }, (_, j) => (U[i + 1][j] - U[i][j] + V[i][j + 1] - V[i][j]) / h));
+    const d0 = divf(), m0 = Math.max(...d0.flat().map(Math.abs));
+    // Neumann Poisson solve by the cosine basis: eigenvectors cos(pi k (i + 1/2)/N)
+    const cb = Array.from({ length: N }, (_, k) => Array.from({ length: N }, (_, i) => Math.cos(Math.PI * k * (i + 0.5) / N) * Math.sqrt((k === 0 ? 1 : 2) / N)));
+    const lam = Array.from({ length: N }, (_, k) => -4 / (h * h) * Math.sin(Math.PI * k / (2 * N)) ** 2);
+    const F = cb.map((ra) => cb.map((rb) => ra.reduce((s, ca, i) => s + ca * rb.reduce((s2, cbj, j) => s2 + cbj * d0[i][j], 0), 0)));
+    for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) F[a][b] = a + b === 0 ? 0 : F[a][b] / (lam[a] + lam[b]);
+    const P = Array.from({ length: N }, (_, i) => Array.from({ length: N }, (_, j) => { let s = 0; for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) s += cb[a][i] * cb[b][j] * F[a][b]; return s; }));
+    if (v.st.startsWith('After')) { for (let i = 1; i < N; i++) for (let j = 0; j < N; j++) U[i][j] -= (P[i][j] - P[i - 1][j]) / h; for (let i = 0; i < N; i++) for (let j = 1; j < N; j++) V[i][j] -= (P[i][j] - P[i][j - 1]) / h; }
+    const d1 = divf(), m1 = Math.max(...d1.flat().map(Math.abs));
+    fitAt(p, 0.5, 0.5, 0.55, 0.55, 'x', 'y');
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) p.rect(i * h, (i + 1) * h, j * h, (j + 1) * h, heat16(Math.min(1, Math.abs(d1[i][j]) / Math.max(m0, 1e-9))));
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) { const x = (i + 0.5) * h, y = (j + 0.5) * h, uu = 0.5 * (U[i][j] + U[i + 1][j]), vv = 0.5 * (V[i][j] + V[i][j + 1]), s = 0.045; arrow(p, x - s * uu, y - s * vv, x + s * uu, y + s * vv, C.paper); }
+    out(`Colour: |div u| per cell, scaled to the largest before projection (${nf(2).format(m0)}). Now max |div u| = ${m1 < 1e-9 ? m1.toExponential(1) : nf(3).format(m1)}. Projection removes the divergent part, leaving a field that is divergence-free to round-off.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
