@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Weighted total of a concept scoring 4, 2, 5 with weights 0.5, 0.3, 0.2. 1 decimal.",
+  "answer": 3.6,
+  "tol": 0.0005,
+  "py": "0.5*4+0.3*2+0.2*5",
+  "explain": "$\\sum \\hat w_j s_{ij}$."
+ },
+ {
+  "type": "num",
+  "q": "Reliability index z for μ_R = 400, σ_R = 30, μ_S = 250, σ_S = 40 (MPa).",
+  "answer": 3,
+  "tol": 0.0005,
+  "py": "150/math.hypot(30,40)",
+  "explain": "$(\\mu_R-\\mu_S)/\\sqrt{\\sigma_R^2+\\sigma_S^2}$."
+ },
+ {
+  "type": "num",
+  "q": "RSS tolerance (mm) of a stack of three parts with ±0.03, ±0.04 and ±0.12 mm. 2 decimals.",
+  "answer": 0.13,
+  "tol": 0.0005,
+  "py": "math.sqrt(0.03**2+0.04**2+0.12**2)",
+  "explain": "$\\sqrt{\\sum t_k^2}$."
+ },
+ {
+  "type": "num",
+  "q": "DE-Goodman shaft diameter (mm) for n = 2, K_f M_a = 200 N·m, no torque, S_e = 200 MPa. 2 decimals.",
+  "answer": 27.31,
+  "tol": 0.0005,
+  "py": "(16*2/math.pi*(2*200e3/200))**(1/3)",
+  "explain": "$d = [16n/\\pi \\cdot 2K_fM_a/S_e]^{1/3}$."
+ },
+ {
+  "type": "num",
+  "q": "Press-fit pressure (MPa), same steel, E = 200 GPa, R = 20 mm, r_o = 40 mm, radial interference 0.015 mm.",
+  "answer": 56.25,
+  "tol": 0.0005,
+  "py": "200000*0.015*(1600-400)/(2*20*1600)",
+  "explain": "$E\\delta(r_o^2-R^2)/(2Rr_o^2)$."
+ },
+ {
+  "type": "num",
+  "q": "L10 (million revolutions) of a ball bearing with C = 30 kN at P = 3 kN.",
+  "answer": 1000,
+  "tol": 0.0005,
+  "py": "(30/3)**3",
+  "explain": "$(C/P)^3$."
+ },
+ {
+  "type": "num",
+  "q": "Slider-bearing load coefficient W′h_out²/(μUL²) at K = 3. 4 decimals.",
+  "answer": 0.1479,
+  "tol": 0.0005,
+  "py": "6*(math.log(3)-1)/4",
+  "explain": "$6[\\ln K - 2(K-1)/(K+1)]/(K-1)^2$."
+ },
+ {
+  "type": "num",
+  "q": "Contact ratio of a 20 : 40 pair, module 3, 20°. 4 decimals.",
+  "answer": 1.6352,
+  "tol": 0.0005,
+  "py": "(math.sqrt(33**2-(30*math.cos(math.radians(20)))**2)+math.sqrt(63**2-(60*math.cos(math.radians(20)))**2)-90*math.sin(math.radians(20)))/(math.pi*3*math.cos(math.radians(20)))",
+  "explain": "Length of action over the base pitch."
+ },
+ {
+  "type": "num",
+  "q": "Lewis bending stress (MPa) for W_t = 1500 N, F = 25 mm, m = 2.5, Y = 0.322, K_v = 1.5. 2 decimals.",
+  "answer": 111.8,
+  "tol": 0.0005,
+  "py": "1.5*1500/(25*2.5*0.322)",
+  "explain": "$K_vW_t/(FmY)$."
+ },
+ {
+  "type": "num",
+  "q": "Carrier speed (rpm) with z_s = 24, z_r = 72, sun 400 rpm and ring 100 rpm in the same direction.",
+  "answer": 175,
+  "tol": 0.0005,
+  "py": "(100+400/3)/(4/3)",
+  "explain": "$\\omega_c = (\\omega_r + k\\omega_s)/(1+k)$, $k = z_s/z_r$."
+ },
+ {
+  "type": "num",
+  "q": "Chordal speed fluctuation (%) of a 20-tooth sprocket. 4 decimals.",
+  "answer": 1.2312,
+  "tol": 0.0005,
+  "py": "100*(1-math.cos(math.pi/20))",
+  "explain": "$1-\\cos(\\pi/N)$."
+ },
+ {
+  "type": "num",
+  "q": "Bolt force (kN) with preload 20 kN, joint constant 0.25 and an external load of 8 kN.",
+  "answer": 22,
+  "tol": 0.0005,
+  "py": "20+0.25*8",
+  "explain": "$F_i + CP$."
+ },
+ {
+  "type": "num",
+  "q": "Rate (N/mm) of a spring with d = 6 mm, D = 48 mm, 6 active coils, G = 80 GPa. 3 decimals.",
+  "answer": 19.531,
+  "tol": 0.0005,
+  "py": "80000*6**4/(8*48**3*6)",
+  "explain": "$Gd^4/(8D^3n)$."
+ },
+ {
+  "type": "num",
+  "q": "Uniform-wear brake torque (N·m) with two faces, F = 2 kN per side, μ = 0.45, pads from 60 to 80 mm radius.",
+  "answer": 126,
+  "tol": 0.0005,
+  "py": "2*0.45*2000*0.070",
+  "explain": "$2\\mu F(r_o+r_i)/2$."
+ }
+]
