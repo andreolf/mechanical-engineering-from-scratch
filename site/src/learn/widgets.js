@@ -5815,6 +5815,42 @@ def('xsection', {
     out(`Exact Q = ${nf(4).format(Qx)} m³/s. Mid-section, meter at 0.6 depth (amber dots): ${nf(4).format(Q6)} (${nf(2).format((Q6 / Qx - 1) * 100)} %). Floats with k = ${nf(2).format(v.k)}: ${nf(4).format(Qf)} (${nf(2).format((Qf / Qx - 1) * 100)} %). For this profile the right k is ${nf(3).format(m / (m + 1))}.`);
   },
 });
+
+// 18.07 load-cell calibration: least-squares line and its residuals
+def('loadcal', {
+  controls: [{ k: 'nl', label: 'Non-linearity (bow), % FS', min: 0, max: 0.5, step: 0.01, v: 0.05, f: 2 }, { k: 'hy', label: 'Hysteresis, % FS', min: 0, max: 0.3, step: 0.01, v: 0.02, f: 2 }, { k: 'ns', label: 'Amplifier noise, µV rms', min: 0, max: 10, step: 0.2, v: 0.4, f: 1 }],
+  draw(p, v, out) {
+    const FS = 9.951, rn = gaussRng(7), ms = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0], up = ms.map((_, i) => i < 6);
+    const r = ms.map((m, i) => { const x = m / 5; return 0.012 + FS * (x - (v.nl / 100) * 4 * x * (1 - x)) + (up[i] ? -1 : 1) * (v.hy / 100) * FS * Math.sin(Math.PI * x) + (v.ns / 1000) * rn(); });
+    const n = ms.length, sx = ms.reduce((a, b) => a + b, 0), sy = r.reduce((a, b) => a + b, 0), sxx = ms.reduce((a, b) => a + b * b, 0), sxy = ms.reduce((a, b, i) => a + b * r[i], 0);
+    const sens = (n * sxy - sx * sy) / (n * sxx - sx * sx), zero = (sy - sens * sx) / n, res = r.map((y, i) => (y - zero - sens * ms[i]) * 1000);
+    const lim = Math.max(5, 1.3 * Math.max(...res.map(Math.abs)));
+    p.frame({ x: [-0.3, 5.3], y: [-lim, lim], xlabel: 'applied mass, kg', ylabel: 'residual from fit, µV' });
+    p.line([-0.3, 5.3], [0, 0], C.grey, 1, [3, 3]);
+    p.line(ms.slice(0, 6), res.slice(0, 6), C.lime, 1.5).line(ms.slice(5), res.slice(5), C.amber, 1.5);
+    p.dots(ms.slice(0, 6), res.slice(0, 6), C.lime, 4).dots(ms.slice(6), res.slice(6), C.amber, 4);
+    let hy = 0; for (let m = 1; m <= 4; m++) hy = Math.max(hy, Math.abs(r[ms.indexOf(m)] - r[ms.lastIndexOf(m)]));
+    const lin = Math.max(...res.map(Math.abs)) / 1000 / (sens * 5) * 100;
+    out(`Sensitivity ${nf(5).format(sens)} mV/kg (beam theory 1.99019), zero ${nf(2).format(zero * 1000)} µV. Linearity error ${nf(3).format(lin)} % FS, hysteresis ${nf(3).format((hy / (sens * 5)) * 100)} % FS. Loading in lime, unloading in amber.`);
+  },
+});
+
+// 18.08 first-order sensor: plunge test and the fitted time constant
+def('tcstep', {
+  controls: [{ k: 'tau', label: 'True time constant τ, s', min: 0.2, max: 5, step: 0.1, v: 1.5, f: 1 }, { k: 'noise', label: 'Noise, K rms', min: 0, max: 2, step: 0.05, v: 0.15, f: 2 }, { k: 'ramp', label: 'Then follow a ramp, K/min', min: 0, max: 60, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const fs = 20, T0 = 22, Ti = 80, t0 = 0.37, rn = gaussRng(4), ts = [], Ts = [], Tm = [], Ta = [];
+    let s = T0; const R = v.ramp / 60;
+    for (let i = 0; i < 12 * fs; i++) { const t = i / fs, air = t < t0 ? T0 : Ti + R * (t - t0); if (i) s += ((air - s) * (1 - Math.exp(-1 / fs / v.tau))); ts.push(t); Ta.push(air); Ts.push(s); Tm.push(s + v.noise * rn()); }
+    const post = Tm.slice(-20).reduce((a, b) => a + b, 0) / 20;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0;
+    ts.forEach((t, i) => { const y = (Ti - Tm[i]) / (Ti - T0); if (t > t0 && y > 0.1 && y < 0.95) { const ly = Math.log(y); sx += t; sy += ly; sxx += t * t; sxy += t * ly; n++; } });
+    const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), tf = -1 / slope;
+    p.frame({ x: [0, 12], y: [15, Math.max(...Ta, ...Tm) + 5], xlabel: 'time, s', ylabel: 'temperature, °C' });
+    p.line(ts, Ta, C.paper, 1.5, [4, 3]).dots(ts, Tm, 'rgba(238,255,65,0.6)', 1.6).line(ts, Ts, C.lime, 2);
+    out(`Log-linear fit of the rise: τ = ${n > 5 ? nf(3).format(tf) : 'n/a'} s (true ${nf(1).format(v.tau)} s, ${n > 5 ? nf(1).format((tf / v.tau - 1) * 100) : '?'} %). ${R > 0 ? `On the ramp the probe lags the water (dashed) by R·τ = ${nf(2).format(R * v.tau)} K.` : 'Add a ramp to see the steady lag R·τ.'}`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
