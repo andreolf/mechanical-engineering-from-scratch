@@ -4852,6 +4852,59 @@ def('elemorder', {
   },
 });
 
+// 16.05 cantilever with Hermite beam elements against the exact curve
+def('beamhermite', {
+  controls: [{ type: 'select', k: 'load', label: 'Load', options: ['Tip load', 'Uniform load', 'Tip moment'], v: 'Uniform load' }, { k: 'ne', label: 'Number of elements', min: 1, max: 6, step: 1, v: 1, f: 0 }],
+  draw(p, v, out) {
+    const EI = 2e5, L = 3, ne = v.ne, h = L / ne, n = 2 * (ne + 1), K = zeros16(n, n), F = new Array(n).fill(0);
+    const P = -800, q = -500, M = -600;
+    const kb = [[12, 6 * h, -12, 6 * h], [6 * h, 4 * h * h, -6 * h, 2 * h * h], [-12, -6 * h, 12, -6 * h], [6 * h, 2 * h * h, -6 * h, 4 * h * h]];
+    const fe = v.load === 'Uniform load' ? [q * h / 2, q * h * h / 12, q * h / 2, -q * h * h / 12] : [0, 0, 0, 0];
+    for (let e = 0; e < ne; e++) for (let a = 0; a < 4; a++) { F[2 * e + a] += fe[a]; for (let b = 0; b < 4; b++) K[2 * e + a][2 * e + b] += EI / h ** 3 * kb[a][b]; }
+    if (v.load === 'Tip load') F[n - 2] += P; if (v.load === 'Tip moment') F[n - 1] += M;
+    const u = femSolve16(K, F, [0, 1]);
+    const ex = (x) => (v.load === 'Tip load' ? P * x * x * (3 * L - x) / (6 * EI) : v.load === 'Tip moment' ? M * x * x / (2 * EI) : q * x * x * (6 * L * L - 4 * L * x + x * x) / (24 * EI));
+    const xs = [], us = []; let emax = 0;
+    for (let e = 0; e < ne; e++) linspace(0, 1, 31).forEach((t) => { const N = [1 - 3 * t * t + 2 * t ** 3, h * (t - 2 * t * t + t ** 3), 3 * t * t - 2 * t ** 3, h * (-t * t + t ** 3)], x = (e + t) * h, w = N.reduce((s, c, a) => s + c * u[2 * e + a], 0); xs.push(x); us.push(1000 * w); emax = Math.max(emax, Math.abs(w - ex(x))); });
+    const tip = ex(L) * 1000, lo = Math.min(tip, 0) * 1.15 - 2;
+    p.frame({ x: [0, L], y: [lo, 3], xlabel: 'x (m)', ylabel: 'deflection (mm)' });
+    const xx = linspace(0, L, 200); p.line(xx, xx.map((x) => 1000 * ex(x)), C.grey, 1.5, [5, 4]).line(xs, us, C.lime, 2.5);
+    p.dots(linspace(0, L, ne + 1), u.filter((_, i) => i % 2 === 0).map((w) => 1000 * w), C.cyan, 4);
+    out(`${v.load}, ${ne} element${ne > 1 ? 's' : ''}. Tip ${nf(4).format(1000 * u[n - 2])} mm, exact ${nf(4).format(tip)} mm. Largest gap between nodes ${nf(4).format(1000 * emax)} mm${emax < 1e-9 ? ' (the exact curve is at most cubic: no error anywhere)' : ''}.`);
+  },
+});
+
+// 16.06 bike frame as a planar frame
+def('bikeframe', {
+  controls: [{ k: 'S', label: 'Saddle load (N)', min: 0, max: 1500, step: 50, v: 700, f: 0 }, { k: 'B', label: 'Pedal load at the bottom bracket (N)', min: 0, max: 1500, step: 50, v: 300, f: 0 }, { k: 'H', label: 'Handlebar load (N)', min: 0, max: 600, step: 25, v: 200, f: 0 }],
+  draw(p, v, out) {
+    const N = [[0, 0], [0.41, -0.07], [0.25, 0.48], [0.86, 0.5], [0.9, 0.36], [0.99, 0]];
+    const tb = (D, t) => { const d = D - 2 * t; return [Math.PI * (D * D - d * d) / 4, Math.PI * (D ** 4 - d ** 4) / 64]; };
+    const MA = tb(0.0286, 0.0009), ST = tb(0.016, 0.0008), FO = tb(0.025, 0.0015), E = 200e9;
+    const EL = [[0, 1, ST], [0, 2, ST], [1, 2, MA], [2, 3, MA], [1, 4, MA], [3, 4, MA], [4, 5, FO]];
+    const n = 18, K = zeros16(n, n), F = new Array(n).fill(0);
+    const loc = EL.map(([i, j, [A, I]]) => { const dx = N[j][0] - N[i][0], dy = N[j][1] - N[i][1], L = Math.hypot(dx, dy), c = dx / L, s = dy / L;
+      const a = E * A / L, b = 12 * E * I / L ** 3, d = 6 * E * I / L ** 2, e = E * I / L;
+      const kl = [[a, 0, 0, -a, 0, 0], [0, b, d, 0, -b, d], [0, d, 4 * e, 0, -d, 2 * e], [-a, 0, 0, a, 0, 0], [0, -b, -d, 0, b, -d], [0, d, 2 * e, 0, -d, 4 * e]];
+      const T = zeros16(6, 6); [0, 3].forEach((o) => { T[o][o] = c; T[o][o + 1] = s; T[o + 1][o] = -s; T[o + 1][o + 1] = c; T[o + 2][o + 2] = 1; });
+      const dof = [3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2];
+      for (let r = 0; r < 6; r++) for (let q = 0; q < 6; q++) { let sum = 0; for (let x = 0; x < 6; x++) for (let y = 0; y < 6; y++) sum += T[x][r] * kl[x][y] * T[y][q]; K[dof[r]][dof[q]] += sum; }
+      return { kl, T, dof }; });
+    F[7] -= v.S; F[4] -= v.B; F[10] -= v.H;
+    const u = femSolve16(K, F, [0, 1, 16]);
+    const R = K.map((row, i) => row.reduce((s, k, j) => s + k * u[j], 0) - F[i]);
+    const ax = loc.map(({ kl, T, dof }) => { const ul = T.map((row) => row.reduce((s, t, k) => s + t * u[dof[k]], 0)); return kl[3].reduce((s, k, m) => s + k * ul[m], 0); });
+    fitAt(p, 0.5, 0.22, 0.62, 0.42, 'x (m)', 'y (m)');
+    const umax = Math.max(1e-9, ...N.map((_, i) => Math.hypot(u[3 * i], u[3 * i + 1]))), sc = 0.06 / umax, fmax = Math.max(1, ...ax.map(Math.abs));
+    EL.forEach(([i, j], e) => { p.line([N[i][0], N[j][0]], [N[i][1], N[j][1]], C.grey, 1, [3, 3]); const f = ax[e], col = Math.abs(f) < 1e-6 ? C.grey : f > 0 ? C.lime : C.red;
+      p.line([N[i][0] + sc * u[3 * i], N[j][0] + sc * u[3 * j]], [N[i][1] + sc * u[3 * i + 1], N[j][1] + sc * u[3 * j + 1]], col, 1.5 + 4 * Math.abs(f) / fmax); });
+    [[2, v.S], [1, v.B], [3, v.H]].forEach(([k, f]) => { if (f > 0) arrow(p, N[k][0], N[k][1] + 0.08 + 0.12 * f / 1500, N[k][0], N[k][1] + 0.02, C.amber, 2.5); });
+    arrow(p, 0, -0.2, 0, -0.03, C.cyan, 2.5); arrow(p, 0.99, -0.2, 0.99, -0.03, C.cyan, 2.5);
+    const Rf = (v.S * 0.25 + v.B * 0.41 + v.H * 0.86) / 0.99;
+    out(`Reactions: rear ${nf(1).format(R[1])} N, front ${nf(1).format(R[16])} N (moments about the rear axle give ${nf(1).format(Rf)} N). Down tube ${nf(0).format(ax[4])} N, top tube ${nf(0).format(ax[3])} N (lime tension, red compression). Largest movement ${nf(3).format(1000 * umax)} mm (mostly the front axle rolling forward as the fork bends), drawn ×${nf(0).format(sc)}.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
