@@ -4621,6 +4621,48 @@ def('planetary', {
   },
 });
 
+// 15.11 polygonal effect of a chain sprocket
+def('chainpoly', {
+  controls: [{ k: 'N', label: 'Sprocket teeth', min: 6, max: 42, step: 1, v: 11, f: 0 }, { k: 'th', label: 'Sprocket rotation (°)', min: 0, max: 90, step: 0.5, v: 8, f: 1 }],
+  draw(p, v, out) {
+    const pitch = 12.7, N = v.N, R = pitch / (2 * Math.sin(Math.PI / N)), a = v.th * Math.PI / 180, per = 2 * Math.PI / N;
+    const W = 95;
+    p.frame({ x: [-W, W], y: [-W * 0.72, W * 0.72], xlabel: 'left: sprocket (mm), right: chain speed over three teeth', ylabel: '' });
+    const s = 60 / Math.max(R, 1) > 1 ? 1 : 60 / R, cx = -45, cy = -10;
+    const pins = Array.from({ length: N + 1 }, (_, k) => a + per * k);
+    p.line(pins.map((q) => cx + s * R * Math.sin(q)), pins.map((q) => cy + s * R * Math.cos(q)), C.paper, 2).dots(pins.slice(0, N).map((q) => cx + s * R * Math.sin(q)), pins.slice(0, N).map((q) => cy + s * R * Math.cos(q)), C.paper, 3);
+    const wr = (q) => ((q + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    let top = 0; pins.slice(0, N).forEach((q, k) => { if (Math.abs(wr(q)) < Math.abs(wr(pins[top]))) top = k; });
+    const tp = pins[top], tx = cx + s * R * Math.sin(tp), ty = cy + s * R * Math.cos(tp);
+    p.line([tx, tx - 40], [ty, ty], C.lime, 2.5).dots([tx], [ty], C.red, 5);
+    // speed trace on the right: v/(omega R) against rotation over three tooth periods
+    const xs = linspace(0, 3 * per, 300), X = (q) => 5 + 85 * q / (3 * per), Y = (c) => -50 + 100 * (c - 0.75) / 0.25;
+    p.line([5, 90], [Y(1), Y(1)], C.grey, 1, [3, 3]);
+    const ph0 = (q) => (((q + per / 2) % per) + per) % per - per / 2, vs = xs.map((q) => Math.cos(ph0(q)));
+    p.line(xs.map(X), vs.map(Y), C.lime, 2.5);
+    p.dots([X(((a % (3 * per)) + 3 * per) % (3 * per))], [Y(Math.cos(ph0(a)))], C.red, 5);
+    p.text('v = ωR', 88, Y(1) + 6, C.grey, 'right').text('0.75 ωR', 88, Y(0.75) + 6, C.grey, 'right');
+    out(`${N} teeth: pitch radius ${nf(2).format(R)} mm. The top pin (red) is ${nf(1).format(Math.abs(wr(tp)) * 180 / Math.PI)}° from the top, so the chain moves at ${nf(4).format(Math.cos(wr(tp)))} of ωR. Fluctuation per tooth 1 − cos(π/N) = ${nf(2).format(100 * (1 - Math.cos(Math.PI / N)))}%.`);
+  },
+});
+
+// 15.12 bolted joint diagram
+def('jointdiagram', {
+  controls: [{ k: 'Fi', label: 'Preload (kN)', min: 0, max: 31, step: 0.5, v: 26, f: 1 }, { k: 'P', label: 'External load (kN)', min: 0, max: 45, step: 0.5, v: 15, f: 1 }, { k: 'C', label: 'Joint constant C', min: 0.1, max: 0.6, step: 0.01, v: 0.19, f: 2 }],
+  draw(p, v, out) {
+    const kb = 455.8, km = kb * (1 - v.C) / v.C, db = v.Fi / kb, dm = v.Fi / km; // deformations in mm
+    const P0 = v.Fi / (1 - v.C), sep = v.P >= P0;
+    const Fb = sep ? v.P : v.Fi + v.C * v.P, Fm = sep ? 0 : v.Fi - (1 - v.C) * v.P, x = (Fb - v.Fi) / kb;
+    const xmax = Math.max(db + dm, db + 45 / kb) * 1.15;
+    p.frame({ x: [0, xmax * 1000], y: [0, 50], xlabel: 'deformation (μm)', ylabel: 'force (kN)' });
+    p.line([0, (50 / kb) * 1000], [0, 50], C.lime, 2.5);
+    p.line([db * 1000, (db + dm) * 1000], [v.Fi, 0], C.cyan, 2.5);
+    p.line([(db + x) * 1000, (db + x) * 1000], [Fm, Fb], C.red, 3).dots([(db + x) * 1000, (db + x) * 1000], [Fm, Fb], C.red, 4);
+    p.dots([db * 1000], [v.Fi], C.paper, 5);
+    out(`${sep ? 'Joint OPEN: the members carry nothing and the bolt takes all the load. ' : ''}Bolt ${nf(2).format(Fb)} kN, members ${nf(2).format(Fm)} kN. The red bar is the external load ${nf(1).format(v.P)} kN. Separation at F_i/(1 − C) = ${nf(2).format(P0)} kN. M10 8.8 proof load 34.8 kN.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
