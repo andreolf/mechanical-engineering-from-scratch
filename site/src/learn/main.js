@@ -57,7 +57,7 @@ route();
 function viewCourse() {
   setTitle('Course');
   app.innerHTML = `<div class="wrap page"><h1>All phases and lessons</h1>
-    <p class="lede">${curriculum.phaseCount} phases and ${curriculum.lessonCount} lessons. ${index.written.length} are full lessons with derivations, code, exercises and a quiz; the rest show their outline until they’re written.</p>
+    <p class="lede">${curriculum.phaseCount} phases and ${curriculum.lessonCount} lessons. ${index.written.length === curriculum.lessonCount ? 'Every one is a full lesson' : `${index.written.length} are full lessons`} with derivations, code, exercises and a quiz.</p>
     <div id="phase-map"></div></div>`;
   renderPhaseMap(app.querySelector('#phase-map'), curriculum, index, { linkBase: 'learn.html' });
   window.__mefs.curriculumReady = true;
@@ -105,8 +105,8 @@ async function viewLesson(id) {
         <section class="quiz-wrap" id="check-yourself" aria-label="Quiz"></section>
         <section class="complete" id="complete"></section>`
       : `<div class="coming">
-          <p class="coming-title">Full lesson coming soon</p>
-          <p>This lesson is written in order, phase by phase. Until it’s ready, here is the outline you can already work from in your own notebook.</p>
+          <p class="coming-title">Lesson outline</p>
+          <p>The full text of this lesson didn’t load. Here is its outline; reload the page to try again.</p>
           <dl class="outline">
             <dt>Derive by hand</dt><dd>${esc(meta.math)}</dd>
             <dt>Code from scratch</dt><dd>${esc(meta.code)}</dd>

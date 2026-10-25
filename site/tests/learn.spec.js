@@ -101,9 +101,11 @@ test.describe('Lessons, quizzes, progress and certificates', () => {
     await expect(page.locator('[data-stat=streak]')).toHaveText('1');
     await page.goto('./learn.html#/course');
     await expect(page.locator('[data-k=done]')).toHaveText('1');
-    // outline lessons say so plainly
-    await page.goto('./learn.html#/19.01');
-    await expect(page.locator('.coming-title')).toHaveText('Full lesson coming soon');
+    // every lesson is written: the last capstone renders in full, with no outline fallback
+    await page.goto('./learn.html#/19.10');
+    await expect(page.locator('h1')).toContainText('Publish');
+    await expect(page.locator('.widget[data-ready="1"]')).toHaveCount(1);
+    await expect(page.locator('.coming')).toHaveCount(0);
     await page.goto('./learn.html#/progress');
     expect(await noOverflow(page)).toBe(true);
     await page.screenshot({ path: shot(info, 'progress'), fullPage: false });
@@ -149,6 +151,54 @@ test.describe('Lessons, quizzes, progress and certificates', () => {
     await page.getByRole('button', { name: 'Check code' }).click();
     await expect(page.locator('#verify-out')).toContainText('Match');
     await page.locator('[name=name]').fill('Ada Lovelace2');
+    await page.getByRole('button', { name: 'Check code' }).click();
+    await expect(page.locator('#verify-out')).toContainText('No match');
+    expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  test('full course: passing all 20 phase tests earns a course certificate that verifies @device', async ({ page }, info) => {
+    test.setTimeout(300_000);
+    const errors = watchConsole(page);
+    await clear(page);
+    const phases = Array.from({ length: 20 }, (_, i) => String(i).padStart(2, '0'));
+    for (const ph of phases) {
+      await page.goto(`./learn.html#/test/${ph}`);
+      await page.waitForFunction((p) => window.__mefs?.route === `test/${p}` && window.__mefs?.currentTest?.length >= 10, ph);
+      const qs = await page.evaluate(() => window.__mefs.currentTest);
+      await answerAll(page, '#test-quiz', qs);
+      await page.getByRole('button', { name: 'Submit test' }).click();
+      await expect(page.locator('#test-result')).toContainText('Passed');
+      await page.evaluate(() => { window.__mefs.currentTest = null; });
+    }
+    await page.goto('./learn.html#/progress');
+    await expect(page.getByRole('link', { name: 'Create course certificate' })).toBeVisible();
+    await page.getByRole('link', { name: 'Create course certificate' }).click();
+    await expect(page.locator('h1')).toHaveText('Full-course certificate');
+    await page.locator('#cert-name').fill('Ada Lovelace');
+    await page.getByRole('button', { name: 'Create certificate' }).click();
+    await expect(page.locator('#cert-code')).toHaveText(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
+    const code = await page.locator('#cert-code').textContent();
+    const cert = await page.evaluate(() => window.__mefs.cert.details);
+    expect(cert.scope).toBe('course');
+    expect(cert.phases).toEqual(phases);
+    const [png] = await Promise.all([page.waitForEvent('download'), page.locator('#dl-png').click()]);
+    expect(png.suggestedFilename()).toMatch(/certificate-course-ada-lovelace\.png/);
+    const [pdf] = await Promise.all([page.waitForEvent('download'), page.locator('#dl-pdf').click()]);
+    expect(fs.readFileSync(await pdf.path()).subarray(0, 5).toString()).toBe('%PDF-');
+    await page.locator('#cert-canvas').scrollIntoViewIfNeeded();
+    expect(await noOverflow(page)).toBe(true);
+    await page.screenshot({ path: shot(info, 'course-certificate') });
+    // the verify page recomputes the code from the printed details
+    const date = await page.evaluate(() => { const t = JSON.parse(localStorage.getItem('mefs.v2')).tests; return Object.values(t).map((x) => x.passedAt).sort().pop(); });
+    expect(date).toBe(cert.date);
+    await page.goto('./learn.html#/verify');
+    await page.locator('[name=name]').fill('Ada Lovelace');
+    await page.locator('[name=date]').fill(date);
+    await page.locator('[name=scope]').selectOption('course');
+    await page.locator('[name=code]').fill(code);
+    await page.getByRole('button', { name: 'Check code' }).click();
+    await expect(page.locator('#verify-out')).toContainText('Match');
+    await page.locator('[name=scope]').selectOption('phase-19');
     await page.getByRole('button', { name: 'Check code' }).click();
     await expect(page.locator('#verify-out')).toContainText('No match');
     expect(errors, errors.join('\n')).toEqual([]);
