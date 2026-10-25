@@ -4815,6 +4815,43 @@ def('trussbridge', {
   },
 });
 
+// 16.03 hat test function and its weighted load
+def('testfunc', {
+  controls: [{ k: 'ne', label: 'Number of elements', min: 2, max: 12, step: 1, v: 5, f: 0 }, { k: 'i', label: 'Node of the test function', min: 1, max: 12, step: 1, v: 2, f: 0 }, { type: 'select', k: 'load', label: 'Load f(x)', options: ['Uniform', 'Triangular (rising)', 'Sine bump'], v: 'Uniform' }],
+  draw(p, v, out) {
+    const ne = v.ne, i = Math.min(v.i, ne), h = 1 / ne, f = (x) => (v.load === 'Uniform' ? 1 : v.load.startsWith('Tri') ? 2 * x : Math.PI / 2 * Math.sin(Math.PI * x));
+    const hat = (x) => Math.max(0, 1 - Math.abs(x - i * h) / h);
+    p.frame({ x: [0, 1], y: [-0.1, 2.1], xlabel: 'x / L', ylabel: 'value' });
+    const xs = linspace(0, 1, 401);
+    xs.forEach((x, k) => { if (k && hat(x) > 0) p.rect(xs[k - 1], x, 0, f(x) * hat(x), 'rgba(238,255,65,0.25)'); });
+    p.line(xs, xs.map(f), C.cyan, 2).line(xs, xs.map(hat), C.lime, 2.5);
+    p.dots(linspace(0, 1, ne + 1), new Array(ne + 1).fill(0), C.paper, 4);
+    let Fi = 0; for (let k = 1; k < xs.length; k++) { const xm = 0.5 * (xs[k] + xs[k - 1]); Fi += f(xm) * hat(xm) * (xs[k] - xs[k - 1]); }
+    out(`Node ${i}${i === ne ? ' (the free end: the hat is only half, and the end force P would add here)' : ''}. Its Galerkin load F = ∫ f φ dx = ${nf(4).format(Fi)} (shaded area) (total load 1 for every option). Uniform load: interior nodes get h = ${nf(3).format(h)}, end nodes h/2.`);
+  },
+});
+
+// 16.04 linear against quadratic 1D elements
+def('elemorder', {
+  controls: [{ type: 'select', k: 'ord', label: 'Element order', options: ['Linear', 'Quadratic'], v: 'Linear' }, { k: 'ne', label: 'Number of elements', min: 1, max: 12, step: 1, v: 3, f: 0 }],
+  draw(p, v, out) {
+    const ord = v.ord === 'Linear' ? 1 : 2, ne = v.ne, nn = ord * ne + 1, f = (x) => Math.PI ** 2 * Math.sin(Math.PI * x), ex = (x) => Math.sin(Math.PI * x);
+    const gp = [-0.9061798459, -0.5384693101, 0, 0.5384693101, 0.9061798459], gw = [0.2369268851, 0.4786286705, 0.5688888889, 0.4786286705, 0.2369268851];
+    const sh = (xi) => (ord === 1 ? [[(1 - xi) / 2, (1 + xi) / 2], [-0.5, 0.5]] : [[xi * (xi - 1) / 2, 1 - xi * xi, xi * (xi + 1) / 2], [xi - 0.5, -2 * xi, xi + 0.5]]);
+    const K = zeros16(nn, nn), F = new Array(nn).fill(0), h = 1 / ne, J = h / 2;
+    for (let e = 0; e < ne; e++) { const d = Array.from({ length: ord + 1 }, (_, a) => ord * e + a), a0 = e * h;
+      gp.forEach((xi, g) => { const [N, dN] = sh(xi), x = a0 + (xi + 1) * J; for (let a = 0; a <= ord; a++) { F[d[a]] += N[a] * f(x) * J * gw[g]; for (let b = 0; b <= ord; b++) K[d[a]][d[b]] += dN[a] * dN[b] / J * gw[g]; } }); }
+    const u = femSolve16(K, F, [0, nn - 1]);
+    const xs = [], us = []; let err = 0;
+    for (let e = 0; e < ne; e++) { const a0 = e * h; linspace(-1, 1, 21).forEach((xi) => { const [N] = sh(xi); xs.push(a0 + (xi + 1) * J); us.push(N.reduce((s, n, a) => s + n * u[ord * e + a], 0)); });
+      gp.forEach((xi, g) => { const [N] = sh(xi), x = a0 + (xi + 1) * J, uh = N.reduce((s, n, a) => s + n * u[ord * e + a], 0); err += (uh - ex(x)) ** 2 * J * gw[g]; }); }
+    p.frame({ x: [0, 1], y: [-0.1, 1.15], xlabel: 'x', ylabel: 'u' });
+    const xx = linspace(0, 1, 200); p.line(xx, xx.map(ex), C.grey, 1.5, [5, 4]).line(xs, us, C.lime, 2.5);
+    p.dots(linspace(0, 1, nn), u, C.cyan, 4);
+    out(`${v.ord}, ${ne} element${ne > 1 ? 's' : ''}, ${nn} nodes. L² error ${Math.sqrt(err).toExponential(3)}. Doubling the elements cuts it by about ${ord === 1 ? 4 : 8}. Try 1 quadratic element against 2 linear ones (same 3 nodes).`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
