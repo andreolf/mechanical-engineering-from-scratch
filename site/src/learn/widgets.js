@@ -5125,6 +5125,74 @@ def('heatsink', {
   },
 });
 
+// Phase 16 symmetric eigen-solver (cyclic Jacobi) and generalised K x = lam M x via Cholesky
+function jacobiEig16(A0) {
+  const n = A0.length, A = A0.map((r) => r.slice()), V = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 1 : 0)));
+  for (let sweep = 0; sweep < 60; sweep++) { let off = 0; for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) off += A[i][j] ** 2; if (off < 1e-22 * n * n) break;
+    for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) { if (Math.abs(A[p][q]) < 1e-300) continue; const th = (A[q][q] - A[p][p]) / (2 * A[p][q]), t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < n; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+      for (let k = 0; k < n; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+      for (let k = 0; k < n; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; } } }
+  const idx = Array.from({ length: n }, (_, i) => i).sort((a, b) => A[a][a] - A[b][b]);
+  return { vals: idx.map((i) => A[i][i]), vecs: idx.map((i) => V.map((r) => r[i])) };
+}
+function genEig16(K, M) {
+  const n = K.length, L = zeros16(n, n);
+  for (let i = 0; i < n; i++) for (let j = 0; j <= i; j++) { let s = M[i][j]; for (let k = 0; k < j; k++) s -= L[i][k] * L[j][k]; L[i][j] = i === j ? Math.sqrt(s) : s / L[j][j]; }
+  const Li = zeros16(n, n); for (let c = 0; c < n; c++) for (let i = 0; i < n; i++) { let s = i === c ? 1 : 0; for (let k = 0; k < i; k++) s -= L[i][k] * Li[k][c]; Li[i][c] = s / L[i][i]; }
+  const A = Li.map((r) => K[0].map((_, j) => { let s = 0; for (let a = 0; a < n; a++) { if (!r[a]) continue; for (let b = 0; b < n; b++) s += r[a] * K[a][b] * Li[j][b]; } return s; }));
+  const { vals, vecs } = jacobiEig16(A);
+  return { vals, vecs: vecs.map((y) => Array.from({ length: n }, (_, i) => { let s = 0; for (let k = 0; k < n; k++) s += Li[k][i] * y[k]; return s; })) };
+}
+
+// 16.15 beam mode shapes: FEM against Euler-Bernoulli theory
+def('modeshape', {
+  controls: [{ type: 'select', k: 'sup', label: 'Supports', options: ['Cantilever', 'Simply supported footbridge'], v: 'Simply supported footbridge' }, { k: 'ne', label: 'Number of elements', min: 1, max: 10, step: 1, v: 4, f: 0 }, { k: 'mode', label: 'Mode', min: 1, max: 4, step: 1, v: 1, f: 0 }, { k: 'ph', label: 'Phase of the vibration (°)', min: 0, max: 360, step: 15, v: 90, f: 0 }],
+  draw(p, v, out) {
+    const cant = v.sup === 'Cantilever', L = cant ? 2 : 30, EI = cant ? 210e9 * 0.04 ** 4 / 12 : 210e9 * 0.009, mb = cant ? 7850 * 0.04 * 0.04 : 1200, ne = v.ne, h = L / ne, n = 2 * (ne + 1);
+    const K = zeros16(n, n), M = zeros16(n, n), kb = [[12, 6 * h, -12, 6 * h], [6 * h, 4 * h * h, -6 * h, 2 * h * h], [-12, -6 * h, 12, -6 * h], [6 * h, 2 * h * h, -6 * h, 4 * h * h]], mm = [[156, 22 * h, 54, -13 * h], [22 * h, 4 * h * h, 13 * h, -3 * h * h], [54, 13 * h, 156, -22 * h], [-13 * h, -3 * h * h, -22 * h, 4 * h * h]];
+    for (let e = 0; e < ne; e++) for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) { K[2 * e + a][2 * e + b] += EI / h ** 3 * kb[a][b]; M[2 * e + a][2 * e + b] += mb * h / 420 * mm[a][b]; }
+    const fixed = cant ? [0, 1] : [0, n - 2], free = Array.from({ length: n }, (_, i) => i).filter((i) => !fixed.includes(i));
+    const { vals, vecs } = genEig16(free.map((i) => free.map((j) => K[i][j])), free.map((i) => free.map((j) => M[i][j])));
+    const md = Math.min(v.mode, vals.length), f = Math.sqrt(vals[md - 1]) / (2 * Math.PI), u = new Array(n).fill(0); free.forEach((i, k) => { u[i] = vecs[md - 1][k]; });
+    const bl = [1.875104069, 4.694091133, 7.854757438, 10.99554073][md - 1], fth = cant ? (bl / L) ** 2 * Math.sqrt(EI / mb) / (2 * Math.PI) : (md * Math.PI / L) ** 2 * Math.sqrt(EI / mb) / (2 * Math.PI);
+    const ex = (x) => (cant ? Math.cosh(bl * x / L) - Math.cos(bl * x / L) - (Math.cosh(bl) + Math.cos(bl)) / (Math.sinh(bl) + Math.sin(bl)) * (Math.sinh(bl * x / L) - Math.sin(bl * x / L)) : Math.sin(md * Math.PI * x / L));
+    const xs = [], ys = []; for (let e = 0; e < ne; e++) linspace(0, 1, 21).forEach((t) => { const N = [1 - 3 * t * t + 2 * t ** 3, h * (t - 2 * t * t + t ** 3), 3 * t * t - 2 * t ** 3, h * (-t * t + t ** 3)]; xs.push((e + t) * h); ys.push(N.reduce((s, c, a) => s + c * u[2 * e + a], 0)); });
+    const xe = linspace(0, L, 200), ye = xe.map(ex), sF = 1 / Math.max(...ys.map(Math.abs)), sE = 1 / Math.max(...ye.map(Math.abs)), sg = Math.sign(ys.reduce((s, y, i) => s + y * ex(xs[i]), 0)) || 1, amp = Math.sin(v.ph * Math.PI / 180);
+    p.frame({ x: [0, L], y: [-1.3, 1.3], xlabel: 'x (m)', ylabel: 'mode shape' });
+    p.line(xe, ye.map((y) => y * sE * amp), C.grey, 1.5, [5, 4]).line(xs, ys.map((y) => sg * y * sF * amp), C.lime, 2.5);
+    p.dots(linspace(0, L, ne + 1), Array.from({ length: ne + 1 }, (_, i) => sg * u[2 * i] * sF * amp), C.cyan, 4);
+    out(`Mode ${md}${md < v.mode ? ` (only ${vals.length} modes with this mesh)` : ''}: FEM ${nf(4).format(f)} Hz, beam theory ${nf(4).format(fth)} Hz (${f >= fth ? '+' : ''}${nf(3).format(100 * (f - fth) / fth)} %). Consistent mass gives an upper bound.${!cant && md === 1 ? ' 2.19 Hz is right in the walking range.' : ''}`);
+  },
+});
+
+// 16.16 two-storey frame under harmonic ground shaking, Newmark or central difference
+def('groundshake', {
+  controls: [{ k: 'fg', label: 'Ground frequency (Hz)', min: 0.2, max: 6, step: 0.05, v: 1.45, f: 2 }, { k: 'A', label: 'Ground acceleration (m/s²)', min: 0.1, max: 3, step: 0.1, v: 0.5, f: 1 }, { type: 'select', k: 'sch', label: 'Integrator', options: ['Average acceleration (β = 1/4)', 'Central difference (explicit)'], v: 'Average acceleration (β = 1/4)' }, { k: 'dt', label: 'Time step (ms)', min: 1, max: 40, step: 0.5, v: 5, f: 1 }],
+  draw(p, v, out) {
+    const E = 210e9, Hs = 3.5, B = 6, N = [[0, 0], [B, 0], [0, Hs], [B, Hs], [0, 2 * Hs], [B, 2 * Hs]], EL = [[0, 2, 7.81e-3, 6.1e-5], [1, 3, 7.81e-3, 6.1e-5], [2, 4, 7.81e-3, 6.1e-5], [3, 5, 7.81e-3, 6.1e-5], [2, 3, 7.64e-3, 1.6e-4], [4, 5, 7.64e-3, 1.6e-4]];
+    const Kf = zeros16(18, 18); EL.forEach(([i, j, A, I]) => { const dx = N[j][0] - N[i][0], dy = N[j][1] - N[i][1], L = Math.hypot(dx, dy), c = dx / L, s = dy / L, a = E * A / L, b = 12 * E * I / L ** 3, d = 6 * E * I / L ** 2, e = E * I / L;
+      const kl = [[a, 0, 0, -a, 0, 0], [0, b, d, 0, -b, d], [0, d, 4 * e, 0, -d, 2 * e], [-a, 0, 0, a, 0, 0], [0, -b, -d, 0, b, -d], [0, d, 2 * e, 0, -d, 4 * e]], T = zeros16(6, 6); [0, 3].forEach((o) => { T[o][o] = c; T[o][o + 1] = s; T[o + 1][o] = -s; T[o + 1][o + 1] = c; T[o + 2][o + 2] = 1; });
+      const dof = [3 * i, 3 * i + 1, 3 * i + 2, 3 * j, 3 * j + 1, 3 * j + 2]; for (let r = 0; r < 6; r++) for (let q = 0; q < 6; q++) { let sum = 0; for (let x = 0; x < 6; x++) for (let y = 0; y < 6; y++) sum += T[x][r] * kl[x][y] * T[y][q]; Kf[dof[r]][dof[q]] += sum; } });
+    const n = 12, K = Kf.slice(6).map((r) => r.slice(6)), M = zeros16(n, n); for (let k = 0; k < 4; k++) { M[3 * k][3 * k] = M[3 * k + 1][3 * k + 1] = 10000; M[3 * k + 2][3 * k + 2] = 500; }
+    const { vals } = genEig16(K, M), w1 = Math.sqrt(vals[0]), w2 = Math.sqrt(vals[1]), wmax = Math.sqrt(vals[n - 1]), z = 0.05, a0 = 2 * z * w1 * w2 / (w1 + w2), a1 = 2 * z / (w1 + w2);
+    const Cm = K.map((r, i) => r.map((k, j) => a0 * M[i][j] + a1 * k)), dt = v.dt / 1000, steps = Math.round(20 / dt), mv = (A, x) => A.map((r) => r.reduce((s, q, j) => s + q * x[j], 0));
+    const Fg = (t) => Array.from({ length: n }, (_, i) => (i % 3 === 0 ? -M[i][i] * v.A * Math.sin(2 * Math.PI * v.fg * t) : 0));
+    let u = new Array(n).fill(0), vel = new Array(n).fill(0), acc = new Array(n).fill(0); const ts = [0], roof = [0]; let blew = false;
+    if (v.sch.startsWith('Average')) { const be = 0.25, ga = 0.5, Ke = K.map((r, i) => r.map((k, j) => k + ga / (be * dt) * Cm[i][j] + M[i][j] / (be * dt * dt)));
+      for (let s = 1; s <= steps; s++) { const t = s * dt, mterm = u.map((q, i) => q / (be * dt * dt) + vel[i] / (be * dt) + (1 / (2 * be) - 1) * acc[i]), cterm = u.map((q, i) => ga / (be * dt) * q + (ga / be - 1) * vel[i] + dt * (ga / (2 * be) - 1) * acc[i]);
+        const F = Fg(t), Mm = mv(M, mterm), Cc = mv(Cm, cterm), un = linSolve(Ke, F.map((f, i) => f + Mm[i] + Cc[i])), an = un.map((q, i) => (q - u[i]) / (be * dt * dt) - vel[i] / (be * dt) - (1 / (2 * be) - 1) * acc[i]);
+        vel = vel.map((q, i) => q + dt * ((1 - ga) * acc[i] + ga * an[i])); u = un; acc = an; if (s % Math.max(1, Math.round(0.02 / dt)) === 0) { ts.push(t); roof.push(u[6] * 1000); } } }
+    else { let prev = u.slice(); const Ae = K.map((r, i) => r.map((k, j) => M[i][j] / (dt * dt) + Cm[i][j] / (2 * dt)));
+      for (let s = 1; s <= steps; s++) { const t = (s - 1) * dt, F = Fg(t), Ku = mv(K, u), Mu = mv(M, u), Mp = mv(M, prev), Cp = mv(Cm, prev), rhs = F.map((f, i) => f - Ku[i] + 2 * Mu[i] / (dt * dt) - Mp[i] / (dt * dt) + Cp[i] / (2 * dt)), un = linSolve(Ae, rhs);
+        prev = u; u = un; if (!Number.isFinite(u[6]) || Math.abs(u[6]) > 10) { blew = true; ts.push(s * dt); roof.push(Math.sign(u[6] || 1) * 999); break; } if (s % Math.max(1, Math.round(0.02 / dt)) === 0) { ts.push(s * dt); roof.push(u[6] * 1000); } } }
+    const pk = Math.max(...roof.map(Math.abs)), ylim = blew ? 100 : Math.max(5, pk * 1.15);
+    p.frame({ x: [0, 20], y: [-ylim, ylim], xlabel: 'time (s)', ylabel: 'roof sway (mm)' });
+    p.line(ts, roof.map((y) => Math.max(-ylim, Math.min(ylim, y))), blew ? C.red : C.lime, 2);
+    out(blew ? `Central difference blew up at t = ${nf(2).format(ts[ts.length - 1])} s: the time step ${v.dt} ms exceeds the stability limit, about 2/ω_max = ${nf(2).format(2000 / wmax)} ms without damping.` : `Peak roof sway ${nf(2).format(pk)} mm. Frame modes ${nf(3).format(w1 / 2 / Math.PI)} and ${nf(3).format(w2 / 2 / Math.PI)} Hz, 5 % Rayleigh damping. ${Math.abs(v.fg - w1 / 2 / Math.PI) < 0.1 ? 'Resonance with mode 1.' : ''}`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
