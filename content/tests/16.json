@@ -1,0 +1,114 @@
+[
+ {
+  "type": "num",
+  "q": "Equivalent stiffness (N/mm) of springs of 200 and 100 N/mm in series. 3 decimals.",
+  "answer": 66.667,
+  "tol": 0.0005,
+  "py": "1/(1/200+1/100)",
+  "explain": "$1/\\sum (1/k_i)$."
+ },
+ {
+  "type": "num",
+  "q": "Axial stiffness EA/L (kN/mm) of a 3 m steel bar, A = 1200 mm², E = 210 GPa.",
+  "answer": 84,
+  "tol": 0.0005,
+  "py": "210*1200/3000",
+  "explain": "$EA/L$ in kN/mm with E in kN/mm²."
+ },
+ {
+  "type": "num",
+  "q": "Tip deflection (mm) of a 3 m cantilever, EI = 2×10⁵ N·m², 800 N tip load, from one beam element.",
+  "answer": 36,
+  "tol": 0.0005,
+  "py": "800*27/(3*2e5)*1000",
+  "explain": "Exact: $PL^3/3EI$."
+ },
+ {
+  "type": "num",
+  "q": "Consistent end moment qL²/12 (N·m) for q = 500 N/m on a 1.5 m element. 4 decimals.",
+  "answer": 93.75,
+  "tol": 0.0005,
+  "py": "500*1.5**2/12",
+  "explain": "From $\\int N_2 q\\,dx$."
+ },
+ {
+  "type": "num",
+  "q": "Area of a Q4 element whose det J at the centre is 2.4. 1 decimal.",
+  "answer": 9.6,
+  "tol": 0.0005,
+  "py": "4*2.4",
+  "explain": "$A = 4\\det J(0,0)$."
+ },
+ {
+  "type": "num",
+  "q": "Plane strain D₁₁ (GPa) for E = 70 GPa, ν = 0.33. 2 decimals.",
+  "answer": 103.72,
+  "tol": 0.0005,
+  "py": "70*0.67/(1.33*0.34)",
+  "explain": "$E(1-\\nu)/((1+\\nu)(1-2\\nu))$."
+ },
+ {
+  "type": "num",
+  "q": "Radius ratio quality 2r/R of a triangle with sides 3, 4, 5. 1 decimal.",
+  "answer": 0.8,
+  "tol": 0.0005,
+  "py": "2*(6/6)/(3*4*5/(4*6))",
+  "explain": "$r = A/s = 1$, $R = 2.5$."
+ },
+ {
+  "type": "num",
+  "q": "Dense matrix memory (GB) for 100 000 unknowns in double precision.",
+  "answer": 80,
+  "tol": 0.0005,
+  "py": "1e5**2*8/1e9",
+  "explain": "$n^2 \\times 8$ bytes."
+ },
+ {
+  "type": "num",
+  "q": "Observed convergence rate when the error falls from 0.08 to 0.01 over two halvings of h. 1 decimal.",
+  "answer": 1.5,
+  "tol": 0.0005,
+  "py": "math.log(0.08/0.01)/math.log(4)",
+  "explain": "$\\ln 8/\\ln 4$."
+ },
+ {
+  "type": "num",
+  "q": "Lamé λ (GPa) for steel, E = 210 GPa, ν = 0.3. 2 decimals.",
+  "answer": 121.15,
+  "tol": 0.0005,
+  "py": "210*0.3/(1.3*0.4)",
+  "explain": "$E\\nu/((1+\\nu)(1-2\\nu))$."
+ },
+ {
+  "type": "num",
+  "q": "Lumped heatsink temperature (°C): 15 W, h = 40 W/m²K, 0.025 m² wetted area, air at 25 °C.",
+  "answer": 40,
+  "tol": 0.0005,
+  "py": "25+15/(40*0.025)",
+  "explain": "$T_\\infty + P/(hA)$."
+ },
+ {
+  "type": "num",
+  "q": "First frequency (Hz) of a simply supported 30 m footbridge, EI = 1.89×10⁹ N·m², 1200 kg/m. 4 decimals.",
+  "answer": 2.1904,
+  "tol": 0.0005,
+  "py": "math.pi/(2*30**2)*math.sqrt(1.89e9/1200)",
+  "explain": "$\\frac{\\pi}{2L^2}\\sqrt{EI/\\bar m}$."
+ },
+ {
+  "type": "num",
+  "q": "Central-difference stability limit (µs) for ω_max = 2×10⁵ rad/s.",
+  "answer": 10,
+  "tol": 0.0005,
+  "py": "2/2e5*1e6",
+  "explain": "$\\Delta t < 2/\\omega_{\\max}$."
+ },
+ {
+  "type": "num",
+  "q": "Limit-point apex deflection (mm) of a two-bar truss with h = 100 mm, w = h(1 − 1/√3). 3 decimals.",
+  "answer": 42.265,
+  "tol": 0.0005,
+  "py": "100*(1-1/math.sqrt(3))",
+  "explain": "Where $dP/dw = 0$."
+ }
+]
