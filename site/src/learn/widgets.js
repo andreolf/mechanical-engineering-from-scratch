@@ -4767,6 +4767,54 @@ def('designreport', {
   },
 });
 
+// Phase 16 helpers: dense stiffness assembly and solve with fixed dofs
+function femSolve16(K, F, fixed) {
+  const n = F.length, free = []; for (let i = 0; i < n; i++) if (!fixed.includes(i)) free.push(i);
+  const x = linSolve(free.map((i) => free.map((j) => K[i][j])), free.map((i) => F[i]));
+  const u = new Array(n).fill(0); if (!x) return null; free.forEach((i, k) => { u[i] = x[k]; }); return u;
+}
+const zeros16 = (n, m) => Array.from({ length: n }, () => new Array(m).fill(0));
+
+// 16.01 spring chain
+def('springchain', {
+  controls: [{ k: 'k1', label: 'Spring 1 (N/mm)', min: 50, max: 500, step: 10, v: 200, f: 0 }, { k: 'k2', label: 'Spring 2 (N/mm)', min: 50, max: 500, step: 10, v: 100, f: 0 }, { k: 'k3', label: 'Spring 3 (N/mm)', min: 50, max: 500, step: 10, v: 400, f: 0 }, { k: 'k4', label: 'Spring 4 (N/mm)', min: 50, max: 500, step: 10, v: 250, f: 0 }],
+  draw(p, v, out) {
+    const ks = [v.k1, v.k2, v.k3, v.k4], K = zeros16(5, 5), F = [0, 0, 0, 0, 1000];
+    ks.forEach((k, e) => { K[e][e] += k; K[e + 1][e + 1] += k; K[e][e + 1] -= k; K[e + 1][e] -= k; });
+    const u = femSolve16(K, F, [0]);
+    p.frame({ x: [-5, 105], y: [-3, 3], xlabel: 'position (mm); lower row: displaced nodes', ylabel: '' });
+    const X = [0, 20, 40, 60, 80];
+    ks.forEach((k, e) => { const xs = linspace(X[e] + 2, X[e + 1] - 2, 25), w = 0.25 + 0.6 * (500 - k) / 450; p.line(xs, xs.map((x, i) => 1.2 + (i % 2 ? w : -w)), C.paper, 1.5); });
+    p.rect(-4, -1, 0, 2.4, C.grey).dots(X, X.map(() => 1.2), C.lime, 4);
+    const sc = 80 / Math.max(u[4], 1e-9) * 0.25, Xd = X.map((x, i) => x + u[i] * sc);
+    p.dots(Xd, X.map(() => -1.4), C.cyan, 4);
+    X.forEach((x, i) => p.line([x, Xd[i]], [1.2, -1.4], C.grey, 1, [3, 3]));
+    const keq = 1 / ks.reduce((s, k) => s + 1 / k, 0);
+    out(`Pull 1 kN at the right end. Displacements ${u.map((x) => nf(2).format(x)).join(', ')} mm (drawn ×${nf(1).format(sc)}). Tip stiffness ${nf(2).format(1000 / u[4])} N/mm = series formula ${nf(2).format(keq)} N/mm. The softest spring stretches most.`);
+  },
+});
+
+// 16.02 Pratt footbridge truss solved by the direct stiffness method
+def('trussbridge', {
+  controls: [{ k: 'x', label: 'Load position along the deck (m)', min: 0, max: 12, step: 0.25, v: 6, f: 2 }, { k: 'P', label: 'Load (kN)', min: 10, max: 100, step: 5, v: 50, f: 0 }],
+  draw(p, v, out) {
+    const N = [[0, 0], [3, 0], [6, 0], [9, 0], [12, 0], [3, 2.5], [6, 2.5], [9, 2.5]];
+    const B = [[0, 1], [1, 2], [2, 3], [3, 4], [5, 6], [6, 7], [0, 5], [4, 7], [1, 5], [2, 6], [3, 7], [5, 2], [7, 2]];
+    const EA = 252e3, n = N.length, K = zeros16(2 * n, 2 * n), F = new Array(2 * n).fill(0); // kN
+    const geo = B.map(([i, j]) => { const dx = N[j][0] - N[i][0], dy = N[j][1] - N[i][1], L = Math.hypot(dx, dy); return [dx / L, dy / L, L]; });
+    B.forEach(([i, j], e) => { const [c, s, L] = geo[e], t = [c, s, -c, -s], d = [2 * i, 2 * i + 1, 2 * j, 2 * j + 1]; for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) K[d[a]][d[b]] += EA / L * t[a] * t[b]; });
+    const k = Math.min(3, Math.floor(v.x / 3)), r = v.x / 3 - k; F[2 * k + 1] -= v.P * (1 - r); if (r > 0) F[2 * (k + 1) + 1] -= v.P * r;
+    const u = femSolve16(K, F, [0, 1, 9]);
+    const Nf = B.map(([i, j], e) => { const [c, s, L] = geo[e]; return EA / L * (c * (u[2 * j] - u[2 * i]) + s * (u[2 * j + 1] - u[2 * i + 1])); });
+    fitAt(p, 6, 1.0, 7, 3.2, 'x (m)', 'y (m)');
+    const sc = 150, scale = Math.max(...Nf.map(Math.abs), 1);
+    B.forEach(([i, j], e) => { p.line([N[i][0], N[j][0]], [N[i][1], N[j][1]], C.grey, 1, [3, 3]); const f = Nf[e], col = Math.abs(f) < 1e-6 ? C.grey : f > 0 ? C.lime : C.red; p.line([N[i][0] + sc * u[2 * i], N[j][0] + sc * u[2 * j]], [N[i][1] + sc * u[2 * i + 1], N[j][1] + sc * u[2 * j + 1]], col, 1.5 + 5 * Math.abs(f) / scale); });
+    arrow(p, v.x, 1.5, v.x, 0.12, C.amber, 3);
+    const big = Nf.reduce((a, f, e) => (Math.abs(f) > Math.abs(Nf[a]) ? e : a), 0), dmax = Math.max(...N.map((_, i) => -u[2 * i + 1]));
+    out(`Largest bar force: ${nf(1).format(Nf[big])} kN in bar ${B[big][0]}-${B[big][1]} (${Nf[big] > 0 ? 'tension' : 'compression'}). Largest deflection ${nf(2).format(dmax * 1000)} mm, drawn ×${sc}. Reactions ${nf(1).format(v.P * (12 - v.x) / 12)} and ${nf(1).format(v.P * v.x / 12)} kN.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
