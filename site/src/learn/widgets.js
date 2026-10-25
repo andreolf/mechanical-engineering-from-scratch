@@ -5962,6 +5962,67 @@ def('ebikepid', {
     out(`End of hill: error ${nf(3).format(errEnd / nEnd)} km/h. Slowest ${nf(1).format(minv)} km/h; peak after the crest ${nf(1).format(maxAfter)} km/h. Motor at its 80 N limit for ${nf(1).format(sat)} s (blue: motor force, bottom third = 0 to 80 N).`);
   },
 });
+
+// 18.13 Bode plot with gain and phase margins (two stacked panels on one canvas)
+function panel18(p, x, y, t0, t1, ylabel, xlabel, xlog) {
+  p.pad = { l: 46, r: 12, t: t0, b: p.h - t1 }; Object.assign(p, { xr: x, yr: y, xlog: !!xlog, ylog: false });
+  const g = p.g; g.font = '11px "Archivo Variable", sans-serif'; g.fillStyle = C.grey; g.strokeStyle = C.rule; g.lineWidth = 1;
+  const xt = xlog ? range(Math.ceil(Math.log10(x[0])), Math.floor(Math.log10(x[1]))).map((e) => 10 ** e) : niceTicks(x[0], x[1], 5);
+  for (const t of xt) { const px = p.X(t); g.beginPath(); g.moveTo(px, t0); g.lineTo(px, t1); g.stroke(); if (xlabel) { g.textAlign = 'center'; g.fillText(xlog ? String(t) : lab(t), px, t1 + 14); } }
+  for (const t of niceTicks(y[0], y[1], 4)) { const py = p.Y(t); g.beginPath(); g.moveTo(p.pad.l, py); g.lineTo(p.w - p.pad.r, py); g.stroke(); g.textAlign = 'right'; g.fillText(String(+t.toPrecision(4)), p.pad.l - 6, py + 4); }
+  g.save(); g.translate(11, t0); g.rotate(-Math.PI / 2); g.textAlign = 'right'; g.fillText(ylabel, 0, 0); g.restore();
+  if (xlabel) { g.textAlign = 'right'; g.fillText(xlabel, p.w - p.pad.r, p.h - 4); }
+}
+def('bodemargin', {
+  controls: [{ type: 'select', k: 'sys', label: 'Open loop L(s)', options: ['K / (s(s+1)(s+5))', 'K / (s+1)³'], v: 'K / (s(s+1)(s+5))' }, { k: 'K', label: 'Gain K', min: 0.5, max: 40, step: 0.5, v: 10, f: 1 }, { k: 'T', label: 'Time delay, s', min: 0, max: 0.5, step: 0.01, v: 0, f: 2 }],
+  draw(p, v, out) {
+    p.size(); p.g.clearRect(0, 0, p.w, p.h);
+    const one = v.sys.startsWith('K / (s('), w = logspace(-1.5, 1.5, 400);
+    const L = (x) => { let mag, ph; if (one) { mag = v.K / (x * Math.hypot(x, 1) * Math.hypot(x, 5)); ph = -Math.PI / 2 - Math.atan(x) - Math.atan(x / 5); } else { mag = v.K / Math.hypot(x, 1) ** 3; ph = -3 * Math.atan(x); } return [mag, ph - x * v.T]; };
+    const db = w.map((x) => 20 * Math.log10(L(x)[0])), ph = w.map((x) => (L(x)[1] * 180) / Math.PI);
+    const mid = p.h * 0.5;
+    panel18(p, [w[0], w[w.length - 1]], [-60, 40], 10, mid - 12, '|L|, dB', '', true);
+    p.line([w[0], w[w.length - 1]], [0, 0], C.paper, 1, [3, 3]).line(w, db, C.lime, 2);
+    const bis = (f, a, b) => { let fa = f(a); for (let i = 0; i < 80; i++) { const m = Math.sqrt(a * b), fm = f(m); if (Math.sign(fm) === Math.sign(fa)) { a = m; fa = fm; } else b = m; } return Math.sqrt(a * b); };
+    let wc = null, wp = null;
+    for (let i = 0; i < w.length - 1; i++) { if (wc === null && Math.sign(db[i]) !== Math.sign(db[i + 1])) wc = bis((x) => Math.log10(L(x)[0]), w[i], w[i + 1]); if (wp === null && Math.sign(ph[i] + 180) !== Math.sign(ph[i + 1] + 180)) wp = bis((x) => L(x)[1] + Math.PI, w[i], w[i + 1]); }
+    const GM = wp ? 1 / L(wp)[0] : Infinity, PM = wc ? (L(wc)[1] * 180) / Math.PI + 180 : NaN;
+    if (wp) p.line([wp, wp], [0, -20 * Math.log10(GM)], C.amber, 3);
+    panel18(p, [w[0], w[w.length - 1]], [-360, 0], mid + 10, p.h - 30, 'phase, °', 'ω, rad/s', true);
+    p.line([w[0], w[w.length - 1]], [-180, -180], C.paper, 1, [3, 3]).line(w, ph.map((q) => Math.max(-360, q)), C.lime, 2);
+    if (wc) p.line([wc, wc], [-180, -180 + PM], C.cyan, 3);
+    out(`${wp ? `Gain margin ${nf(3).format(GM)} (${nf(2).format(20 * Math.log10(GM))} dB) at ${nf(3).format(wp)} rad/s (amber)` : 'No phase crossover'}; ${wc ? `phase margin ${nf(2).format(PM)}° at ${nf(3).format(wc)} rad/s (blue), delay margin ${nf(3).format((PM * Math.PI) / 180 / wc)} s` : 'no gain crossover'}. ${GM < 1 || PM < 0 ? 'Negative margins: the closed loop is unstable.' : ''}`);
+  },
+});
+
+// 18.14 LQR balancing of an inverted pendulum on a cart (Riccati solved by integrating to steady state)
+def('pendlqr', {
+  controls: [{ k: 'lq', label: 'Angle weight q_θ, log₁₀', min: 0, max: 3, step: 0.1, v: 2, f: 1 }, { k: 'lr', label: 'Force weight r, log₁₀', min: -2, max: 1, step: 0.1, v: -1, f: 1 }, { k: 'th0', label: 'Initial tilt, degrees', min: 1, max: 40, step: 1, v: 15, f: 0 }, { k: 'F', label: 'Motor force limit, N', min: 1, max: 40, step: 0.5, v: 40, f: 1 }],
+  draw(p, v, out) {
+    const M = 1, m = 0.1, l = 0.5, g = 9.81, A = [[0, 1, 0, 0], [0, 0, (-m * g) / M, 0], [0, 0, 0, 1], [0, 0, ((M + m) * g) / (M * l), 0]], B = [0, 1 / M, 0, -1 / (M * l)];
+    const Q = [10, 1, 10 ** v.lq, 1], r = 10 ** v.lr;
+    let P = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]];
+    for (let it = 0; it < 60000; it++) {
+      const PB = P.map((row) => row.reduce((s, q, j) => s + q * B[j], 0)); let mx = 0;
+      const dP = P.map((row, i) => row.map((_, j) => { let s = (i === j ? Q[i] : 0) - (PB[i] * PB[j]) / r; for (let k = 0; k < 4; k++) s += A[k][i] * P[k][j] + P[i][k] * A[k][j]; return s; }));
+      const dt = 0.0004; P = P.map((row, i) => row.map((q, j) => { mx = Math.max(mx, Math.abs(dP[i][j])); return q + dt * dP[i][j]; }));
+      if (mx < 1e-7) break;
+    }
+    const K = [0, 1, 2, 3].map((j) => B.reduce((s, b, i) => s + b * P[i][j], 0) / r);
+    const f = (s, F) => { const [, xd, th, thd] = s, st = Math.sin(th), ct = Math.cos(th), a11 = M + m, a12 = m * l * ct, a22 = m * l * l, r1 = F + m * l * thd * thd * st, r2 = m * g * l * st, det = a11 * a22 - a12 * a12; return [xd, (r1 * a22 - a12 * r2) / det, thd, (a11 * r2 - a12 * r1) / det]; };
+    let s = [0, 0, (v.th0 * Math.PI) / 180, 0]; const h = 0.002, ts = [], xs = [], ths = []; let Fpk = 0, fell = false;
+    for (let k = 0; k < 3000; k++) {
+      const F = Math.max(-v.F, Math.min(v.F, -K.reduce((a, q, i) => a + q * s[i], 0))); Fpk = Math.max(Fpk, Math.abs(F));
+      const k1 = f(s, F), k2 = f(s.map((q, i) => q + (h / 2) * k1[i]), F), k3 = f(s.map((q, i) => q + (h / 2) * k2[i]), F), k4 = f(s.map((q, i) => q + h * k3[i]), F);
+      s = s.map((q, i) => q + (h / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+      if (Math.abs(s[2]) > Math.PI / 2) fell = true;
+      if (k % 5 === 0) { ts.push(k * h); ths.push((s[2] * 180) / Math.PI); xs.push(s[0]); }
+    }
+    p.frame({ x: [0, 6], y: [-45, 45], xlabel: 'time, s', ylabel: 'angle ° (lime), cart cm (blue)' });
+    p.line([0, 6], [0, 0], C.grey, 1, [3, 3]).line(ts, xs.map((x) => Math.max(-60, Math.min(60, x * 100))), C.cyan, 1.6).line(ts, ths.map((q) => Math.max(-60, Math.min(60, q))), C.lime, 2.2);
+    out(fell ? `It falls over: ${nf(1).format(v.F)} N is not enough to catch a ${v.th0}° tilt (about (M + m) g tan θ = ${nf(2).format((M + m) * g * Math.tan((v.th0 * Math.PI) / 180))} N is needed just to hold it).` : `LQR gain K = [${K.map((q) => nf(2).format(q)).join(', ')}]. Peak force ${nf(2).format(Fpk)} N, cart travels up to ${nf(2).format(Math.max(...xs.map(Math.abs)))} m; angle after 6 s ${nf(3).format(ths[ths.length - 1])}°.`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
