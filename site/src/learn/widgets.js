@@ -5784,6 +5784,37 @@ def('filtercut', {
     out(`Gain at 2 Hz ${nf(4).format(g2)}, at 50 Hz ${nf(4).format(g50)} (${nf(1).format(20 * Math.log10(g50))} dB). Phase lag at 2 Hz ${nf(1).format((-ph2 * 180) / Math.PI)}°, a delay of ${nf(1).format((-ph2 / (2 * Math.PI * 2)) * 1000)} ms against the true motion (dashed).`);
   },
 });
+
+// 18.05 ADC quantisation of a small accelerometer signal, with optional dither and averaging
+def('adcq', {
+  controls: [{ k: 'bits', label: 'ADC resolution, bits', min: 6, max: 14, step: 1, v: 10, f: 0 }, { k: 'noise', label: 'Analogue noise, mV rms', min: 0, max: 10, step: 0.5, v: 0, f: 1 }, { k: 'avg', label: 'Average N readings', min: 1, max: 64, step: 1, v: 1, f: 0 }],
+  draw(p, v, out) {
+    const vref = 5, q = vref / 2 ** v.bits, rn = gaussRng(7), n = 300;
+    const tv = (i) => 1.65 + 0.33 * 0.05 * Math.sin((2 * Math.PI * i) / n);   // 0.05 g swing at 0.33 V/g
+    const ts = [], tru = [], rd = []; let se = 0;
+    for (let i = 0; i < n; i++) { let s = 0; for (let k = 0; k < v.avg; k++) s += Math.min(2 ** v.bits - 1, Math.max(0, Math.round((tv(i) + (v.noise / 1000) * rn()) / q))) * q; const r = s / v.avg; ts.push(i); tru.push((tv(i) - 1.65) * 1000); rd.push((r - 1.65) * 1000); se += (r - tv(i)) ** 2; }
+    const lim = Math.max(20, 1.3 * Math.max(...rd.map(Math.abs)));
+    p.frame({ x: [0, n], y: [-lim, lim], xlabel: 'sample', ylabel: 'mV about 1.65 V' });
+    p.line(ts, rd, C.lime, 1.6).line(ts, tru, C.paper, 1.5, [4, 3]);
+    const rms = Math.sqrt(se / n) * 1000;
+    out(`q = ${nf(3).format(q * 1000)} mV (${nf(1).format((q / 0.33) * 1000)} mg). rms error ${nf(3).format(rms)} mV; q/√12 = ${nf(3).format((q / Math.sqrt(12)) * 1000)} mV. ${v.noise === 0 && v.avg > 1 ? 'Without noise every reading is the same code, so averaging changes nothing.' : v.noise > 0 && v.avg > 1 ? 'Noise spreads the readings over several codes, so the average resolves steps finer than q.' : ''}`);
+  },
+});
+
+// 18.06 velocity-area method on a canal cross-section
+def('xsection', {
+  controls: [{ k: 'n', label: 'Number of verticals', min: 3, max: 30, step: 1, v: 10, f: 0 }, { k: 'k', label: 'Float coefficient k (surface to mean)', min: 0.7, max: 1, step: 0.01, v: 0.85, f: 2 }, { k: 'm', label: 'Power-law exponent 1/m of the profile, m', min: 3, max: 10, step: 0.5, v: 7, f: 1 }],
+  draw(p, v, out) {
+    const B = 3, D = 0.8, Us = 0.9, dep = (y) => D * Math.max(0, 1 - (2 * y / B - 1) ** 2), us = (y) => Us * (dep(y) / D) ** (2 / 3), m = v.m;
+    let Qx = 0; const N = 2000; for (let i = 0; i < N; i++) { const y = ((i + 0.5) * B) / N; Qx += (m / (m + 1)) * us(y) * dep(y) * (B / N); }
+    const yv = Array.from({ length: v.n }, (_, i) => ((i + 0.5) * B) / v.n), w = B / v.n;
+    let Q6 = 0, Qf = 0;
+    p.frame({ x: [0, B], y: [-D * 1.1, 0.15], xlabel: 'across the canal, m', ylabel: 'elevation, m' });
+    yv.forEach((y) => { const d = dep(y), v6 = us(y) * 0.4 ** (1 / m); Q6 += v6 * d * w; Qf += v.k * us(y) * d * w; const t = Math.min(1, v6 / Us); p.rect(y - w / 2, y + w / 2, -d, 0, `rgba(238,255,65,${0.15 + 0.6 * t})`); p.line([y, y], [0, -d], C.ink, 1); p.dots([y], [-0.6 * d], C.amber, 2.5); });
+    const ys = linspace(0, B, 200); p.line(ys, ys.map((y) => -dep(y)), C.paper, 2).line([0, B], [0, 0], C.cyan, 1.5);
+    out(`Exact Q = ${nf(4).format(Qx)} m³/s. Mid-section, meter at 0.6 depth (amber dots): ${nf(4).format(Q6)} (${nf(2).format((Q6 / Qx - 1) * 100)} %). Floats with k = ${nf(2).format(v.k)}: ${nf(4).format(Qf)} (${nf(2).format((Qf / Qx - 1) * 100)} %). For this profile the right k is ${nf(3).format(m / (m + 1))}.`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
