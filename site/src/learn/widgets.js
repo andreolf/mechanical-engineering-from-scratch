@@ -4964,6 +4964,57 @@ def('platehole', {
   },
 });
 
+// 16.09 Delaunay meshing of a dam cross-section, coloured by quality
+def('dammesh', {
+  controls: [{ k: 'h', label: 'Target element size (m)', min: 3, max: 10, step: 0.5, v: 5, f: 1 }, { type: 'select', k: 'pl', label: 'Interior points', options: ['Hexagonal lattice', 'Random'], v: 'Hexagonal lattice' }, { type: 'select', k: 'sm', label: 'Smoothing', options: ['Off', '5 Laplacian sweeps'], v: 'Off' }],
+  draw(p, v, out) {
+    const dam = [[0, 0], [45, 0], [8, 60], [0, 60]], h = v.h;
+    const ins = (x, y) => dam.every((a, k) => { const b = dam[(k + 1) % 4]; return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) >= 0; });
+    const P = []; dam.forEach((a, k) => { const b = dam[(k + 1) % 4], m = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / h)); for (let j = 0; j < m; j++) P.push([a[0] + (b[0] - a[0]) * j / m, a[1] + (b[1] - a[1]) * j / m]); });
+    const nb = P.length, far = (x, y, d) => P.slice(0, nb).every((q) => Math.hypot(q[0] - x, q[1] - y) > d);
+    if (v.pl === 'Random') { let s = 16; const rnd = () => { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }; let cnt = 0; for (let row = 0, y = h / 2; y < 60; y += h * Math.sqrt(3) / 2, row++) for (let x = (row % 2) * h / 2 + 0.3 * h; x < 45; x += h) if (ins(x, y) && far(x, y, 0.6 * h)) cnt++;
+      while (cnt > 0) { const x = 45 * rnd(), y = 60 * rnd(); if (ins(x, y) && far(x, y, 1)) { P.push([x, y]); cnt--; } } }
+    else for (let row = 0, y = h / 2; y < 60; y += h * Math.sqrt(3) / 2, row++) for (let x = (row % 2) * h / 2 + 0.3 * h; x < 45; x += h) if (ins(x, y) && far(x, y, 0.6 * h)) P.push([x, y]);
+    const n = P.length, Q = P.concat([[-2000, -2000], [2000, -2000], [22, 2000]]);
+    const cc = (t) => { const [[ax, ay], [bx, by], [cx, cy]] = t.map((i) => Q[i]), d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by)), ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d, uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d; return [ux, uy, (ax - ux) ** 2 + (ay - uy) ** 2]; };
+    const ar = (t, X = Q) => { const [[ax, ay], [bx, by], [cx, cy]] = t.map((i) => X[i]); return 0.5 * ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)); };
+    let T = [[n, n + 1, n + 2]], Cc = [cc(T[0])];
+    for (let i = 0; i < n; i++) { const [x, y] = Q[i], bad = [], keep = [], kc = []; T.forEach((t, k) => { const [ux, uy, r2] = Cc[k]; if ((x - ux) ** 2 + (y - uy) ** 2 < r2 * (1 - 1e-12)) bad.push(t); else { keep.push(t); kc.push(Cc[k]); } });
+      const cnt = {}; bad.forEach((t) => [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]].forEach((e) => { const k = Math.min(...e) + ',' + Math.max(...e); cnt[k] = (cnt[k] || 0) + 1; }));
+      bad.forEach((t) => [[t[0], t[1]], [t[1], t[2]], [t[2], t[0]]].forEach((e) => { if (cnt[Math.min(...e) + ',' + Math.max(...e)] === 1) { let nt = [e[0], e[1], i]; if (ar(nt) < 0) nt = [e[1], e[0], i]; keep.push(nt); kc.push(cc(nt)); } }));
+      T = keep; Cc = kc; }
+    T = T.filter((t) => Math.max(...t) < n);
+    let X = P.map((q) => q.slice());
+    if (v.sm !== 'Off') { const nbr = X.map(() => new Set()); T.forEach((t) => t.forEach((a) => t.forEach((b) => { if (a !== b) nbr[a].add(b); }))); for (let it = 0; it < 5; it++) for (let i = nb; i < n; i++) { const s = [...nbr[i]]; X[i] = [0, 1].map((k) => s.reduce((acc, j) => acc + X[j][k], 0) / s.length); } }
+    const qual = (t) => { const [a, b, c] = [[1, 2], [2, 0], [0, 1]].map(([i, j]) => Math.hypot(X[t[i]][0] - X[t[j]][0], X[t[i]][1] - X[t[j]][1])), A = Math.abs(ar(t, X)), s = (a + b + c) / 2; return 2 * (A / s) / (a * b * c / (4 * A)); };
+    fitAt(p, 22.5, 30, 25, 32, 'x (m)', 'y (m)');
+    const qs = T.map(qual); T.forEach((t, k) => poly(p, t.map((i) => X[i]), 'rgba(0,0,0,0.6)', heat16(1 - qs[k]), 0.8));
+    const inv = T.filter((t) => ar(t, X) <= 0).length, mn = Math.min(...qs), mean = qs.reduce((s, q) => s + q, 0) / qs.length;
+    out(`${n} points, ${T.length} triangles (Euler: ${2 * n - nb - 2}). Quality min ${nf(3).format(mn)}, mean ${nf(3).format(mean)}; ${qs.filter((q) => q < 0.5).length} below 0.5. Inverted: ${inv}. Colour: cyan for equilateral, red for slivers.`);
+  },
+});
+
+// 16.10 sparsity pattern and bandwidth under three numberings
+def('sparsity', {
+  controls: [{ k: 'nx', label: 'Elements per side', min: 4, max: 16, step: 1, v: 8, f: 0 }, { type: 'select', k: 'ord', label: 'Numbering', options: ['Natural (row by row)', 'Scrambled', 'Reverse Cuthill-McKee'], v: 'Scrambled' }],
+  draw(p, v, out) {
+    const m = v.nx - 1, n = m * m, adj = Array.from({ length: n }, () => []);
+    for (let i = 0; i < m; i++) for (let j = 0; j < m; j++) for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const a = i + di, b = j + dj; if (a >= 0 && a < m && b >= 0 && b < m) adj[i * m + j].push(a * m + b); }
+    let perm = Array.from({ length: n }, (_, i) => i);
+    const scr = perm.slice(); let s = 16; for (let i = n - 1; i > 0; i--) { s = (s * 1664525 + 1013904223) % 4294967296; const j = Math.floor(s / 4294967296 * (i + 1)); [scr[i], scr[j]] = [scr[j], scr[i]]; }
+    if (v.ord === 'Scrambled') perm = scr;
+    if (v.ord.startsWith('Reverse')) { const A2 = Array.from({ length: n }, () => []); adj.forEach((l, i) => l.forEach((j) => A2[scr[i]].push(scr[j]))); const deg = A2.map((l) => l.length), seen = new Array(n).fill(false), order = [];
+      const starts = Array.from({ length: n }, (_, i) => i).sort((a, b) => deg[a] - deg[b] || a - b);
+      starts.forEach((s0) => { if (seen[s0]) return; seen[s0] = true; const q = [s0]; while (q.length) { const i = q.shift(); order.push(i); A2[i].filter((j) => !seen[j]).sort((a, b) => deg[a] - deg[b] || a - b).forEach((j) => { seen[j] = true; q.push(j); }); } });
+      order.reverse(); const inv = new Array(n); order.forEach((o, k) => { inv[o] = k; }); perm = scr.map((x) => inv[x]); }
+    p.frame({ x: [0, n], y: [n, 0], xlabel: 'column', ylabel: 'row, 0 at the top' });
+    let bw = 0, nnz = 0, prof = 0; const first = new Array(n).fill(n);
+    adj.forEach((l, i) => l.forEach((j) => { const r = perm[i], c = perm[j]; nnz++; bw = Math.max(bw, Math.abs(r - c)); first[r] = Math.min(first[r], c); p.rect(c, c + 1, r, r + 1, C.lime); }));
+    first.forEach((f, r) => { prof += r - f; });
+    out(`${n} unknowns, ${nnz} nonzeros (${nf(1).format(100 * nnz / n / n)} % of the matrix). Bandwidth ${bw}, profile ${prof}. A banded solver costs about n·b² = ${nf(0).format(n * bw * bw)} operations.`);
+  },
+});
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
