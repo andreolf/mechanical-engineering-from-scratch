@@ -5741,6 +5741,49 @@ def('bridge', {
     out(`V_out = ${nf(4).format(y)} mV (linear formula ${nf(4).format(yl)} mV, ${y ? nf(3).format((yl / y - 1) * 100) : '0.000'} % apart). Zero drift from the temperature rise: ${nf(2).format(zero * 1000)} µV = ${nf(1).format(zero / (1000 * V * GF * mult) * 1e6)} µε of fake strain.`);
   },
 });
+
+// 18.03 wagon-wheel effect: filmed frames and the apparent rotation rate
+def('wagonwheel', {
+  controls: [{ k: 'kmh', label: 'Car speed, km/h', min: 0, max: 120, step: 0.5, v: 50, f: 1 }, { k: 'fps', label: 'Camera frame rate, fps', min: 10, max: 60, step: 1, v: 25, f: 0 }, { k: 'sp', label: 'Number of spokes', min: 3, max: 10, step: 1, v: 6, f: 0 }],
+  draw(p, v, out) {
+    const D = 0.63, sp = v.sp, fps = v.fps, fr = (kmh) => kmh / 3.6 / (Math.PI * D);
+    const app = (kmh) => { const fsp = fr(kmh) * sp; return (fsp - fps * Math.round(fsp / fps)) / sp; };
+    const amax = fps / (2 * sp), ytop = amax * 3.2;
+    p.frame({ x: [0, 120], y: [-amax * 1.1, ytop], xlabel: 'car speed, km/h', ylabel: 'apparent rev/s' });
+    const xs = linspace(0, 120, 1200); let px = [], py = [];
+    xs.forEach((x) => { const a = app(x); if (py.length && Math.abs(a - py[py.length - 1]) > amax) { p.line(px, py, C.lime, 2); px = []; py = []; } px.push(x); py.push(a); });
+    p.line(px, py, C.lime, 2).line([0, 120], [0, 0], C.grey, 1, [3, 3]).line(xs, xs.map((x) => (fr(x) < amax * 1.5 ? fr(x) : NaN)), C.grey, 1, [5, 4]);
+    p.dots([v.kmh], [app(v.kmh)], C.amber, 5);
+    const g = p.g, y0 = p.Y(amax * 2.15), r = Math.min(26, (p.w - p.pad.l - p.pad.r) / 14), dx = (p.w - p.pad.l - p.pad.r) / 5;
+    for (let k = 0; k < 5; k++) {
+      const cx = p.pad.l + dx * (k + 0.5), th = (2 * Math.PI * fr(v.kmh) * k) / fps;
+      g.strokeStyle = C.paper; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, y0, r, 0, 7); g.stroke();
+      for (let s = 0; s < sp; s++) { const a = th + (2 * Math.PI * s) / sp; g.strokeStyle = s === 0 ? C.amber : C.grey; g.lineWidth = s === 0 ? 2.5 : 1.2; g.beginPath(); g.moveTo(cx, y0); g.lineTo(cx + r * Math.sin(a), y0 - r * Math.cos(a)); g.stroke(); }
+      g.fillStyle = C.grey; g.font = '11px "Archivo Variable", sans-serif'; g.textAlign = 'center'; g.fillText(`frame ${k + 1}`, cx, y0 + r + 14);
+    }
+    const a = app(v.kmh);
+    out(`True rotation ${nf(3).format(fr(v.kmh))} rev/s. On film the wheel ${Math.abs(a) < 1e-3 ? 'looks frozen' : a < 0 ? `turns backwards at ${nf(3).format(-a)} rev/s` : `turns forwards at ${nf(3).format(a)} rev/s`}. Frozen at ${nf(1).format((fps / sp) * Math.PI * D * 3.6)} km/h and its multiples. The amber spoke is one physical spoke; all spokes look alike, so the eye picks the nearest one.`);
+  },
+});
+
+// 18.04 IIR low-pass on a noisy accelerometer signal
+def('filtercut', {
+  controls: [{ k: 'fc', label: 'Cutoff frequency, Hz', min: 1, max: 100, step: 1, v: 10, f: 0 }, { type: 'select', k: 'kind', label: 'Filter', options: ['First-order RC', 'Second-order Butterworth'], v: 'Second-order Butterworth' }],
+  draw(p, v, out) {
+    const fs = 500, K = Math.tan((Math.PI * v.fc) / fs);
+    let b, a;
+    if (v.kind === 'First-order RC') { b = [K / (1 + K), K / (1 + K)]; a = [1, (K - 1) / (1 + K)]; }
+    else { const a0 = 1 + Math.SQRT2 * K + K * K; b = [K * K / a0, 2 * K * K / a0, K * K / a0]; a = [1, (2 * (K * K - 1)) / a0, (1 - Math.SQRT2 * K + K * K) / a0]; }
+    const rn = gaussRng(3), n = 1000, t = [], x = [], y = [];
+    for (let i = 0; i < n; i++) { const ti = i / fs; t.push(ti); x.push(Math.sin(2 * Math.PI * 2 * ti) + 0.5 * Math.sin(2 * Math.PI * 50 * ti) + 0.1 * rn()); }
+    for (let i = 0; i < n; i++) { let s = 0; for (let k = 0; k < b.length; k++) if (i - k >= 0) s += b[k] * x[i - k]; for (let k = 1; k < a.length; k++) if (i - k >= 0) s -= a[k] * y[i - k]; y.push(s); }
+    const H = (f) => { const w = (2 * Math.PI * f) / fs; let nr = 0, ni = 0, dr = 0, di = 0; b.forEach((c, k) => { nr += c * Math.cos(w * k); ni -= c * Math.sin(w * k); }); a.forEach((c, k) => { dr += c * Math.cos(w * k); di -= c * Math.sin(w * k); }); return [Math.hypot(nr, ni) / Math.hypot(dr, di), Math.atan2(ni, nr) - Math.atan2(di, dr)]; };
+    p.frame({ x: [0, 2], y: [-2, 2], xlabel: 'time, s', ylabel: 'acceleration, g' });
+    p.line(t, x, 'rgba(154,157,147,0.7)', 1).line(t, t.map((s) => Math.sin(2 * Math.PI * 2 * s)), C.paper, 1, [4, 4]).line(t, y, C.lime, 2.2);
+    const [g2, ph2] = H(2), [g50] = H(50);
+    out(`Gain at 2 Hz ${nf(4).format(g2)}, at 50 Hz ${nf(4).format(g50)} (${nf(1).format(20 * Math.log10(g50))} dB). Phase lag at 2 Hz ${nf(1).format((-ph2 * 180) / Math.PI)}°, a delay of ${nf(1).format((-ph2 / (2 * Math.PI * 2)) * 1000)} ms against the true motion (dashed).`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
