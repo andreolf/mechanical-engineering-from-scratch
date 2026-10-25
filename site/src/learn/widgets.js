@@ -5907,6 +5907,61 @@ def('pzmap', {
     out(`Poles ${poles.map(([a, b]) => `${nf(2).format(a)}${b ? ` ${b > 0 ? '+' : '−'} ${nf(2).format(Math.abs(b))}j` : ''}`).join(', ')}. ${stable ? `Stable: overshoot ${nf(1).format(Math.max(0, os))} %${zeta > 0 && zeta < 1 && z === 0 ? ` (formula ${nf(1).format(100 * Math.exp((-zeta * Math.PI) / Math.sqrt(1 - zeta * zeta)))} %)` : ''}.` : 'A pole in the right half-plane (shaded): the response grows without bound.'}${z < 0 ? ' A right-half-plane zero makes the response start the wrong way.' : ''}`);
   },
 });
+
+// 18.11 root locus with a gain slider
+function polyRoots18(c) { // Durand-Kerner, c[0] s^n + ... + c[n]
+  const n = c.length - 1, a = c.map((x) => x / c[0]);
+  let z = Array.from({ length: n }, (_, k) => [0.4 * Math.cos((2 * Math.PI * k) / n + 0.4) * 3, 0.9 * Math.sin((2 * Math.PI * k) / n + 0.4) * 3]);
+  const mul = (p, q) => [p[0] * q[0] - p[1] * q[1], p[0] * q[1] + p[1] * q[0]], div = (p, q) => { const d = q[0] * q[0] + q[1] * q[1]; return [(p[0] * q[0] + p[1] * q[1]) / d, (p[1] * q[0] - p[0] * q[1]) / d]; };
+  for (let it = 0; it < 500; it++) { let mv = 0; z = z.map((zi, i) => { let pv = [1, 0]; for (let k = 1; k <= n; k++) pv = [pv[0] * zi[0] - pv[1] * zi[1] + a[k], pv[0] * zi[1] + pv[1] * zi[0]]; let den = [1, 0]; z.forEach((zj, j) => { if (j !== i) den = mul(den, [zi[0] - zj[0], zi[1] - zj[1]]); }); const d = div(pv, den); mv = Math.max(mv, Math.hypot(...d)); return [zi[0] - d[0], zi[1] - d[1]]; }); if (mv < 1e-12) break; }
+  return z;
+}
+def('rootlocus', {
+  controls: [{ type: 'select', k: 'sys', label: 'Open loop', options: ['K / (s(s+1)(s+5))', 'Positioner: K / ((0.05s+1)(2s²+4s+50))'], v: 'K / (s(s+1)(s+5))' }, { k: 'lk', label: 'Gain K, log₁₀', min: -2, max: 3, step: 0.01, v: 1, f: 2 }],
+  draw(p, v, out) {
+    const one = v.sys.startsWith('K / (s('), den = one ? [1, 6, 5, 0] : [0.1, 2.2, 6.5, 50], K = 10 ** v.lk, Kc = one ? 30 : 93, wc = one ? Math.sqrt(5) : Math.sqrt(65);
+    const R = one ? [-8, 3, -6, 6] : [-26, 6, -16, 16];
+    p.frame({ x: [R[0], R[1]], y: [R[2], R[3]], xlabel: 'Re s', ylabel: 'Im s' });
+    p.rect(0, R[1], R[2], R[3], 'rgba(255,90,54,0.12)').line([0, 0], [R[2], R[3]], C.grey, 1).line([R[0], R[1]], [0, 0], C.grey, 1);
+    const pts = [[], []];
+    for (let e = -2; e <= 3.3; e += 0.01) { const r = polyRoots18([den[0], den[1], den[2], den[3] + 10 ** e]); r.forEach((q) => { pts[0].push(q[0]); pts[1].push(q[1]); }); }
+    p.dots(pts[0], pts[1], 'rgba(154,157,147,0.55)', 1.1);
+    const ol = polyRoots18(den); const g = p.g; g.strokeStyle = C.paper; g.lineWidth = 1.5;
+    ol.forEach(([a, b]) => { const X = p.X(a), Y = p.Y(b); g.beginPath(); g.moveTo(X - 5, Y - 5); g.lineTo(X + 5, Y + 5); g.moveTo(X + 5, Y - 5); g.lineTo(X - 5, Y + 5); g.stroke(); });
+    const cl = polyRoots18([den[0], den[1], den[2], den[3] + K]);
+    p.dots(cl.map((q) => q[0]), cl.map((q) => q[1]), C.lime, 6);
+    p.dots([0, 0], [wc, -wc], C.amber, 3.5);
+    const mr = Math.max(...cl.map((q) => q[0]));
+    out(`K = ${nf(K < 1 ? 3 : 1).format(K)}: closed-loop poles ${cl.sort((a, b) => b[1] - a[1]).map(([a, b]) => `${nf(2).format(a)}${Math.abs(b) > 1e-6 ? ` ${b > 0 ? '+' : '−'} ${nf(2).format(Math.abs(b))}j` : ''}`).join(', ')}. ${mr < 0 ? 'Stable.' : 'Unstable: poles in the shaded half-plane.'} The locus crosses the axis at K = ${Kc}, ω = ${nf(3).format(wc)} rad/s (amber).`);
+  },
+});
+
+// 18.12 e-bike cruise control with PID and anti-windup
+def('ebikepid', {
+  controls: [{ k: 'kp', label: 'Kp, N per m/s', min: 0, max: 600, step: 5, v: 255, f: 0 }, { k: 'ki', label: 'Ki, N per m', min: 0, max: 150, step: 1, v: 42, f: 0 }, { k: 'kd', label: 'Kd, N per m/s²', min: 0, max: 150, step: 1, v: 0, f: 0 }, { k: 'gr', label: 'Hill grade from 20 to 60 s, %', min: 0, max: 12, step: 0.5, v: 3, f: 1 }, { k: 'aw', label: 'Anti-windup (clamp the integrator)', type: 'check', v: 1 }],
+  draw(p, v, out) {
+    const m = 100, g = 9.81, rho = 1.2, CdA = 0.5, Crr = 0.006, Fmax = 80, ta = 0.2, tsn = 0.3, vr = 25 / 3.6, dt = 0.005;
+    let vel = vr, vm = vr, F = 0.5 * rho * CdA * vr * vr + Crr * m * g, I = v.ki ? F / v.ki : 0, ep = 0, sat = 0, minv = 99, maxAfter = 0, errEnd = 0, nEnd = 0;
+    const ts = [], vs = [], fs = [];
+    for (let k = 0; k < 100 / dt; k++) {
+      const t = k * dt, e = vr - vm, D = k ? (e - ep) / dt : 0; ep = e;
+      const u = v.kp * e + v.ki * I + v.kd * D, us = Math.min(Math.max(u, 0), Fmax);
+      if (!v.aw || u === us || (u > Fmax && e < 0) || (u < 0 && e > 0)) I += e * dt;
+      if (us === Fmax) sat += dt;
+      F += (dt * (us - F)) / ta;
+      const th = Math.atan(t >= 20 && t < 60 ? v.gr / 100 : 0);
+      vel += (dt * (F - 0.5 * rho * CdA * vel * Math.abs(vel) - Crr * m * g * Math.cos(th) - m * g * Math.sin(th))) / m; vel = Math.max(vel, 0);
+      vm += (dt * (vel - vm)) / tsn;
+      if (k % 20 === 0) { ts.push(t); vs.push(vel * 3.6); fs.push(us); }
+      minv = Math.min(minv, vel * 3.6); if (t > 60) maxAfter = Math.max(maxAfter, vel * 3.6); if (t > 55 && t < 60) { errEnd += 25 - vel * 3.6; nEnd++; }
+    }
+    const hi = Math.max(32, ...vs) + 1, lo = Math.min(15, ...vs) - 1;
+    p.frame({ x: [0, 100], y: [lo, hi], xlabel: 'time, s', ylabel: 'speed, km/h' });
+    p.rect(20, 60, lo, hi, 'rgba(255,181,71,0.10)').line([0, 100], [25, 25], C.grey, 1, [4, 3]);
+    p.line(ts, fs.map((f) => lo + ((hi - lo) * f) / Fmax / 3), 'rgba(92,200,255,0.7)', 1.2).line(ts, vs, C.lime, 2.2);
+    out(`End of hill: error ${nf(3).format(errEnd / nEnd)} km/h. Slowest ${nf(1).format(minv)} km/h; peak after the crest ${nf(1).format(maxAfter)} km/h. Motor at its 80 N limit for ${nf(1).format(sat)} s (blue: motor force, bottom third = 0 to 80 N).`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
