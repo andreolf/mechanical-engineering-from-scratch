@@ -6025,6 +6025,58 @@ def('pendlqr', {
 });
 // @@P18 END
 
+// @@P19 START
+// 19.01 critical-path Gantt chart with task overruns
+def('gantt', {
+  controls: [{ k: 'dE', label: 'Runner fabrication overrun, weeks', min: 0, max: 6, step: 1, v: 0, f: 0 }, { k: 'dF', label: 'Pipe and generator delivery overrun, weeks', min: 0, max: 6, step: 1, v: 0, f: 0 }, { k: 'dD', label: 'Penstock design overrun, weeks', min: 0, max: 6, step: 1, v: 0, f: 0 }],
+  draw(p, v, out) {
+    const T = [['A', 'Survey site, flow', 2, []], ['B', 'Hydrology, head', 2, ['A']], ['C', 'Turbine design', 3, ['B']], ['D', 'Penstock design', 2 + v.dD, ['B']], ['E', 'Fabricate runner', 4 + v.dE, ['C']], ['F', 'Pipe, generator', 3 + v.dF, ['D']], ['G', 'Install', 2, ['E', 'F']], ['H', 'Commission, test', 1, ['G']], ['I', 'Report, publish', 2, ['H']]];
+    const ES = {}, EF = {}, LS = {}, LF = {};
+    T.forEach(([id, , d, pre]) => { ES[id] = Math.max(0, ...pre.map((q) => EF[q])); EF[id] = ES[id] + d; });
+    const end = Math.max(...Object.values(EF));
+    [...T].reverse().forEach(([id, , d]) => { const succ = T.filter((t) => t[3].includes(id)).map((t) => LS[t[0]]); LF[id] = succ.length ? Math.min(...succ) : end; LS[id] = LF[id] - d; });
+    p.frame({ x: [0, Math.max(24, end + 1)], y: [0, T.length + 0.5], xlabel: 'week', ylabel: '', noy: true });
+    T.forEach(([id, name, d], i) => { const y = T.length - i, crit = LS[id] === ES[id];
+      p.rect(ES[id], EF[id], y - 0.35, y + 0.35, crit ? 'rgba(255,90,54,0.85)' : 'rgba(238,255,65,0.7)');
+      if (!crit) p.rect(EF[id], LF[id], y - 0.12, y + 0.12, 'rgba(154,157,147,0.6)');
+      p.text(`${id} ${name}`, EF[id] + (crit ? 0.3 : LF[id] - EF[id] + 0.3), y - 0.2, C.paper); });
+    p.line([16, 16], [0, T.length + 0.5], C.grey, 1, [4, 3]);
+    out(`Project length ${end} weeks (plan 16, dashed). Critical path ${T.filter(([id]) => LS[id] === ES[id]).map(([id]) => id).join('-')} in red; grey bars are float. ${end > 16 ? `The hand-over slips ${end - 16} week${end - 17 ? 's' : ''}.` : 'Overruns that stay within the float cost nothing.'}`);
+  },
+});
+
+// 19.02 coconut behind a boulder: kinematic Foppl wake with shedding, path and residence times
+def('coconutvideo', {
+  controls: [{ k: 'eps', label: 'Shedding amplitude ε', min: 0, max: 0.4, step: 0.01, v: 0.22, f: 2 }, { k: 'rc', label: 'Vortex core radius, m', min: 0.1, max: 0.4, step: 0.01, v: 0.25, f: 2 }, { k: 'dx', label: 'Release point shift downstream, m', min: -0.2, max: 0.4, step: 0.01, v: 0, f: 2 }],
+  draw(p, v, out) {
+    const a = 0.5, U = 0.4, x0 = 1.2; let lo = 1e-6, hi = 5;
+    for (let i = 0; i < 80; i++) { const y = (lo + hi) / 2, r = Math.hypot(x0, y); if (r - (a * a) / r - 2 * y > 0) lo = y; else hi = y; }
+    const y0 = (lo + hi) / 2, r0 = Math.hypot(x0, y0), G = 4 * Math.PI * U * y0 * (1 - a ** 4 / r0 ** 4), wsh = (2 * Math.PI * 0.2 * U) / (2 * a);
+    const vel = (x, y, t) => { // returns [u, v]
+      const zx = x, zy = y, r2 = zx * zx + zy * zy; let wr = U * (1 - (a * a * (zx * zx - zy * zy)) / (r2 * r2)), wi = U * ((a * a * 2 * zx * zy) / (r2 * r2));
+      [[x0, y0, -G * (1 + v.eps * Math.sin(wsh * t))], [x0, -y0, G * (1 - v.eps * Math.sin(wsh * t))]].forEach(([vx, vy, g]) => {
+        const dx = zx - vx, dy = zy - vy, d2 = dx * dx + dy * dy, core = d2 / (d2 + v.rc * v.rc), m2 = vx * vx + vy * vy, ix = (a * a * vx) / m2, iy = (a * a * vy) / m2, ex = zx - ix, ey = zy - iy, e2 = ex * ex + ey * ey;
+        const fr = (core * dx) / d2 - ex / e2, fi = (-core * dy) / d2 + ey / e2; // core/(z-zv) - 1/(z-zi)
+        wr += (g / (2 * Math.PI)) * fi; wi -= (g / (2 * Math.PI)) * fr; });
+      return [wr, -wi]; };
+    const run = (x, y, keep) => { let t = 0; const dt = 0.05, P = [[x, y]];
+      for (let k = 0; k < 4800; k++) { const f = (X, Y, T) => vel(X, Y, T), k1 = f(x, y, t), k2 = f(x + (dt / 2) * k1[0], y + (dt / 2) * k1[1], t + dt / 2), k3 = f(x + (dt / 2) * k2[0], y + (dt / 2) * k2[1], t + dt / 2), k4 = f(x + dt * k3[0], y + dt * k3[1], t + dt);
+        x += (dt / 6) * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]); y += (dt / 6) * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]); t += dt; if (keep && k % 2 === 0) P.push([x, y]);
+        if (x > 4 || Math.hypot(x, y) < a) return [t, P]; }
+      return [Infinity, P]; };
+    sqAt(p, 1.7, 0, 2.4, 'x, m', 'y, m');
+    const cs = linspace(0, 2 * Math.PI, 60); p.line(cs.map((c) => a * Math.cos(c)), cs.map((c) => a * Math.sin(c)), C.paper, 2);
+    const [tr, path] = run(0.95 + v.dx, 0.4, true);
+    p.line(path.map((q) => q[0]), path.map((q) => q[1]), 'rgba(238,255,65,0.75)', 1.2);
+    const rn = gaussRng(5), res = [];
+    for (let i = 0; i < 30; i++) res.push(run(0.95 + v.dx + 0.03 * rn(), 0.4 + 0.03 * rn(), false)[0]);
+    p.dots([x0, x0], [y0, -y0], C.red, 4).dots([0.95 + v.dx], [0.4], C.amber, 4);
+    const fin = res.filter(Number.isFinite).sort((A, B) => A - B), med = res.sort((A, B) => A - B)[15];
+    out(`This coconut ${Number.isFinite(tr) ? `leaves the 4 m box after ${nf(1).format(tr)} s` : 'is still trapped after 240 s'}. Of 30 released within 3 cm of it, ${fin.length} escape within 240 s; median residence ${Number.isFinite(med) ? nf(0).format(med) + ' s' : 'over 240 s'}. ${v.eps === 0 ? 'Steady wake: the closed streamlines trap it for ever.' : ''}`);
+  },
+});
+// @@P19 END
+
 export function mountWidgets(root) {
   root.querySelectorAll('.widget[data-widget]').forEach((el) => {
     const spec = W[el.dataset.widget];
