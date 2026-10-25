@@ -5851,6 +5851,62 @@ def('tcstep', {
     out(`Log-linear fit of the rise: τ = ${n > 5 ? nf(3).format(tf) : 'n/a'} s (true ${nf(1).format(v.tau)} s, ${n > 5 ? nf(1).format((tf / v.tau - 1) * 100) : '?'} %). ${R > 0 ? `On the ramp the probe lags the water (dashed) by R·τ = ${nf(2).format(R * v.tau)} K.` : 'Add a ramp to see the steady lag R·τ.'}`);
   },
 });
+
+// 18.09 ARX identification of a DC motor from a step
+function lsq18(Phi, y) {
+  const m = Phi[0].length, sc = Array.from({ length: m }, (_, j) => Math.sqrt(Phi.reduce((s, r) => s + r[j] * r[j], 0)) || 1);
+  const N = Array.from({ length: m }, (_, i) => Array.from({ length: m }, (_, j) => Phi.reduce((s, r) => s + (r[i] / sc[i]) * (r[j] / sc[j]), 0)));
+  const rhs = Array.from({ length: m }, (_, i) => Phi.reduce((s, r, k) => s + (r[i] / sc[i]) * y[k], 0));
+  const x = linSolve(N, rhs); return x ? x.map((v, i) => v / sc[i]) : null;
+}
+def('arxfit', {
+  controls: [{ type: 'select', k: 'ord', label: 'Model', options: ['ARX(1,1), first order', 'ARX(2,2), second order'], v: 'ARX(1,1), first order' }, { k: 'noise', label: 'Tachometer noise, rad/s rms', min: 0, max: 6, step: 0.1, v: 0.3, f: 1 }, { k: 'Le', label: 'Winding inductance, mH', min: 1, max: 40, step: 1, v: 8, f: 0 }],
+  draw(p, v, out) {
+    const R = 2, L = v.Le / 1000, k = 0.03, J = 5.4e-5, bv = 1e-5, T = 0.005, n = 300, rn = gaussRng(8);
+    const f = (x, u) => [(-R * x[0] - k * x[1] + u) / L, (k * x[0] - bv * x[1]) / J];
+    const u = Array.from({ length: n }, (_, i) => (i * T >= 0.05 ? 6 : 0)), w = [], ts = [];
+    let x = [0, 0]; const sub = 60, h = T / sub;
+    for (let i = 0; i < n; i++) { w.push(x[1]); ts.push(i * T); for (let s = 0; s < sub; s++) { const k1 = f(x, u[i]), k2 = f(x.map((q, j) => q + (h / 2) * k1[j]), u[i]), k3 = f(x.map((q, j) => q + (h / 2) * k2[j]), u[i]), k4 = f(x.map((q, j) => q + h * k3[j]), u[i]); x = x.map((q, j) => q + (h / 6) * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j])); } }
+    const y = w.map((q) => q + v.noise * rn()), two = v.ord.startsWith('ARX(2');
+    const Phi = [], Y = []; for (let i = 2; i < n; i++) { Phi.push(two ? [y[i - 1], y[i - 2], u[i - 1], u[i - 2]] : [y[i - 1], u[i - 1]]); Y.push(y[i]); }
+    const th = lsq18(Phi, Y), ym = new Array(n).fill(0);
+    if (th) for (let i = 1; i < n; i++) ym[i] = two ? th[0] * ym[i - 1] + (i > 1 ? th[1] * ym[i - 2] + th[3] * u[i - 2] : 0) + th[2] * u[i - 1] : th[0] * ym[i - 1] + th[1] * u[i - 1];
+    const Kt = k / (R * bv + k * k), tr = -R / L - bv / J, det = (R * bv + k * k) / (L * J), pd = (tr + Math.sqrt(tr * tr - 4 * det)) / 2;
+    p.frame({ x: [0, 1.5], y: [-10, Kt * 6 * 1.15], xlabel: 'time, s', ylabel: 'speed, rad/s' });
+    p.dots(ts, y, 'rgba(154,157,147,0.8)', 1.5).line(ts, ym, C.lime, 2.2);
+    let msg = '';
+    if (th) { const a = two ? th[0] + th[1] : th[0], b = two ? th[2] + th[3] : th[1], K = b / (1 - a);
+      let tau; if (two) { const dsc = th[0] * th[0] + 4 * th[1], z = dsc >= 0 ? (th[0] + Math.sqrt(dsc)) / 2 : Math.sqrt(-th[1]); tau = -T / Math.log(z); } else tau = -T / Math.log(th[0]);
+      msg = `Identified K = ${nf(3).format(K)} rad/s/V (true ${nf(3).format(Kt)}), dominant τ = ${nf(4).format(tau)} s (true ${nf(4).format(-1 / pd)} s, ${nf(1).format((tau * -pd - 1) * 100)} %).`; }
+    out(msg || 'The fit is singular.');
+  },
+});
+
+// 18.10 pole-zero map and step response of a second-order system with an optional zero
+def('pzmap', {
+  controls: [{ k: 'zeta', label: 'Damping ratio ζ', min: -0.3, max: 2, step: 0.05, v: 0.2, f: 2 }, { k: 'wn', label: 'Natural frequency ωn, rad/s', min: 1, max: 10, step: 0.5, v: 5, f: 1 }, { k: 'z', label: 'Zero at s = −z (0 = no zero)', min: -10, max: 20, step: 0.5, v: 0, f: 1 }, { type: 'select', k: 'view', label: 'Show', options: ['Pole-zero map', 'Step response'], v: 'Pole-zero map' }],
+  draw(p, v, out) {
+    const { zeta, wn } = v, z = v.z, re = -zeta * wn, disc = zeta * zeta - 1;
+    const poles = disc < 0 ? [[re, wn * Math.sqrt(-disc)], [re, -wn * Math.sqrt(-disc)]] : [[re + wn * Math.sqrt(disc), 0], [re - wn * Math.sqrt(disc), 0]];
+    const dt = 0.002, n = 3000, ts = [], ys = []; let x = 0, xd = 0;
+    for (let i = 0; i < n; i++) { const xdd = wn * wn * (1 - x) - 2 * zeta * wn * xd; ts.push(i * dt); ys.push(z !== 0 ? x + xd / z : x); xd += xdd * dt; x += xd * dt; }
+    const stable = poles.every((q) => q[0] < 0);
+    if (v.view === 'Pole-zero map') {
+      const R = Math.max(12, ...poles.map((q) => Math.abs(q[0]) * 1.2), Math.abs(z) * 1.2);
+      p.frame({ x: [-R, R * 0.4], y: [-R * 0.75, R * 0.75], xlabel: 'Re s', ylabel: 'Im s' });
+      p.rect(0, R * 0.4, -R, R, 'rgba(255,90,54,0.12)').line([0, 0], [-R, R], C.grey, 1).line([-R, R], [0, 0], C.grey, 1);
+      const g = p.g; g.strokeStyle = C.lime; g.lineWidth = 2.5;
+      poles.forEach(([a, b]) => { const X = p.X(a), Y = p.Y(b); g.beginPath(); g.moveTo(X - 6, Y - 6); g.lineTo(X + 6, Y + 6); g.moveTo(X + 6, Y - 6); g.lineTo(X - 6, Y + 6); g.stroke(); });
+      if (z !== 0) { g.strokeStyle = C.amber; g.beginPath(); g.arc(p.X(-z), p.Y(0), 6, 0, 7); g.stroke(); }
+    } else {
+      const lim = stable ? Math.max(1.2, Math.min(4, Math.max(...ys) * 1.1)) : 4, lo = Math.max(-2, Math.min(-0.1, Math.min(...ys) * 1.1));
+      p.frame({ x: [0, 6], y: [lo, lim], xlabel: 'time, s', ylabel: 'y' });
+      p.line([0, 6], [1, 1], C.grey, 1, [4, 3]).line(ts, ys.map((y) => Math.max(lo - 1, Math.min(lim + 1, y))), C.lime, 2);
+    }
+    const os = stable ? (Math.max(...ys) - 1) * 100 : NaN;
+    out(`Poles ${poles.map(([a, b]) => `${nf(2).format(a)}${b ? ` ${b > 0 ? '+' : '−'} ${nf(2).format(Math.abs(b))}j` : ''}`).join(', ')}. ${stable ? `Stable: overshoot ${nf(1).format(Math.max(0, os))} %${zeta > 0 && zeta < 1 && z === 0 ? ` (formula ${nf(1).format(100 * Math.exp((-zeta * Math.PI) / Math.sqrt(1 - zeta * zeta)))} %)` : ''}.` : 'A pole in the right half-plane (shaded): the response grows without bound.'}${z < 0 ? ' A right-half-plane zero makes the response start the wrong way.' : ''}`);
+  },
+});
 // @@P18 END
 
 export function mountWidgets(root) {
