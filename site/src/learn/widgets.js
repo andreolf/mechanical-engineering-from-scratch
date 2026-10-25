@@ -6163,6 +6163,39 @@ def('hammer', {
     out(`Wave speed ${a.toFixed(0)} m/s, 2L/a = ${((2 * v.L) / a).toFixed(2)} s. Peak rise ${(Hm - Hv0).toFixed(1)} m against Joukowsky ${dHj.toFixed(1)} m (${(((Hm - Hv0) / dHj) * 100).toFixed(0)} %).`);
   },
 });
+
+// 19.07 e-bike mid-drive: full-throttle wheel force against road load
+def('ebikegear', {
+  controls: [{ k: 'G', label: 'Reduction ratio G', min: 8, max: 32, step: 1, v: 22, f: 0 }, { k: 'gr', label: 'Grade, %', min: 0, max: 15, step: 0.5, v: 8, f: 1 }, { k: 'Im', label: 'Current limit, A', min: 5, max: 25, step: 1, v: 15, f: 0 }],
+  draw(p, v, out) {
+    const m = 100, rw = 0.35, K = 0.08, R = 0.25, Vb = 36, cut = 25 / 3.6, th = Math.atan(v.gr / 100);
+    const I = (s) => (s >= cut ? 0 : Math.min(v.Im, Math.max(0, (Vb - (K * v.G * s) / rw) / R)));
+    const Fw = (s) => (0.92 * v.G * K * I(s)) / rw + 100 / Math.max(s, 1), Fr = (s) => m * 9.81 * (0.008 * Math.cos(th) + Math.sin(th)) + 0.5 * 1.18 * 0.55 * s * s;
+    const vs = linspace(0.5, 9, 400); let vss = null; for (const s of vs) if (Fw(s) < Fr(s)) { vss = s; break; }
+    const top = Math.max(...vs.map(Fw), ...vs.map(Fr));
+    p.frame({ x: [0, 9 * 3.6], y: [0, top * 1.1], xlabel: 'speed, km/h', ylabel: 'force, N' });
+    p.line(vs.map((s) => s * 3.6), vs.map(Fw), C.lime, 2.5).line(vs.map((s) => s * 3.6), vs.map(Fr), C.red, 2).line([25, 25], [0, top * 1.1], C.grey, 1, [4, 3]);
+    if (vss) p.dots([vss * 3.6], [Fr(vss)], C.amber, 5);
+    const Iss = vss ? I(vss) : 0, Tss = 30 + Iss * Iss * R * 1.8;
+    out(vss ? `Settles at ${(vss * 3.6).toFixed(1)} km/h with ${Iss.toFixed(1)} A. Steady winding temperature if held: ${Tss.toFixed(0)} °C ${Tss > 120 ? '(over the 120 °C limit)' : ''}. Motor no-load speed maps to ${((Vb / K / v.G) * rw * 3.6).toFixed(1)} km/h.` : 'Too steep: the bike cannot hold even walking pace.');
+  },
+});
+
+// 19.08 rotating disc stresses, solid or bored, against yield
+def('diskstress', {
+  controls: [{ k: 'vr', label: 'Rim speed, m/s', min: 50, max: 450, step: 5, v: 150, f: 0 }, { k: 'a', label: 'Bore radius, mm', min: 0, max: 150, step: 1, v: 20, f: 0 }],
+  draw(p, v, out) {
+    const rho = 7850, nu = 0.29, b = 0.3, a = v.a / 1000, w = v.vr / b, k = ((3 + nu) / 8) * rho * w * w, sy = 860, su = 1000;
+    const rs = linspace(a, b, 200);
+    const sr = rs.map((r) => (a > 0 ? k * (a * a + b * b - (a * a * b * b) / (r * r) - r * r) : k * (b * b - r * r)) / 1e6);
+    const st = rs.map((r) => (a > 0 ? k * (a * a + b * b + (a * a * b * b) / (r * r) - ((1 + 3 * nu) / (3 + nu)) * r * r) : k * (b * b - ((1 + 3 * nu) / (3 + nu)) * r * r)) / 1e6);
+    const smax = Math.max(...st, ...sr), top = Math.max(smax, sy) * 1.1;
+    p.frame({ x: [0, 300], y: [0, top], xlabel: 'radius, mm', ylabel: 'stress, MPa' });
+    p.line([0, 300], [sy, sy], C.grey, 1, [4, 3]).line(rs.map((r) => r * 1000), sr, C.amber, 2).line(rs.map((r) => r * 1000), st, C.lime, 2.5);
+    if (a > 0) p.rect(0, v.a, 0, top, 'rgba(154,157,147,0.25)');
+    out(`Speed ${((w * 60) / 2 / Math.PI).toFixed(0)} rpm, ${(v.vr ** 2 / 4 / 1000).toFixed(2)} kJ/kg. Peak ${smax.toFixed(1)} MPa${a > 0 ? ' at the bore' : ' at the centre'}: yield margin ${(sy / smax).toFixed(2)}, burst at ${Math.sqrt(su / smax).toFixed(2)} x this speed.${smax > sy ? ' Yields.' : ''}`);
+  },
+});
 // @@P19 END
 
 export function mountWidgets(root) {
