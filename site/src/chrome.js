@@ -52,6 +52,9 @@ export function renderFooter(page) {
         <li><a href="${REPO}" rel="noopener">Source on GitHub</a></li>
         <li><a href="${REPO}/issues" rel="noopener">Report a mistake</a></li>
         <li><a href="${REPO}/blob/main/LICENSE" rel="noopener">MIT license</a></li></ul></div>
+      <div data-testid="more-courses"><h2>More courses</h2><ul>
+        <li><a href="https://andreolf.github.io/ai-safety-from-scratch/" rel="noopener">AI Safety from Scratch</a></li>
+        <li><a href="https://andreolf.github.io/security-from-scratch/" rel="noopener">Security from Scratch</a></li></ul></div>
       <div><h2>Francesco</h2><ul>
         <li><a href="https://x.com/francescoswiss" rel="noopener">X @francescoswiss</a></li>
         <li><a href="https://www.youtube.com/@swissintech" rel="noopener">YouTube @swissintech</a></li>

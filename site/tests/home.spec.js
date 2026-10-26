@@ -179,6 +179,9 @@ test.describe('Home page', () => {
     await footer.scrollIntoViewIfNeeded();
     await expect(footer).toContainText('not affiliated with or endorsed by ETH Zurich');
     await expect(footer.getByRole('link', { name: /GitHub/ }).first()).toHaveAttribute('href', /github\.com\/andreolf/);
+    const more = footer.getByTestId('more-courses');
+    await expect(more.getByRole('link', { name: 'AI Safety from Scratch' })).toHaveAttribute('href', 'https://andreolf.github.io/ai-safety-from-scratch/');
+    await expect(more.getByRole('link', { name: 'Security from Scratch' })).toHaveAttribute('href', 'https://andreolf.github.io/security-from-scratch/');
     if (isTouch(info)) {
       const small = await smallTargets(page, '#site-footer');
       expect(small, small.join('\n')).toEqual([]);

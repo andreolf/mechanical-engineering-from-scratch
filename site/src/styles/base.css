@@ -101,7 +101,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--lime); width: 20px
 .footer-legal { margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--rule); display: grid; gap: 10px; color: var(--dim); font-size: var(--t-1); }
 .footer-legal p { margin: 0; max-width: 72ch; }
 @media (min-width: 900px) {
-  .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr 1fr; }
+  .footer-grid { grid-template-columns: 2fr repeat(5, 1fr); }
   .footer-about { grid-column: auto; }
 }
 
