@@ -31,39 +31,39 @@
       <a class="hide-s" href="${n}#labs">Labs</a>
       <a class="hide-xs" href="learn.html#/progress" ${e===`progress`?`aria-current="page"`:``}>Progress</a>
       <a class="xp-link" href="learn.html#/progress" aria-label="${r.xp} experience points, level ${p(r.xp).level}. Your progress"><span class="xp-chip"><i aria-hidden="true"></i><span class="num" data-xp>${r.xp}</span> XP</span></a>
-    </nav></div>`}function b(){let e=o();document.querySelectorAll(`[data-xp]`).forEach(t=>t.textContent=e.xp)}function x(e){let t=document.getElementById(`site-footer`);if(!t)return;let n=e===`home`?``:`index.html`;t.className=`footer`,t.innerHTML=`<div class="wrap">
-    <div class="footer-grid">
-      <div class="footer-about">
-        <a class="brand" href="${n||`./`}">${v}<span>Mechanical Engineering from Scratch</span></a>
-        <p>A free course from Analysis 1 to your own finite-element and CFD solvers. In every lesson you derive the model, code it, and test it.</p>
-        <p>Made by Francesco Andreoli, mechanical engineering alumnus of ETH Zurich.</p>
-      </div>
-      <div><h2>Course</h2><ul>
-        <li><a href="learn.html#/00.01">Start with lesson 00.01</a></li>
-        <li><a href="learn.html#/course">All phases and lessons</a></li>
-        <li><a href="learn.html#/progress">Your progress</a></li>
-        <li><a href="learn.html#/verify">Verify a certificate</a></li></ul></div>
-      <div><h2>Labs</h2><ul>
-        <li><a href="${n}#lab-truss">Break the bridge</a></li>
-        <li><a href="${n}#lab-flywheel">Spinning flywheel</a></li>
-        <li><a href="${n}#lab-pipe">Choke the pipe</a></li>
-        <li><a href="https://andreolf.github.io/coconut-lab/" rel="noopener">Coconut eddy</a></li>
-        <li><a href="https://andreolf.github.io/subak-lab/" rel="noopener">Subak terraces</a></li></ul></div>
-      <div><h2>Project</h2><ul>
-        <li><a href="${_}" rel="noopener">Source on GitHub</a></li>
-        <li><a href="${_}/issues" rel="noopener">Report a mistake</a></li>
-        <li><a href="${_}/blob/main/LICENSE" rel="noopener">MIT license</a></li></ul></div>
-      <div data-testid="more-courses"><h2>More courses</h2><ul>
-        <li><a href="https://andreolf.github.io/ai-safety-from-scratch/" rel="noopener">AI Safety from Scratch</a></li>
-        <li><a href="https://andreolf.github.io/security-from-scratch/" rel="noopener">Security from Scratch</a></li></ul></div>
-      <div><h2>Francesco</h2><ul>
-        <li><a href="https://x.com/francescoswiss" rel="noopener">X @francescoswiss</a></li>
-        <li><a href="https://www.youtube.com/@swissintech" rel="noopener">YouTube @swissintech</a></li>
-        <li><a href="https://github.com/andreolf" rel="noopener">GitHub @andreolf</a></li></ul></div>
+    </nav></div>`}function b(){let e=o();document.querySelectorAll(`[data-xp]`).forEach(t=>t.textContent=e.xp)}function x(e){let t=document.getElementById(`site-footer`);if(!t)return;let n=e===`home`?``:`index.html`;t.className=`foot`,t.setAttribute(`aria-labelledby`,`foot-h`),t.innerHTML=`<div class="wrap">
+    <h2 class="sr-only" id="foot-h">About this site</h2>
+    <div class="foot-top">
+      <a class="foot-brand" href="${n||`./`}" aria-label="Mechanical Engineering from Scratch, home">${v}<span translate="no">Mechanical Engineering from Scratch</span></a>
     </div>
-    <div class="footer-legal">
+    <div class="foot-grid">
+      <nav class="foot-col" aria-labelledby="foot-course">
+        <h3 class="foot-h" id="foot-course">This course</h3>
+        <ul class="foot-list">
+          <li><a href="learn.html#/course">All phases and lessons</a></li>
+          <li><a href="learn.html#/progress">Your progress</a></li>
+          <li><a href="${n}#labs">Labs</a></li>
+          <li><a href="learn.html#/verify">Verify a certificate</a></li>
+          <li><a href="${_}" rel="noopener">Source on GitHub</a></li>
+          <li><a href="${_}/issues" rel="noopener">Report a mistake</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-labelledby="foot-more" data-testid="sibling-courses">
+        <h3 class="foot-h" id="foot-more">More from Scratch</h3>
+        <ul class="foot-list foot-list-desc">
+          <li><a href="https://andreolf.github.io/security-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">Security from Scratch</span><span class="foot-link-d">Phone scams, fake messages and passwords, in calm, big-text lessons</span></a></li>
+          <li><a href="https://andreolf.github.io/ai-safety-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">AI Safety from Scratch</span><span class="foot-link-d">How AI works, how it fails, and how to stay in control</span></a></li>
+          <li><a href="https://andreolf.github.io/mechatronics-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">Mechatronics from Scratch</span><span class="foot-link-d">Circuits, sensors, motors and control, with 3D labs</span></a></li>
+        </ul>
+      </nav>
+      <section class="foot-col foot-about" aria-labelledby="foot-about">
+        <h3 class="foot-h" id="foot-about">About</h3>
+        <p>A free course from Analysis 1 to your own finite-element and CFD solvers. In every lesson you derive the model, code it, and test it. Made by Francesco Andreoli, mechanical engineering alumnus of ETH Zurich.</p>
+        <p>Certificates are free certificates of completion, not accredited qualifications. This project is not affiliated with or endorsed by ETH Zurich; ETH course names are given for orientation only.</p>
+        <p>Simulations are simplified teaching models. Don't use them to design real structures.</p>
+      </section>
+    </div>
+    <div class="foot-bottom">
       <p>Free and open source under the MIT license. No accounts and no tracking: your progress is stored in this browser only.</p>
-      <p>Certificates are free certificates of completion, not accredited qualifications. This project is not affiliated with or endorsed by ETH Zurich; ETH course names are given for orientation only.</p>
-      <p>Simulations are simplified teaching models. Don't use them to design real structures.</p>
     </div>
   </div>`}export{r as a,p as c,d,s as f,i as h,g as i,o as l,f as m,x as n,n as o,l as p,y as r,m as s,b as t,u};
