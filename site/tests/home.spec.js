@@ -179,9 +179,16 @@ test.describe('Home page', () => {
     await footer.scrollIntoViewIfNeeded();
     await expect(footer).toContainText('not affiliated with or endorsed by ETH Zurich');
     await expect(footer.getByRole('link', { name: /GitHub/ }).first()).toHaveAttribute('href', /github\.com\/andreolf/);
-    const more = footer.getByTestId('more-courses');
-    await expect(more.getByRole('link', { name: 'AI Safety from Scratch' })).toHaveAttribute('href', 'https://andreolf.github.io/ai-safety-from-scratch/');
-    await expect(more.getByRole('link', { name: 'Security from Scratch' })).toHaveAttribute('href', 'https://andreolf.github.io/security-from-scratch/');
+    await expect(footer.locator('.foot-h')).toHaveText(['This course', 'More from Scratch', 'About']);
+    const sib = footer.getByTestId('sibling-courses');
+    for (const [name, url] of [['Security from Scratch', 'https://andreolf.github.io/security-from-scratch/'], ['AI Safety from Scratch', 'https://andreolf.github.io/ai-safety-from-scratch/'], ['Mechatronics from Scratch', 'https://andreolf.github.io/mechatronics-from-scratch/']])
+      await expect(sib.getByRole('link', { name })).toHaveAttribute('href', url);
+    await expect(sib.getByRole('link', { name: /Mechanical Engineering from Scratch/ })).toHaveCount(0);
+    const links = await footer.locator('.foot-list a').evaluateAll((as) => as.map((a) => ({ h: a.getBoundingClientRect().height, d: getComputedStyle(a).textDecorationLine, t: getComputedStyle(a.querySelector('.foot-link-t') || a).textDecorationLine })));
+    expect(links.length).toBe(9);
+    for (const l of links) { expect(l.h).toBeGreaterThanOrEqual(44); expect(l.d).toBe('none'); expect(l.t).toBe('none'); }
+    await expect(footer).toContainText("Certificates are free certificates of completion, not accredited qualifications. This project is not affiliated with or endorsed by ETH Zurich; ETH course names are given for orientation only.");
+    await expect(page.locator('main')).not.toContainText(/Sister course|Sibling courses/);
     if (isTouch(info)) {
       const small = await smallTargets(page, '#site-footer');
       expect(small, small.join('\n')).toEqual([]);

@@ -29,41 +29,42 @@ export function renderFooter(page) {
   const host = document.getElementById('site-footer');
   if (!host) return;
   const home = page === 'home' ? '' : 'index.html';
-  host.className = 'footer';
+  host.className = 'foot';
+  host.setAttribute('aria-labelledby', 'foot-h');
   host.innerHTML = `<div class="wrap">
-    <div class="footer-grid">
-      <div class="footer-about">
-        <a class="brand" href="${home || './'}">${MARK}<span>Mechanical Engineering from Scratch</span></a>
-        <p>A free course from Analysis 1 to your own finite-element and CFD solvers. In every lesson you derive the model, code it, and test it.</p>
-        <p>Made by Francesco Andreoli, mechanical engineering alumnus of ETH Zurich.</p>
-      </div>
-      <div><h2>Course</h2><ul>
-        <li><a href="learn.html#/00.01">Start with lesson 00.01</a></li>
-        <li><a href="learn.html#/course">All phases and lessons</a></li>
-        <li><a href="learn.html#/progress">Your progress</a></li>
-        <li><a href="learn.html#/verify">Verify a certificate</a></li></ul></div>
-      <div><h2>Labs</h2><ul>
-        <li><a href="${home}#lab-truss">Break the bridge</a></li>
-        <li><a href="${home}#lab-flywheel">Spinning flywheel</a></li>
-        <li><a href="${home}#lab-pipe">Choke the pipe</a></li>
-        <li><a href="https://andreolf.github.io/coconut-lab/" rel="noopener">Coconut eddy</a></li>
-        <li><a href="https://andreolf.github.io/subak-lab/" rel="noopener">Subak terraces</a></li></ul></div>
-      <div><h2>Project</h2><ul>
-        <li><a href="${REPO}" rel="noopener">Source on GitHub</a></li>
-        <li><a href="${REPO}/issues" rel="noopener">Report a mistake</a></li>
-        <li><a href="${REPO}/blob/main/LICENSE" rel="noopener">MIT license</a></li></ul></div>
-      <div data-testid="more-courses"><h2>More courses</h2><ul>
-        <li><a href="https://andreolf.github.io/ai-safety-from-scratch/" rel="noopener">AI Safety from Scratch</a></li>
-        <li><a href="https://andreolf.github.io/security-from-scratch/" rel="noopener">Security from Scratch</a></li></ul></div>
-      <div><h2>Francesco</h2><ul>
-        <li><a href="https://x.com/francescoswiss" rel="noopener">X @francescoswiss</a></li>
-        <li><a href="https://www.youtube.com/@swissintech" rel="noopener">YouTube @swissintech</a></li>
-        <li><a href="https://github.com/andreolf" rel="noopener">GitHub @andreolf</a></li></ul></div>
+    <h2 class="sr-only" id="foot-h">About this site</h2>
+    <div class="foot-top">
+      <a class="foot-brand" href="${home || './'}" aria-label="Mechanical Engineering from Scratch, home">${MARK}<span translate="no">Mechanical Engineering from Scratch</span></a>
     </div>
-    <div class="footer-legal">
+    <div class="foot-grid">
+      <nav class="foot-col" aria-labelledby="foot-course">
+        <h3 class="foot-h" id="foot-course">This course</h3>
+        <ul class="foot-list">
+          <li><a href="learn.html#/course">All phases and lessons</a></li>
+          <li><a href="learn.html#/progress">Your progress</a></li>
+          <li><a href="${home}#labs">Labs</a></li>
+          <li><a href="learn.html#/verify">Verify a certificate</a></li>
+          <li><a href="${REPO}" rel="noopener">Source on GitHub</a></li>
+          <li><a href="${REPO}/issues" rel="noopener">Report a mistake</a></li>
+        </ul>
+      </nav>
+      <nav class="foot-col" aria-labelledby="foot-more" data-testid="sibling-courses">
+        <h3 class="foot-h" id="foot-more">More from Scratch</h3>
+        <ul class="foot-list foot-list-desc">
+          <li><a href="https://andreolf.github.io/security-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">Security from Scratch</span><span class="foot-link-d">Phone scams, fake messages and passwords, in calm, big-text lessons</span></a></li>
+          <li><a href="https://andreolf.github.io/ai-safety-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">AI Safety from Scratch</span><span class="foot-link-d">How AI works, how it fails, and how to stay in control</span></a></li>
+          <li><a href="https://andreolf.github.io/mechatronics-from-scratch/" target="_blank" rel="noopener"><span class="foot-link-t" translate="no">Mechatronics from Scratch</span><span class="foot-link-d">Circuits, sensors, motors and control, with 3D labs</span></a></li>
+        </ul>
+      </nav>
+      <section class="foot-col foot-about" aria-labelledby="foot-about">
+        <h3 class="foot-h" id="foot-about">About</h3>
+        <p>A free course from Analysis 1 to your own finite-element and CFD solvers. In every lesson you derive the model, code it, and test it. Made by Francesco Andreoli, mechanical engineering alumnus of ETH Zurich.</p>
+        <p>Certificates are free certificates of completion, not accredited qualifications. This project is not affiliated with or endorsed by ETH Zurich; ETH course names are given for orientation only.</p>
+        <p>Simulations are simplified teaching models. Don't use them to design real structures.</p>
+      </section>
+    </div>
+    <div class="foot-bottom">
       <p>Free and open source under the MIT license. No accounts and no tracking: your progress is stored in this browser only.</p>
-      <p>Certificates are free certificates of completion, not accredited qualifications. This project is not affiliated with or endorsed by ETH Zurich; ETH course names are given for orientation only.</p>
-      <p>Simulations are simplified teaching models. Don't use them to design real structures.</p>
     </div>
   </div>`;
 }
