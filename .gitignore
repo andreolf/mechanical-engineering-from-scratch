@@ -5,3 +5,4 @@ site/playwright-report/
 __pycache__/
 *.pyc
 *.tmp.mjs
+test-logs/
