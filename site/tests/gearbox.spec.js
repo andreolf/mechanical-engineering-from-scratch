@@ -67,9 +67,9 @@ test('gearbox: every gear turns at the speed its tooth counts give, and only whe
   await expect.poll(async () => Number(await lab.getAttribute('data-rpm')), { timeout: 20_000 }).toBeGreaterThan(1999);
   await expect.poll(async () => Number(await lab.getAttribute('data-tq-in')), { timeout: 20_000 }).toBeGreaterThan(19.99);
   await expect(page.getByTestId('ta-gearbox-status')).toHaveText('UNDER LOAD');
-  expect(Number(await lab.getAttribute('data-rpm-mid'))).toBeCloseTo(800, 0);
-  expect(Number(await lab.getAttribute('data-rpm-out'))).toBeCloseTo(320, 0);
-  expect(Number(await lab.getAttribute('data-tq-out'))).toBeCloseTo(125, 1);
+  await expect.poll(async () => Number(await lab.getAttribute('data-rpm-mid'))).toBeCloseTo(800, 2);
+  await expect.poll(async () => Number(await lab.getAttribute('data-rpm-out'))).toBeCloseTo(320, 2);
+  await expect.poll(async () => Number(await lab.getAttribute('data-tq-out'))).toBeCloseTo(125, 2);
   await page.waitForTimeout(600);
   const a = await page.evaluate(() => window.__mefs.gearbox.angles());
   expect(a.p1).toBeGreaterThan(0.05);

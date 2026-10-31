@@ -97,6 +97,7 @@ export function initGearbox(root) {
     const tRpm = S.playing ? rpmK(S.t) * setRpm : manual ? setRpm : rpm;
     const tTq = S.playing ? tqK(S.t) * setTq : manual ? setTq : tq;
     const k = Math.min(1, dt * 4); rpm += (tRpm - rpm) * k; tq += (tTq - tq) * k;
+    if (Math.abs(tRpm - rpm) < 0.5) rpm = tRpm; if (Math.abs(tTq - tq) < 0.02) tq = tTq; // settle exactly, so readouts don't hover a digit off
     const n1 = meshed ? rpm : 0, T1 = meshed && n1 > 1 ? tq : 0;
     // drawn at 1/60 of the real speed so the teeth stay readable
     theta += ((n1 / 60) * 2 * Math.PI * dt) / 60; model.theta = theta;
