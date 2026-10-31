@@ -87,7 +87,7 @@ export function initGearbox(root) {
     onSeek(t, e, api) { manual = false; api.setExploded(explodedAt(t)); rpm = rpmK(t) * setRpm; tq = tqK(t) * setTq; },
     onTick(dt, api) { tick(dt, api); },
     // pull the camera back for the exploded view so the lifted cover and bolts stay in frame
-    onExplode(v, api) { if (!api.state.assembly) api.focus(() => (v ? [0, 2.35, 0] : spec.camera.target), (v ? 9.0 : spec.camera.dist) * (api.camera ? Math.min(1.9, Math.max(1, 1.45 / Math.max(0.45, api.camera.aspect)) ** 0.8) : 1)); },
+    onExplode(v, api) { if (!api.state.assembly) api.focus(() => (v ? [0, 2.45, 0] : spec.camera.target), (v ? 9.0 : spec.camera.dist) * (api.camera ? Math.min(1.9, Math.max(1, 1.45 / Math.max(0.45, api.camera.aspect)) ** 0.8) : 1)); },
     onPick(p) { quiz.pick(p); },
   };
 
@@ -181,7 +181,7 @@ function build(ctx, model) {
   const LIFT = [0, 0.5, 0.15]; // how a stage rises out of the box when isolated, shafts and all
   // the teardown: the cover lifts clear, and the three shafts come out in a row above the box, each with its gear,
   // bearings, key and seal slid along it, so nothing hides behind anything from the front
-  const EY = 1.2, CY = 2.95, EX = 1.1;
+  const EY = 1.35, CY = 3.1, EX = 1.1;
   // ---- gears ----
   const mk = (m, z, w, bore, mt) => new THREE.Mesh(gearGeometry({ m, z, width: w, bore }).geo, mt);
   const hubRing = (a, b, w, mt) => mesh(ringGeo(a, b, w), mt);
