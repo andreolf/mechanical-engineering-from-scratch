@@ -74,7 +74,7 @@ export function initGearbox(root) {
       { id: 'fasteners', label: 'Seals & fasteners', focus: () => [0, 1.4, 0], dist: 5.6 },
     ],
     subsystems: [
-      { id: 'housing', name: 'Housing', sub: 'Split casting · oil bath', assembly: 'housing' },
+      { id: 'housing', name: 'Housing', sub: 'Split · oil bath', assembly: 'housing' },
       { id: 'input', name: 'Input stage', sub: 'm 2 · 18 : 45', assembly: 'input' },
       { id: 'output', name: 'Output stage', sub: 'm 3 · 18 : 45', assembly: 'output' },
       { id: 'shafts', name: 'Shafts & bearings', sub: '6 ball bearings', assembly: 'shafts' },
@@ -87,7 +87,7 @@ export function initGearbox(root) {
     onSeek(t, e, api) { manual = false; api.setExploded(explodedAt(t)); rpm = rpmK(t) * setRpm; tq = tqK(t) * setTq; },
     onTick(dt, api) { tick(dt, api); },
     // pull the camera back for the exploded view so the lifted cover and bolts stay in frame
-    onExplode(v, api) { if (!api.state.assembly) api.focus(() => (v ? [0, 1.75, 0] : spec.camera.target), (v ? 7.6 : spec.camera.dist) * (api.camera ? Math.min(1.9, Math.max(1, 1.45 / Math.max(0.45, api.camera.aspect)) ** 0.8) : 1)); },
+    onExplode(v, api) { if (!api.state.assembly) api.focus(() => (v ? [0, 2.35, 0] : spec.camera.target), (v ? 9.0 : spec.camera.dist) * (api.camera ? Math.min(1.9, Math.max(1, 1.45 / Math.max(0.45, api.camera.aspect)) ** 0.8) : 1)); },
     onPick(p) { quiz.pick(p); },
   };
 
@@ -179,6 +179,9 @@ function build(ctx, model) {
   Object.assign(model, { XA, XB, XC, at: (x, z, dy = 0) => [x, Y0 + dy, z] });
   const world = new THREE.Group(); scene.add(world);
   const LIFT = [0, 0.5, 0.15]; // how a stage rises out of the box when isolated, shafts and all
+  // the teardown: the cover lifts clear, and the three shafts come out in a row above the box, each with its gear,
+  // bearings, key and seal slid along it, so nothing hides behind anything from the front
+  const EY = 1.2, CY = 2.95, EX = 1.1;
   // ---- gears ----
   const mk = (m, z, w, bore, mt) => new THREE.Mesh(gearGeometry({ m, z, width: w, bore }).geo, mt);
   const hubRing = (a, b, w, mt) => mesh(ringGeo(a, b, w), mt);
@@ -192,40 +195,40 @@ function build(ctx, model) {
   // a thin lime ring on the pitch circle of each pinion face: the circle the ratio is measured on
   const pitchRing = (g, r, z) => g.add(mesh(new THREE.TorusGeometry(r, 0.005, 6, 72), mat.accent, 0, 0, z));
   pitchRing(gp1, (M1 * Z1) / 2, W1 / 2 + 0.007); pitchRing(gp3, (M2 * Z3) / 2, W2 / 2 + 0.007);
-  P('p1-0', 'p1', 'input', gp1, { explode: [-0.35, 0.75, -1.1], glide: LIFT, label: 1, labelAt: [0, 0.2, 0] });
-  P('g2-0', 'g2', 'input', gg2, { explode: [0, 1.0, -1.25], glide: LIFT, label: 1, labelAt: [0.3, 0.38, 0] });
-  P('p3-0', 'p3', 'output', gp3, { explode: [-0.2, 1.05, 1.0], glide: LIFT, label: 1, labelAt: [0, 0.28, 0] });
-  P('g4-0', 'g4', 'output', gg4, { explode: [0.35, 0.75, 1.3], glide: LIFT, label: 1, labelAt: [0.45, 0.5, 0] });
+  P('p1-0', 'p1', 'input', gp1, { explode: [-EX, EY, -0.3], glide: LIFT, label: 1, labelAt: [0, 0.2, 0] });
+  P('g2-0', 'g2', 'input', gg2, { explode: [0, EY, -0.4], glide: LIFT, label: 1, labelAt: [0.3, 0.38, 0] });
+  P('p3-0', 'p3', 'output', gp3, { explode: [0, EY, 0.35], glide: LIFT, label: 1, labelAt: [0, 0.28, 0] });
+  P('g4-0', 'g4', 'output', gg4, { explode: [EX, EY, 0.4], glide: LIFT, label: 1, labelAt: [0.45, 0.5, 0] });
   // ---- shafts ----
   const shaft = (x, r, z0, z1, steps = []) => { const g = grp(x, Y0, 0, mesh(cylZ(r, z1 - z0, 32), mat.metal, 0, 0, (z0 + z1) / 2)); steps.forEach(([zz, rr, ll]) => g.add(mesh(cylZ(rr, ll, 32), mat.steel, 0, 0, zz))); return g; };
   const sIn = shaft(XA, 0.1, -1.15, 0.52, [[-0.03, 0.118, 0.06]]);
   const sMid = shaft(XB, 0.16, -0.5, 0.5, [[-0.03, 0.185, 0.06]]);
   const sOut = shaft(XC, 0.2, -0.5, 1.2, [[-0.03, 0.225, 0.06]]);
   world.add(sIn, sMid, sOut);
-  P('shaftIn-0', 'shaftIn', 'shafts', sIn, { explode: [0, 0.6, -1.3], glide: { shafts: [0, 0.75, 0], input: LIFT }, label: 2, labelAt: [0, 0, -1.0] });
-  P('shaftMid-0', 'shaftMid', 'shafts', sMid, { explode: [0, 1.4, 0], glide: { shafts: [0, 1.05, 0], input: LIFT, output: LIFT }, label: 2, labelAt: [0, 0.16, 0.42] });
-  P('shaftOut-0', 'shaftOut', 'shafts', sOut, { explode: [0.15, 0.5, 1.6], glide: { shafts: [0, 0.75, 0], output: LIFT }, label: 2, labelAt: [0, 0, 1.05] });
+  P('shaftIn-0', 'shaftIn', 'shafts', sIn, { explode: [-EX, EY, 0], glide: { shafts: [0, 0.75, 0], input: LIFT }, label: 2, labelAt: [0, 0, -1.0] });
+  P('shaftMid-0', 'shaftMid', 'shafts', sMid, { explode: [0, EY, 0], glide: { shafts: [0, 1.05, 0], input: LIFT, output: LIFT }, label: 2, labelAt: [0, 0.16, 0.42] });
+  P('shaftOut-0', 'shaftOut', 'shafts', sOut, { explode: [EX, EY, 0], glide: { shafts: [0, 0.75, 0], output: LIFT }, label: 2, labelAt: [0, 0, 1.05] });
   // ---- keys ----
   const keyGeo = (len) => new THREE.BoxGeometry(0.06, 0.06, len);
   const kIn = grp(XA, Y0 + 0.1, -0.95, mesh(keyGeo(0.25), mat.dark));
   const kMid = grp(XB, Y0 + 0.16, S1, mesh(keyGeo(0.2), mat.dark));
   const kOut = grp(XC, Y0 + 0.2, 1.0, mesh(keyGeo(0.3), mat.dark));
   world.add(kIn, kMid, kOut);
-  P('key-0', 'key', 'fasteners', kIn, { explode: [0, 1.0, -1.7], glide: [0, 0.4, -0.2], label: 2, labelAt: [0, 0.03, 0] });
-  P('key-1', 'key', 'fasteners', kMid, { explode: [0, 2.3, -0.3], glide: [0, 1.0, 0] });
-  P('key-2', 'key', 'fasteners', kOut, { explode: [0.15, 0.95, 2.0], glide: [0, 0.4, 0.2] });
+  P('key-0', 'key', 'fasteners', kIn, { explode: [-EX, EY + 0.3, -0.1], glide: [0, 0.4, -0.2], label: 2, labelAt: [0, 0.03, 0] });
+  P('key-1', 'key', 'fasteners', kMid, { explode: [0, EY + 0.62, -0.4], glide: [0, 1.0, 0] });
+  P('key-2', 'key', 'fasteners', kOut, { explode: [EX, EY + 0.3, 0.1], glide: [0, 0.4, 0.2] });
   // ---- bearings ----
   const brgs = [];
   [[XA, 0.1], [XB, 0.16], [XC, 0.2]].forEach(([x, a], i) => [-0.42, 0.42].forEach((z) => {
     const b = bearing(mat, a, 0.1); b.position.set(x, Y0, z); world.add(b); brgs.push(b);
     const k = brgs.length - 1;
-    P(`brg-${k}`, 'brg', 'shafts', b, { explode: [0, 0.35 + i * 0.12, z < 0 ? -0.75 - i * 0.1 : 0.75 + i * 0.1], glide: [0, [0.75, 1.05, 0.75][i], z < 0 ? -0.2 : 0.2], label: k === 5 ? 1 : k === 0 ? 2 : 0, labelAt: [0, b.userData.outer, 0] });
+    P(`brg-${k}`, 'brg', 'shafts', b, { explode: [[-EX, 0, EX][i], EY, z < 0 ? -0.3 : 0.3], glide: [0, [0.75, 1.05, 0.75][i], z < 0 ? -0.2 : 0.2], label: k === 5 ? 1 : k === 0 ? 2 : 0, labelAt: [0, b.userData.outer, 0] });
   }));
   // ---- seals ----
   const seal = (x, a, z) => { const g = grp(x, Y0, z, mesh(ringGeo(a, a + 0.07, 0.05), mat.rubber), mesh(new THREE.TorusGeometry(a + 0.035, 0.008, 6, 40), mat.accent, 0, 0, z < 0 ? -0.026 : 0.026)); world.add(g); return g; };
   const seIn = seal(XA, 0.1, -0.555), seOut = seal(XC, 0.2, 0.555);
-  P('seal-0', 'seal', 'fasteners', seIn, { explode: [0, 0.2, -1.35], glide: [0, 0.4, -0.45], label: 2, labelAt: [0, 0.17, 0] });
-  P('seal-1', 'seal', 'fasteners', seOut, { explode: [0.1, 0.2, 1.35], glide: [0, 0.4, 0.45] });
+  P('seal-0', 'seal', 'fasteners', seIn, { explode: [-EX, EY, -0.5], glide: [0, 0.4, -0.45], label: 2, labelAt: [0, 0.17, 0] });
+  P('seal-1', 'seal', 'fasteners', seOut, { explode: [EX, EY, 0.5], glide: [0, 0.4, 0.45] });
   // ---- housing: split on the shaft line ----
   const X0 = XA - 0.34, X1 = XC + 0.84, ZW = 0.52, H0 = 0.15, H1 = Y0 + 0.82, T = 0.05;
   const cx = (X0 + X1) / 2, wx = X1 - X0;
@@ -256,13 +259,13 @@ function build(ctx, model) {
   cover.add(box(WX1 - WX0, T, 0.18, mat.panel, (WX0 + WX1) / 2, H1 - T / 2, -ZW + 0.09), box(WX1 - WX0, T, 0.18, mat.panel, (WX0 + WX1) / 2, H1 - T / 2, ZW - 0.09));
   [XA, XB, XC].forEach((x, i) => [-1, 1].forEach((s) => { cover.add(mesh(half(bossR[i] * 0.62, 0.1), mat.panel, x, Y0, s * (ZW + 0.03))); }));
   world.add(cover);
-  P('cover-0', 'cover', 'housing', cover, { explode: [0, 1.9, -0.5], glide: [0, 1.2, 0], label: 1, labelAt: [X0, H1, -ZW] });
+  P('cover-0', 'cover', 'housing', cover, { explode: [0, CY, 0], glide: [0, 1.2, 0], label: 1, labelAt: [X0, H1, -ZW] });
   const win = mesh(new THREE.BoxGeometry(WX1 - WX0, 0.01, ZW * 2 - 0.36), new THREE.MeshPhysicalMaterial({ color: 0x0b1215, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.18, depthWrite: false }), (WX0 + WX1) / 2, H1 - 0.01, 0);
   win.userData.noShadow = true; world.add(win);
-  P('win-0', 'win', 'housing', win, { explode: [0, 1.9, -0.5], glide: [0, 1.2, 0], pickable: false });
+  P('win-0', 'win', 'housing', win, { explode: [0, CY, 0], glide: [0, 1.2, 0], pickable: false });
   // ---- bolts, breather, drain plug ----
   const bx = [X0 + 0.12, cx, X1 - 0.12];
-  let bi = 0; for (const x of bx) for (const s of [-1, 1]) { const b = bolt(mat, 0.035, 0.18); b.position.set(x, Y0 + 0.04, s * (ZW + 0.05)); world.add(b); P(`bolt-${bi}`, 'bolt', 'fasteners', b, { explode: [0, 2.45, s * 0.35 - 0.25], glide: [0, 1.4, 0], label: bi === 1 ? 2 : 0, labelAt: [0, 0.05, 0] }); bi++; }
+  let bi = 0; for (const x of bx) for (const s of [-1, 1]) { const b = bolt(mat, 0.035, 0.18); b.position.set(x, Y0 + 0.04, s * (ZW + 0.05)); world.add(b); P(`bolt-${bi}`, 'bolt', 'fasteners', b, { explode: [0, CY + 0.45, s * 0.12], glide: [0, 1.4, 0], label: bi === 1 ? 2 : 0, labelAt: [0, 0.05, 0] }); bi++; }
   const brX = (WX1 + X1) / 2;
   const breather = grp(brX, H1, 0,
     mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.06, 6), mat.steel, 0, 0.03, 0),
@@ -271,13 +274,13 @@ function build(ctx, model) {
     mesh(new THREE.TorusGeometry(0.066, 0.006, 6, 32), mat.accent, 0, 0.12, 0));
   breather.children[3].rotation.x = Math.PI / 2;
   world.add(breather);
-  P('breather-0', 'breather', 'fasteners', breather, { explode: [0.35, 2.75, -0.5], glide: [0, 0.9, 0], label: 2, labelAt: [0, 0.17, 0] });
+  P('breather-0', 'breather', 'fasteners', breather, { explode: [0, CY + 0.4, 0], glide: [0, 0.9, 0], label: 2, labelAt: [0, 0.17, 0] });
   const plug = grp(X1, H0 + 0.11, 0.2,
     mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.04, 6), mat.steel, 0.02, 0, 0),
     mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.012, 24), mat.brass, 0.002, 0, 0));
   plug.children.forEach((c) => { c.rotation.z = Math.PI / 2; });
   world.add(plug);
-  P('plug-0', 'plug', 'fasteners', plug, { explode: [0.8, -0.05, 0.2], glide: [0.45, 0, 0.2], label: 2, labelAt: [0.04, 0, 0] });
+  P('plug-0', 'plug', 'fasteners', plug, { explode: [0.55, -0.15, 0.2], glide: [0.45, 0, 0.2], label: 2, labelAt: [0.04, 0, 0] });
   contact.scale.set(wx * 1.5, ZW * 3, 1); contact.position.set(cx, 0.003, 0); contact.material.opacity = 0.55;
 
   // ---- the mesh ----
