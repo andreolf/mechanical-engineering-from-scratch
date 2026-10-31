@@ -56,7 +56,7 @@ export function createStage(container, { fov = 40, camPos = [0, 2, 8], target = 
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-  if (shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = COARSE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap; }
+  if (shadows) { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; /* PCFSoft was removed in recent three.js and only warned */ }
   const canvas = renderer.domElement;
   canvas.setAttribute('role', 'img');
   container.appendChild(canvas);
