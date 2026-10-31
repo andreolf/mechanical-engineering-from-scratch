@@ -20,6 +20,24 @@ safe('hero', () => initHero(document.querySelector('#hero')));
   whenNear(el, () => safe(sel, () => init(el)));
 });
 
+// Take-apart labs: three.js and the models load only when the slot comes near the viewport,
+// or at once when the address asks for one (#lab-gearbox).
+const TA = { gearbox: () => import('./lab-gearbox.js').then((m) => m.initGearbox) };
+const taStarted = {};
+function startTA(id) {
+  const el = document.querySelector(`#ta-${id}-slot`);
+  if (!el) return Promise.resolve(null);
+  return (taStarted[id] ||= TA[id]().then((init) => safe(id, () => init(el))).catch((e) => console.warn(`[${id}] failed to load`, e)));
+}
+function taDeepLink() {
+  const m = location.hash.match(/^#lab-(\w+)$/);
+  if (!m || !TA[m[1]]) return;
+  startTA(m[1]).then(() => requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView({ block: 'start' })));
+}
+Object.keys(TA).forEach((id) => { const el = document.querySelector(`#ta-${id}-slot`); if (el) whenNear(el, () => startTA(id)); });
+taDeepLink();
+window.addEventListener('hashchange', taDeepLink);
+
 document.querySelectorAll('[data-copy]').forEach((btn) => {
   btn.addEventListener('click', async () => {
     const text = document.querySelector(btn.dataset.copy).textContent.trim();

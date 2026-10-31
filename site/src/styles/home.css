@@ -128,3 +128,35 @@
   .sheet-stage { aspect-ratio: 16 / 10; min-height: 0; max-height: 58svh; }
   .lab-canvas { max-height: 70svh; }
 }
+
+/* Take-apart labs (shared viewer in src/takeapart). Site tokens: Archivo at 112% width, paper text, lime accent; coral only for danger. */
+.ta-band { margin-top: 72px; padding-top: 32px; border-top: 1px solid var(--rule); }
+.ta-band-title { font-size: clamp(24px, 3.2vw, 34px); margin-bottom: 0.3em; }
+.ta-slot { margin-top: 40px; min-height: 760px; }
+.ta-slot:has(> .ta) { min-height: 0; }
+.ta-slot + .ta-slot { margin-top: 64px; }
+.ta.ta-lab { --ta-accent: var(--lime); --ta-danger: #ff6b81; --ta-warn: var(--amber); --ta-text: var(--paper); --ta-fog: var(--graphite); --ta-dim: var(--dim);
+  --ta-sans: var(--sans); --ta-mono: var(--mono); display: block; margin: 0; padding: 0; border: 0; scroll-margin-top: calc(var(--nav-h) + 12px); }
+.ta.ta-lab .lab-head { max-width: 62ch; margin-bottom: 18px; }
+.ta.ta-lab .lab-head .lab-num { display: block; margin-bottom: 8px; font: 500 var(--t-2)/1.2 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--lime); }
+.ta.ta-lab .lab-head h3 { font-stretch: 112%; font-size: var(--t2); margin: 0 0 .35em; }
+.ta.ta-lab .lab-head p { margin: 0; color: var(--graphite); }
+.ta-note { margin: 8px 0 0; font: 400 12px/1.5 var(--sans); color: var(--graphite); }
+.ta-note sub { font-size: .8em; }
+.ta-quiz { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.ta-q { margin: 0 0 4px; font: 600 13px/1.4 var(--sans); font-stretch: 106%; color: var(--paper); text-wrap: pretty; }
+.ta-qhint { margin: 0; font: 400 11px/1.4 var(--mono); color: var(--dim); }
+.ta-qmsg { margin: 6px 0 0; font: 500 12px/1.4 var(--sans); color: var(--graphite); }
+.ta-qmsg[data-ok="true"] { color: var(--lime); }
+.ta-quiz .ta-chip { margin-top: 10px; }
+@media (max-width: 760px) { .ta-band { margin-top: 48px; } .ta-slot { margin-top: 28px; min-height: 900px; } }
+@media (min-width: 1100px) {
+  /* desktop: the left column has to fit the viewer + log height, so the spacing is a touch tighter */
+  .ta.ta-lab .ta-left .ta-pane .ta-ph:not(:first-child) { margin-top: 14px; }
+  .ta.ta-lab .ta-left .ta-range { margin-top: 10px; }
+  .ta.ta-lab .ta-left .ta-quiz { margin-top: 14px; padding-top: 12px; }
+  /* the viewer takes whatever height the side columns need, so the frame never has a blank band */
+  .ta.ta-lab .ta-view { height: auto; min-height: 600px; flex: 1 1 auto; }
+}
+.ta-qmsg:empty { visibility: hidden; }
+.ta-qmsg { min-height: 1.4em; }

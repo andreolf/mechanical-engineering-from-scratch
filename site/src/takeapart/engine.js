@@ -428,7 +428,7 @@ export function takeApart(root, spec) {
     }
     // de-overlap: each label takes the free slot nearest where it wants to be, clear of every placed label it shares x with
     // and of the open part card; a label with no free slot nearby is hidden rather than drawn over another
-    const top = 30, bot = hh - 64, placed = [];
+    const top = spec.labelTop ?? 30, bot = hh - 64, placed = [];
     lblPos.sort((a, b) => a.p.label - b.p.label || a.ly - b.ly);
     const clash = (l, ly) => placed.some((q) => l.x1 + 6 > q.x0 && l.x0 - 6 < q.x1 && Math.abs(ly - q.ly) < (l.lh + q.lh) / 2 + 3);
     const underCard = (l, ly) => !!cardBox && ((l.x1 > cardBox.l && l.x0 < cardBox.r && ly + l.lh / 2 > cardBox.t && ly - l.lh / 2 < cardBox.b) || (l.x > cardBox.l && l.x < cardBox.r && l.y > cardBox.t && l.y < cardBox.b));
