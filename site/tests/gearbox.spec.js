@@ -20,8 +20,7 @@ test('gearbox plays inline on the labs section: renders, explodes, isolates and 
   await expect(lab).toHaveAttribute('data-exploded', 'true');
   await expect(page.getByTestId('ta-gearbox-status')).toHaveText('TEARDOWN');
   await expect.poll(() => lab.locator('.ta-label[data-on="1"]').count()).toBeGreaterThan(2);
-  await page.waitForTimeout(1500);
-  const lc = await labelsClear(page, ID); expect(lc.bad, JSON.stringify(lc)).toEqual([]);
+  await expect.poll(async () => (await labelsClear(page, ID)).bad, { timeout: 5_000 }).toEqual([]);
   await tab(page, info, ID, 'subs');
   await expect(page.getByTestId('ta-gearbox-badge-input')).toHaveText(/detached/i);
   await tab(page, info, ID, 'parts');
@@ -53,8 +52,7 @@ test('gearbox: a tapped part opens its card, and the card links to the exact les
   await page.evaluate(() => window.__mefs.gearbox.openCard('p1-0'));
   await expect(card).toContainText('1.633');
   await expect(card).toContainText('125.6 MPa');
-  await page.waitForTimeout(500);
-  const lc = await labelsClear(page, ID); expect(lc.bad, JSON.stringify(lc)).toEqual([]);
+  await expect.poll(async () => (await labelsClear(page, ID)).bad, { timeout: 5_000 }).toEqual([]);
   await card.locator('a[href="learn.html#/15.08"]').click();
   await expect(page).toHaveURL(/learn\.html#\/15\.08$/);
   await expect(page.locator('h1')).toContainText('Gear geometry');

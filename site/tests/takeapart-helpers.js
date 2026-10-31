@@ -27,7 +27,7 @@ export async function labelsClear(page, id) {
     const card = view.querySelector('.ta-card:not([hidden])')?.getBoundingClientRect();
     const hit = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
     const bad = [];
-    ls.forEach((a, i) => { ls.slice(i + 1).forEach((b) => { if (hit(a, b)) bad.push('overlap'); }); if (card && getComputedStyle(view.querySelector('.ta-labels')).opacity !== '0' && hit(a, card)) bad.push('under card'); if (a.left < v.left - 1 || a.right > v.right + 1) bad.push('clipped'); });
+    ls.forEach((a, i) => { ls.slice(i + 1).forEach((b) => { if (hit(a, b)) bad.push('overlap'); }); if (card && Number(getComputedStyle(view.querySelector('.ta-labels')).opacity) > 0.05 && hit(a, card)) bad.push(`under card (labels opacity ${getComputedStyle(view.querySelector('.ta-labels')).opacity})`); if (a.left < v.left - 1 || a.right > v.right + 1) bad.push('clipped'); });
     return { n: ls.length, bad };
   }, id);
 }

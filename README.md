@@ -7,7 +7,13 @@ A free, open-source mechanical engineering curriculum: **20 phases, 356 lessons*
 3. **Test** it against an analytic result, conservation law or benchmark
 4. **Keep the artifact**, then meet the open-source pro tool it maps to (FreeCAD, CalculiX, FEniCSx, OpenFOAM…)
 
-The homepage has a live 3D cantilever hero and three "Break the machine" labs (truss bridge, gyroscope, venturi), plus links to two live labs: [The coconut that never escapes](https://andreolf.github.io/coconut-lab/) and [Subak rice terraces](https://andreolf.github.io/subak-lab/).
+The homepage has a live 3D cantilever hero, three "Break the machine" labs (truss bridge, gyroscope, venturi) and the "Take it apart" labs, plus links to two live labs: [The coconut that never escapes](https://andreolf.github.io/coconut-lab/) and [Subak rice terraces](https://andreolf.github.io/subak-lab/).
+
+The take-apart labs play inline in the labs section. Each is a 3D model you can orbit, explode and pick apart, with an assembly list, leader-line labels, live telemetry, a scripted operation log with a scrub bar, a "Find the part" quiz and a card for every part that links the lesson behind its numbers:
+
+- **Gearbox** ([#lab-gearbox](https://andreolf.github.io/mechanical-engineering-from-scratch/#lab-gearbox)): a two-stage spur reducer with involute teeth from lesson 15.08 (18 : 45 at module 2, then 18 : 45 at module 3, 6.25 : 1 overall), three shafts, keys, six ball bearings, lip seals, a breather, a drain plug and a split, bolted housing cut open at the front. The mesh turns only when it is assembled, each gear at the speed its tooth counts give; speed and torque sliders drive ideal output speed and torque (no lesson gives a mesh efficiency, so no losses are taken off).
+
+The viewer (`site/src/takeapart/`) is the same one behind the cable-robot teardown in Mechatronics from Scratch.
 
 > Live site: https://andreolf.github.io/mechanical-engineering-from-scratch/
 
@@ -80,7 +86,7 @@ After editing a full lesson: `python3 scripts/check_lessons.py` (runs the code a
 
 ## Honesty notes
 
-- All simulations are simplified educational models and are labelled as such on the page (Euler-Bernoulli beam; pin-jointed linear truss with yield and Euler buckling; rigid frictionless symmetric top; 1D Bernoulli with an assumed Darcy friction factor). Do not use them to design real structures.
+- All simulations are simplified educational models and are labelled as such on the page (Euler-Bernoulli beam; pin-jointed linear truss with yield and Euler buckling; rigid frictionless symmetric top; 1D Bernoulli with an assumed Darcy friction factor; a lossless gear train). Do not use them to design real structures.
 - ETH course names refer to the public D-MAVT Bachelor programme (2022 regulations) where marked; other mappings are generic descriptions. Not affiliated with or endorsed by ETH Zurich.
 - Material values (e.g. bamboo) are typical orders of magnitude and vary widely.
 
