@@ -21,8 +21,8 @@ safe('hero', () => initHero(document.querySelector('#hero')));
 });
 
 // Take-apart labs: three.js and the models load only when the slot comes near the viewport,
-// or at once when the address asks for one (#lab-gearbox).
-const TA = { gearbox: () => import('./lab-gearbox.js').then((m) => m.initGearbox) };
+// or at once when the address asks for one (#lab-gearbox, #lab-engine).
+const TA = { gearbox: () => import('./lab-gearbox.js').then((m) => m.initGearbox), engine: () => import('./lab-engine.js').then((m) => m.initEngine) };
 const taStarted = {};
 function startTA(id) {
   const el = document.querySelector(`#ta-${id}-slot`);
@@ -32,7 +32,18 @@ function startTA(id) {
 function taDeepLink() {
   const m = location.hash.match(/^#lab-(\w+)$/);
   if (!m || !TA[m[1]]) return;
-  startTA(m[1]).then(() => requestAnimationFrame(() => document.querySelector(location.hash)?.scrollIntoView({ block: 'start' })));
+  // labs above the target load as it scrolls past them and grow, so keep the target pinned until the page settles
+  // (about 4 s) or the reader scrolls on their own
+  startTA(m[1]).then(() => {
+    const go = () => document.querySelector(location.hash)?.scrollIntoView({ block: 'start' });
+    requestAnimationFrame(go);
+    const ro = new ResizeObserver(() => requestAnimationFrame(go));
+    document.querySelectorAll('.ta-slot, .ta-band').forEach((s) => ro.observe(s));
+    const evs = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+    const stop = () => { ro.disconnect(); evs.forEach((e) => removeEventListener(e, stop)); };
+    evs.forEach((e) => addEventListener(e, stop, { passive: true }));
+    setTimeout(stop, 4000);
+  });
 }
 Object.keys(TA).forEach((id) => { const el = document.querySelector(`#ta-${id}-slot`); if (el) whenNear(el, () => startTA(id)); });
 taDeepLink();
